@@ -357,19 +357,28 @@ export class ModelRegistry {
 	private loadError: string | undefined = undefined;
 	readonly authStorage: AuthStorage;
 	private modelsJsonPath: string | undefined;
+	private includeBuiltInModels: boolean;
 
-	private constructor(authStorage: AuthStorage, modelsJsonPath: string | undefined) {
+	private constructor(authStorage: AuthStorage, modelsJsonPath: string | undefined, includeBuiltInModels: boolean) {
 		this.authStorage = authStorage;
 		this.modelsJsonPath = modelsJsonPath ? normalizePath(modelsJsonPath) : undefined;
+		this.includeBuiltInModels = includeBuiltInModels;
 		this.loadModels();
 	}
 
 	static create(authStorage: AuthStorage, modelsJsonPath: string = join(getAgentDir(), "models.json")): ModelRegistry {
-		return new ModelRegistry(authStorage, modelsJsonPath);
+		return new ModelRegistry(authStorage, modelsJsonPath, true);
+	}
+
+	static customOnly(
+		authStorage: AuthStorage,
+		modelsJsonPath: string = join(getAgentDir(), "models.json"),
+	): ModelRegistry {
+		return new ModelRegistry(authStorage, modelsJsonPath, false);
 	}
 
 	static inMemory(authStorage: AuthStorage): ModelRegistry {
-		return new ModelRegistry(authStorage, undefined);
+		return new ModelRegistry(authStorage, undefined, true);
 	}
 
 	/**
@@ -412,7 +421,7 @@ export class ModelRegistry {
 			// Keep built-in models even if custom models failed to load
 		}
 
-		const builtInModels = this.loadBuiltInModels(overrides, modelOverrides);
+		const builtInModels = this.includeBuiltInModels ? this.loadBuiltInModels(overrides, modelOverrides) : [];
 		let combined = this.mergeCustomModels(builtInModels, customModels);
 
 		// Let OAuth providers modify their models (e.g., update baseUrl)
@@ -529,7 +538,7 @@ export class ModelRegistry {
 	}
 
 	private validateConfig(config: ModelsConfig): void {
-		const builtInProviders = new Set<string>(getProviders());
+		const builtInProviders = new Set<string>(this.includeBuiltInModels ? getProviders() : []);
 
 		for (const [providerName, providerConfig] of Object.entries(config.providers)) {
 			const isBuiltIn = builtInProviders.has(providerName);
@@ -577,7 +586,7 @@ export class ModelRegistry {
 
 	private parseModels(config: ModelsConfig): Model<Api>[] {
 		const models: Model<Api>[] = [];
-		const builtInProviders = new Set<string>(getProviders());
+		const builtInProviders = new Set<string>(this.includeBuiltInModels ? getProviders() : []);
 
 		// Cache built-in defaults (api, baseUrl) per provider, extracted from first model.
 		const builtInDefaultsCache = new Map<string, { api: string; baseUrl: string }>();
@@ -790,7 +799,7 @@ export class ModelRegistry {
 			registeredProvider?.name ??
 			registeredProvider?.oauth?.name ??
 			oauthProvider?.name ??
-			BUILT_IN_PROVIDER_DISPLAY_NAMES[provider] ??
+			(this.includeBuiltInModels ? BUILT_IN_PROVIDER_DISPLAY_NAMES[provider] : undefined) ??
 			provider
 		);
 	}

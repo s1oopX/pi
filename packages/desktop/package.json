@@ -1,0 +1,59 @@
+{
+	"name": "@s1oopx/pi-studio",
+	"version": "0.1.0",
+	"private": true,
+	"description": "Pi Studio desktop client for third-party API service support",
+	"author": "s1oopX <s1oopp1337@gmail.com>",
+	"homepage": "https://github.com/s1oopX/pi",
+	"repository": {
+		"type": "git",
+		"url": "https://github.com/s1oopX/pi.git"
+	},
+	"type": "module",
+	"main": "src/main.js",
+	"scripts": {
+		"build:backend": "node scripts/build-backend.mjs",
+		"dev:renderer": "cd renderer-next && npx vite",
+		"build:renderer": "cd renderer-next && npx tsc --noEmit && npx vite build",
+		"start": "npm run build:backend && electron .",
+		"pack:dir": "npm run build:backend && electron-builder --dir --win --x64",
+		"pack:portable": "npm run build:backend && electron-builder --win portable --x64"
+	},
+	"build": {
+		"appId": "io.s1oopx.pi-studio",
+		"productName": "Pi Studio",
+		"asar": true,
+		"directories": {
+			"output": "release"
+		},
+		"files": [
+			"src/**/*",
+			"renderer-next/dist/**/*",
+			"assets/**/*",
+			"package.json"
+		],
+		"extraResources": [
+			{
+				"from": "../coding-agent/dist",
+				"to": "pi-backend",
+				"filter": [
+					"pi-studio-backend.exe",
+					"photon_rs_bg.wasm",
+					"package.json",
+					"export-html/**/*"
+				]
+			}
+		],
+		"win": {
+			"icon": "assets/window-icon.ico",
+			"target": [
+				"portable"
+			],
+			"artifactName": "PiStudio-${version}.${ext}"
+		}
+	},
+	"devDependencies": {
+		"electron": "40.10.3",
+		"electron-builder": "26.15.3"
+	}
+}

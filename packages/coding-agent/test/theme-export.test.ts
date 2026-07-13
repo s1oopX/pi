@@ -101,4 +101,17 @@ describe("getThemeExportColors", () => {
 			infoBg: undefined,
 		});
 	});
+
+	it("resolves export colors for built-in Pi Studio themes", () => {
+		expect(getThemeExportColors("pi-studio-dark")).toEqual({
+			pageBg: "#1e1e1d",
+			cardBg: "#2d2c2c",
+			infoBg: "#202842",
+		});
+		expect(getThemeExportColors("pi-studio-light")).toEqual({
+			pageBg: "#f2f2f1",
+			cardBg: "#fdfcfc",
+			infoBg: "#eef3ff",
+		});
+	});
 });

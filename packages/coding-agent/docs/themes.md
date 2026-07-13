@@ -18,7 +18,7 @@ Themes are JSON files that define colors for the TUI.
 
 Pi loads themes from:
 
-- Built-in: `dark`, `light`
+- Built-in: `dark`, `light`, `pi-studio-dark`, `pi-studio-light`
 - Global: `~/.pi/agent/themes/*.json`
 - Project: `.pi/themes/*.json` (only after the project is trusted)
 - Packages: `themes/` directories or `pi.themes` entries in `package.json`
@@ -293,3 +293,5 @@ echo $COLORTERM  # Should output "truecolor" or "24bit"
 See the built-in themes:
 - [dark.json](../src/modes/interactive/theme/dark.json)
 - [light.json](../src/modes/interactive/theme/light.json)
+- [pi-studio-dark.json](../src/modes/interactive/theme/pi-studio-dark.json)
+- [pi-studio-light.json](../src/modes/interactive/theme/pi-studio-light.json)

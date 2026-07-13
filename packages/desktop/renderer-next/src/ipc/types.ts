@@ -1,0 +1,355 @@
+// Shared type aliases.
+//
+// Domain types are re-exported from the backend's self-contained wire contract
+// (rpc-desktop-contract.ts) so they cannot drift from what the backend actually
+// serializes onto stdio. This is a type-only relative import; Vite erases it at
+// runtime and the renderer's standalone tsc resolves it directly.
+
+import type {
+  RpcAgentMessageDTO,
+  RpcAssistantContentBlockDTO,
+  RpcAuthStatusDTO,
+  RpcBackendEventDTO,
+  RpcCustomModelsConfigDTO,
+  RpcExtensionUIRequestEventDTO,
+  RpcModelDTO,
+  RpcSessionInfoDTO,
+  RpcSessionStateDTO,
+  RpcSessionStatsDTO,
+  RpcSlashCommandDTO,
+  RpcToolCallDTO,
+} from "../../../../coding-agent/src/modes/rpc/rpc-desktop-contract.ts";
+
+export type ThinkingLevel = "off" | "minimal" | "low" | "medium" | "high" | "xhigh";
+export type QueueMode = "all" | "one-at-a-time";
+export type CustomModelApi = "openai-completions" | "anthropic-messages";
+
+// Backend request command types (sent via window.piDesktop.request)
+
+export interface GetStateCommand {
+  type: "get_state";
+}
+
+export interface GetMessagesCommand {
+  type: "get_messages";
+}
+
+export interface GetAvailableModelsCommand {
+  type: "get_available_models";
+}
+
+export interface GetCustomModelsCommand {
+  type: "get_custom_models";
+}
+
+export interface GetSessionStatsCommand {
+  type: "get_session_stats";
+}
+
+export interface GetCommandsCommand {
+  type: "get_commands";
+}
+
+export interface GetSessionsCommand {
+  type: "get_sessions";
+  limit?: number;
+}
+
+export interface GetAuthStatusCommand {
+  type: "get_auth_status";
+  providers: string[];
+}
+
+export interface PromptCommand {
+  type: "prompt";
+  message: string;
+}
+
+export interface AbortCommand {
+  type: "abort";
+}
+
+export interface NewSessionCommand {
+  type: "new_session";
+}
+
+export interface SwitchSessionCommand {
+  type: "switch_session";
+  sessionPath: string;
+}
+
+export interface SetModelCommand {
+  type: "set_model";
+  provider: string;
+  modelId: string;
+}
+
+export interface CycleModelCommand {
+  type: "cycle_model";
+}
+
+// Thinking
+
+export interface SetThinkingLevelCommand {
+  type: "set_thinking_level";
+  level: ThinkingLevel;
+}
+
+export interface CycleThinkingLevelCommand {
+  type: "cycle_thinking_level";
+}
+
+// Queue modes
+
+export interface SetSteeringModeCommand {
+  type: "set_steering_mode";
+  mode: QueueMode;
+}
+
+export interface SetFollowUpModeCommand {
+  type: "set_follow_up_mode";
+  mode: QueueMode;
+}
+
+// Compaction & retry
+
+export interface CompactCommand {
+  type: "compact";
+  customInstructions?: string;
+}
+
+export interface SetAutoCompactionCommand {
+  type: "set_auto_compaction";
+  enabled: boolean;
+}
+
+export interface SetAutoRetryCommand {
+  type: "set_auto_retry";
+  enabled: boolean;
+}
+
+export interface AbortRetryCommand {
+  type: "abort_retry";
+}
+
+// API key management
+
+export interface SetApiKeyCommand {
+  type: "set_api_key";
+  provider: string;
+  apiKey: string;
+}
+
+export interface RemoveApiKeyCommand {
+  type: "remove_api_key";
+  provider: string;
+}
+
+// Model testing
+
+export interface TestModelCommand {
+  type: "test_model";
+  provider: string;
+  modelId: string;
+}
+
+export interface TestCustomModelCommand {
+  type: "test_custom_model";
+  provider: string;
+  baseUrl: string;
+  api: CustomModelApi;
+  apiKey?: string;
+  headers?: Record<string, string>;
+  modelId: string;
+  useStoredAuthProvider?: string;
+  preserveHeadersFromProvider?: string;
+}
+
+// Custom model CRUD
+
+export interface UpsertCustomModelCommand {
+  type: "upsert_custom_model";
+  provider: string;
+  baseUrl: string;
+  api: CustomModelApi;
+  apiKey?: string;
+  headers?: Record<string, string>;
+  replaceModelId?: string;
+  model: {
+    id: string;
+    name?: string;
+    reasoning?: boolean;
+    input?: ("text" | "image")[];
+    contextWindow?: number;
+    maxTokens?: number;
+  };
+}
+
+export interface RemoveCustomModelCommand {
+  type: "remove_custom_model";
+  provider: string;
+  modelId: string;
+  removeAuthWhenEmpty?: boolean;
+}
+
+export interface ReplaceCustomModelsCommand {
+  type: "replace_custom_models";
+  providers: Record<string, unknown>;
+}
+
+// Session management
+
+export interface SetSessionNameCommand {
+  type: "set_session_name";
+  name: string;
+}
+
+export interface ExportHtmlCommand {
+  type: "export_html";
+  outputPath?: string;
+}
+
+export interface ForkCommand {
+  type: "fork";
+  entryId: string;
+}
+
+export interface CloneCommand {
+  type: "clone";
+}
+
+export interface GetForkMessagesCommand {
+  type: "get_fork_messages";
+}
+
+export interface GetEntriesCommand {
+  type: "get_entries";
+  sinceEntryId?: string;
+}
+
+export interface GetTreeCommand {
+  type: "get_tree";
+}
+
+export interface GetLastAssistantTextCommand {
+  type: "get_last_assistant_text";
+}
+
+// Bash
+
+export interface BashCommand {
+  type: "bash";
+  command: string;
+  excludeFromContext?: boolean;
+}
+
+export interface AbortBashCommand {
+  type: "abort_bash";
+}
+
+// Steering / follow-up
+
+export interface SteerCommand {
+  type: "steer";
+  message: string;
+}
+
+export interface FollowUpCommand {
+  type: "follow_up";
+  message: string;
+}
+
+export type BackendCommand =
+  | GetStateCommand
+  | GetMessagesCommand
+  | GetAvailableModelsCommand
+  | GetCustomModelsCommand
+  | GetSessionStatsCommand
+  | GetCommandsCommand
+  | GetSessionsCommand
+  | GetAuthStatusCommand
+  | PromptCommand
+  | AbortCommand
+  | NewSessionCommand
+  | SwitchSessionCommand
+  | SetModelCommand
+  | CycleModelCommand
+  | SetThinkingLevelCommand
+  | CycleThinkingLevelCommand
+  | SetSteeringModeCommand
+  | SetFollowUpModeCommand
+  | CompactCommand
+  | SetAutoCompactionCommand
+  | SetAutoRetryCommand
+  | AbortRetryCommand
+  | SetApiKeyCommand
+  | RemoveApiKeyCommand
+  | TestModelCommand
+  | TestCustomModelCommand
+  | UpsertCustomModelCommand
+  | RemoveCustomModelCommand
+  | ReplaceCustomModelsCommand
+  | SetSessionNameCommand
+  | ExportHtmlCommand
+  | ForkCommand
+  | CloneCommand
+  | GetForkMessagesCommand
+  | GetEntriesCommand
+  | GetTreeCommand
+  | GetLastAssistantTextCommand
+  | BashCommand
+  | AbortBashCommand
+  | SteerCommand
+  | FollowUpCommand;
+
+// Fire-and-forget commands (sent via window.piDesktop.send)
+
+export interface ExtensionUIResponseCommand {
+  type: "extension_ui_response";
+  id: string;
+  [key: string]: unknown;
+}
+
+export type BackendSendCommand = ExtensionUIResponseCommand;
+
+// Backend event types (received via onEvent).
+//
+// The wire union is defined by the backend as RpcBackendEventDTO. The renderer
+// only needs to discriminate on `type`, so BackendEvent is that union directly.
+
+export type BackendEvent = RpcBackendEventDTO;
+
+export type ExtensionUIRequestEvent = RpcExtensionUIRequestEventDTO;
+
+// Domain models. These are re-exported straight from the backend wire contract
+// so field names match exactly what crosses stdio (e.g. Model.id, not modelId;
+// Message.content is a content-block array, not a string).
+
+export type Message = RpcAgentMessageDTO;
+export type ToolCall = RpcToolCallDTO;
+export type AssistantContentBlock = RpcAssistantContentBlockDTO;
+export type Model = RpcModelDTO;
+export type AuthStatus = RpcAuthStatusDTO;
+export type SessionInfo = RpcSessionInfoDTO;
+export type SessionState = RpcSessionStateDTO;
+export type SessionStats = RpcSessionStatsDTO;
+export type SlashCommand = RpcSlashCommandDTO;
+export type CustomModelsConfig = RpcCustomModelsConfigDTO;
+
+// Backend status (from getBackendStatus / onStatus)
+
+export interface BackendStatus {
+  ready: boolean;
+  starting: boolean;
+  restarting: boolean;
+  retryInMs: number;
+  restartAttempts: number;
+  backendPath: string;
+  cwd: string;
+  error?: string;
+}
+
+export interface LogEntry {
+  level: string;
+  message: string;
+}

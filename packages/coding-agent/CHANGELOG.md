@@ -2,6 +2,14 @@
 
 ## [Unreleased]
 
+### Added
+
+- Added `pi-studio-dark` and `pi-studio-light` built-in themes.
+
+### Changed
+
+- Refined HTML session export styling with Pi Studio surfaces, borders, and elevation.
+
 ## [0.80.3] - 2026-06-30
 
 ### New Features

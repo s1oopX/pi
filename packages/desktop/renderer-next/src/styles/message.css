@@ -1,0 +1,230 @@
+/* Message bubbles */
+
+.message-bubble {
+  padding: 12px 16px;
+  border-radius: var(--radius);
+  max-width: 100%;
+}
+
+.message-user {
+  background: var(--surface);
+}
+
+.message-assistant {
+  background: transparent;
+}
+
+.message-role {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--muted);
+  text-transform: uppercase;
+  letter-spacing: 0.3px;
+  margin-bottom: 6px;
+}
+
+.message-content {
+  font-size: 14px;
+  line-height: 1.6;
+  word-wrap: break-word;
+  overflow-wrap: break-word;
+}
+
+.message-content p {
+  margin: 0 0 8px;
+}
+
+.message-content p:last-child {
+  margin-bottom: 0;
+}
+
+.message-content ul,
+.message-content ol {
+  margin: 4px 0 8px;
+  padding-left: 20px;
+}
+
+.message-content li {
+  margin-bottom: 4px;
+}
+
+.message-content h1,
+.message-content h2,
+.message-content h3,
+.message-content h4 {
+  margin: 16px 0 8px;
+  font-weight: 600;
+}
+
+.message-content h1 { font-size: 1.4em; }
+.message-content h2 { font-size: 1.2em; }
+.message-content h3 { font-size: 1.1em; }
+
+.message-content blockquote {
+  margin: 8px 0;
+  padding: 4px 12px;
+  border-left: 3px solid var(--border);
+  color: var(--muted);
+}
+
+.inline-code {
+  font-family: var(--font-mono);
+  font-size: 0.9em;
+  padding: 2px 5px;
+  border-radius: 3px;
+  background: var(--surface);
+}
+
+/* Code blocks */
+
+.code-block {
+  margin: 8px 0;
+  border-radius: var(--radius);
+  overflow: hidden;
+  border: 1px solid var(--border);
+}
+
+.code-block-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 6px 12px;
+  background: var(--surface);
+  border-bottom: 1px solid var(--border);
+}
+
+.code-block-lang {
+  font-size: 11px;
+  font-family: var(--font-mono);
+  color: var(--muted);
+}
+
+.code-block-copy {
+  font-size: 11px;
+  color: var(--muted);
+  cursor: pointer;
+  padding: 2px 6px;
+  border-radius: var(--radius-sm);
+  transition: background var(--transition), color var(--transition);
+}
+
+.code-block-copy:hover {
+  background: var(--border);
+  color: var(--text);
+}
+
+.code-block-body {
+  overflow-x: auto;
+  font-family: var(--font-mono);
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+.code-block-body pre {
+  margin: 0;
+  padding: 12px 16px;
+}
+
+.code-block-body code {
+  font-family: inherit;
+}
+
+.code-block-fallback {
+  padding: 12px 16px;
+  margin: 0;
+  white-space: pre-wrap;
+}
+
+/* Tool call parts */
+
+.tool-call-part {
+  margin: 8px 0;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  overflow: hidden;
+}
+
+.tool-call-header {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 12px;
+  background: var(--surface);
+  border-bottom: 1px solid var(--border);
+  font-size: 12px;
+  color: var(--muted);
+}
+
+.tool-call-icon {
+  font-size: 14px;
+}
+
+.tool-call-name {
+  font-family: var(--font-mono);
+  font-weight: 500;
+}
+
+.tool-call-result {
+  padding: 0;
+}
+
+/* Bash execution */
+
+.bash-execution {
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  overflow: hidden;
+}
+
+.bash-execution-header {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 12px;
+  background: var(--surface);
+  border-bottom: 1px solid var(--border);
+  font-size: 12px;
+  color: var(--muted);
+}
+
+.bash-icon {
+  font-family: var(--font-mono);
+  font-weight: 700;
+  color: var(--success);
+}
+
+.bash-execution-output {
+  margin: 0;
+  padding: 10px 12px;
+  font-family: var(--font-mono);
+  font-size: 12px;
+  line-height: 1.5;
+  white-space: pre-wrap;
+  word-break: break-all;
+  overflow-x: auto;
+  background: var(--main-bg);
+}
+
+/* Message role variants */
+
+.message-toolResult {
+  padding: 8px 16px;
+}
+
+.message-bashExecution {
+  padding: 8px 16px;
+}
+
+/* Shiki theme toggle via color-scheme */
+.code-block-body .shiki,
+.code-block-body .shiki span {
+  color: var(--shiki-dark) !important;
+  background-color: transparent !important;
+}
+
+@media (prefers-color-scheme: light) {
+  .code-block-body .shiki,
+  .code-block-body .shiki span {
+    color: var(--shiki-light) !important;
+  }
+}

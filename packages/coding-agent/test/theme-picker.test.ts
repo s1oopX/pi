@@ -48,4 +48,16 @@ describe("theme picker", () => {
 		expect(getAvailableThemesWithPaths()).toContainEqual({ name: "bar", path: themePath });
 		expect(getAvailableThemesWithPaths().some((theme) => theme.name === "foo")).toBe(false);
 	});
+
+	it("includes Pi Studio themes as built-ins", () => {
+		expect(getAvailableThemes()).toEqual(
+			expect.arrayContaining(["dark", "light", "pi-studio-dark", "pi-studio-light"]),
+		);
+		expect(getAvailableThemesWithPaths()).toEqual(
+			expect.arrayContaining([
+				expect.objectContaining({ name: "pi-studio-dark" }),
+				expect.objectContaining({ name: "pi-studio-light" }),
+			]),
+		);
+	});
 });

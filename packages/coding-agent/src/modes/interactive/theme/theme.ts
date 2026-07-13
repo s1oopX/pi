@@ -426,16 +426,17 @@ export class Theme {
 // ============================================================================
 
 let BUILTIN_THEMES: Record<string, ThemeJson> | undefined;
+const BUILTIN_THEME_NAMES = ["dark", "light", "pi-studio-dark", "pi-studio-light"] as const;
 
 function getBuiltinThemes(): Record<string, ThemeJson> {
 	if (!BUILTIN_THEMES) {
 		const themesDir = getThemesDir();
-		const darkPath = path.join(themesDir, "dark.json");
-		const lightPath = path.join(themesDir, "light.json");
-		BUILTIN_THEMES = {
-			dark: JSON.parse(fs.readFileSync(darkPath, "utf-8")) as ThemeJson,
-			light: JSON.parse(fs.readFileSync(lightPath, "utf-8")) as ThemeJson,
-		};
+		const themes: Record<string, ThemeJson> = {};
+		for (const name of BUILTIN_THEME_NAMES) {
+			const themePath = path.join(themesDir, `${name}.json`);
+			themes[name] = JSON.parse(fs.readFileSync(themePath, "utf-8")) as ThemeJson;
+		}
+		BUILTIN_THEMES = themes;
 	}
 	return BUILTIN_THEMES;
 }
@@ -877,7 +878,7 @@ function startThemeWatcher(): void {
 	stopThemeWatcher();
 
 	// Only watch if it's a custom theme (not built-in)
-	if (!currentThemeName || currentThemeName === "dark" || currentThemeName === "light") {
+	if (!currentThemeName || Object.hasOwn(getBuiltinThemes(), currentThemeName)) {
 		return;
 	}
 

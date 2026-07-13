@@ -12,6 +12,10 @@
  */
 
 import * as crypto from "node:crypto";
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { dirname } from "node:path";
+import { type Api, completeSimple, type Model } from "@earendil-works/pi-ai/compat";
+import { getModelsPath } from "../../config.ts";
 import type { AgentSessionRuntime } from "../../core/agent-session-runtime.ts";
 import type {
 	ExtensionUIContext,
@@ -25,9 +29,19 @@ import {
 	waitForRawStdoutBackpressure,
 	writeRawStdout,
 } from "../../core/output-guard.ts";
+import { SessionManager } from "../../core/session-manager.ts";
 import { killTrackedDetachedChildren } from "../../utils/shell.ts";
 import { type Theme, theme } from "../interactive/theme/theme.ts";
 import { attachJsonlLineReader, serializeJsonLine } from "./jsonl.ts";
+import type {
+	RpcGetAuthStatusDataDTO,
+	RpcGetAvailableModelsDataDTO,
+	RpcGetCommandsDataDTO,
+	RpcGetCustomModelsDataDTO,
+	RpcGetMessagesDataDTO,
+	RpcSessionStateDTO,
+	RpcSessionStatsDTO,
+} from "./rpc-desktop-contract.ts";
 import type {
 	RpcCommand,
 	RpcExtensionUIRequest,
@@ -45,6 +59,254 @@ export type {
 	RpcResponse,
 	RpcSessionState,
 } from "./rpc-types.ts";
+
+type CustomModelsConfig = {
+	providers: Record<
+		string,
+		{
+			baseUrl?: string;
+			headers?: Record<string, string>;
+			api?: string;
+			apiKey?: string;
+			models?: Array<{
+				id: string;
+				name?: string;
+				api?: string;
+				reasoning?: boolean;
+				input?: ("text" | "image")[];
+				contextWindow?: number;
+				maxTokens?: number;
+				cost?: { input: number; output: number; cacheRead: number; cacheWrite: number };
+			}>;
+		}
+	>;
+};
+
+const REDACTED_CONFIG_VALUE = "<redacted>";
+
+function isSensitiveHeader(name: string): boolean {
+	return /authorization|api[-_]?key|token|secret|cookie/i.test(name);
+}
+
+function sanitizeCustomModelsConfig(config: CustomModelsConfig): CustomModelsConfig {
+	return {
+		providers: Object.fromEntries(
+			Object.entries(config.providers).map(([provider, providerConfig]) => {
+				const { apiKey: _apiKey, headers, ...safeConfig } = providerConfig;
+				return [
+					provider,
+					{
+						...safeConfig,
+						...(headers
+							? {
+									headers: Object.fromEntries(
+										Object.entries(headers).map(([name, value]) => [
+											name,
+											isSensitiveHeader(name) ? REDACTED_CONFIG_VALUE : value,
+										]),
+									),
+								}
+							: {}),
+					},
+				];
+			}),
+		),
+	};
+}
+
+function mergeRedactedHeaders(
+	incoming: Record<string, string> | undefined,
+	existing: Record<string, string> | undefined,
+): Record<string, string> | undefined {
+	if (!incoming) return undefined;
+	const existingByName = new Map(Object.entries(existing || {}).map(([name, value]) => [name.toLowerCase(), value]));
+	return Object.fromEntries(
+		Object.entries(incoming).map(([name, value]) => [
+			name,
+			value === REDACTED_CONFIG_VALUE ? existingByName.get(name.toLowerCase()) || value : value,
+		]),
+	);
+}
+
+function validateImportedCustomModels(providers: Record<string, unknown>): CustomModelsConfig {
+	const entries = Object.entries(providers);
+	if (entries.length > 100) throw new Error("A backup may contain at most 100 providers");
+	const validated: CustomModelsConfig = { providers: {} };
+	let modelCount = 0;
+	for (const [rawProvider, rawConfig] of entries) {
+		const provider = normalizeProviderId(rawProvider);
+		if (
+			!provider ||
+			provider !== rawProvider ||
+			!rawConfig ||
+			typeof rawConfig !== "object" ||
+			Array.isArray(rawConfig)
+		) {
+			throw new Error(`Invalid provider entry: ${rawProvider}`);
+		}
+		const config = rawConfig as Record<string, unknown>;
+		const baseUrl = typeof config.baseUrl === "string" ? config.baseUrl.trim() : "";
+		let parsedUrl: URL;
+		try {
+			parsedUrl = new URL(baseUrl);
+		} catch {
+			throw new Error(`Invalid base URL for provider ${provider}`);
+		}
+		if (!["http:", "https:"].includes(parsedUrl.protocol)) {
+			throw new Error(`Base URL for provider ${provider} must use HTTP or HTTPS`);
+		}
+		const api = config.api;
+		if (api !== "openai-completions" && api !== "anthropic-messages") {
+			throw new Error(`Invalid API protocol for provider ${provider}`);
+		}
+		let headers: Record<string, string> | undefined;
+		if (config.headers !== undefined) {
+			if (!config.headers || typeof config.headers !== "object" || Array.isArray(config.headers)) {
+				throw new Error(`Invalid headers for provider ${provider}`);
+			}
+			const headerEntries = Object.entries(config.headers);
+			if (headerEntries.length > 50) throw new Error(`Too many headers for provider ${provider}`);
+			headers = Object.fromEntries(
+				headerEntries.map(([name, value]) => {
+					if (!name.trim() || typeof value !== "string" || name.length > 200 || value.length > 4000) {
+						throw new Error(`Invalid header for provider ${provider}`);
+					}
+					if (isSensitiveHeader(name) || value === REDACTED_CONFIG_VALUE) {
+						throw new Error(`Backup files cannot contain credentials (${provider}: ${name})`);
+					}
+					return [name, value];
+				}),
+			);
+		}
+		if (!Array.isArray(config.models) || config.models.length === 0 || config.models.length > 200) {
+			throw new Error(`Provider ${provider} must contain between 1 and 200 models`);
+		}
+		const models = config.models.map((rawModel) => {
+			if (!rawModel || typeof rawModel !== "object" || Array.isArray(rawModel)) {
+				throw new Error(`Invalid model for provider ${provider}`);
+			}
+			const model = rawModel as Record<string, unknown>;
+			const id = typeof model.id === "string" ? model.id.trim() : "";
+			const contextWindow = Number(model.contextWindow ?? 128000);
+			const maxTokens = Number(model.maxTokens ?? 16384);
+			if (!id || id.length > 300) throw new Error(`Invalid model id for provider ${provider}`);
+			if (
+				!Number.isFinite(contextWindow) ||
+				!Number.isFinite(maxTokens) ||
+				contextWindow <= 0 ||
+				maxTokens <= 0 ||
+				maxTokens > contextWindow
+			) {
+				throw new Error(`Invalid token limits for ${provider}/${id}`);
+			}
+			const input = Array.isArray(model.input) ? model.input : ["text"];
+			if (input.some((value) => value !== "text" && value !== "image")) {
+				throw new Error(`Invalid input capabilities for ${provider}/${id}`);
+			}
+			modelCount += 1;
+			if (modelCount > 500) throw new Error("A backup may contain at most 500 models");
+			return {
+				id,
+				...(typeof model.name === "string" && model.name.trim() ? { name: model.name.trim().slice(0, 300) } : {}),
+				api,
+				reasoning: Boolean(model.reasoning),
+				input: [...new Set(input)] as ("text" | "image")[],
+				contextWindow,
+				maxTokens,
+				cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
+			};
+		});
+		validated.providers[provider] = {
+			baseUrl: parsedUrl.toString().replace(/\/$/, ""),
+			api,
+			...(headers && Object.keys(headers).length > 0 ? { headers } : {}),
+			models,
+		};
+	}
+	return validated;
+}
+
+function readCustomModelsConfig(): CustomModelsConfig {
+	const path = getModelsPath();
+	if (!existsSync(path)) {
+		return { providers: {} };
+	}
+	const parsed = JSON.parse(readFileSync(path, "utf-8")) as Partial<CustomModelsConfig>;
+	return {
+		providers: parsed.providers && typeof parsed.providers === "object" ? parsed.providers : {},
+	};
+}
+
+function writeCustomModelsConfig(config: CustomModelsConfig): void {
+	const path = getModelsPath();
+	mkdirSync(dirname(path), { recursive: true });
+	writeFileSync(path, `${JSON.stringify(config, null, 2)}\n`, { encoding: "utf-8", mode: 0o600 });
+}
+
+function normalizeProviderId(value: string): string {
+	return value
+		.trim()
+		.toLowerCase()
+		.replace(/[^a-z0-9._-]+/g, "-")
+		.replace(/^-+|-+$/g, "");
+}
+
+function classifyConnectionError(
+	message: string,
+): "auth" | "endpoint" | "model" | "rate_limit" | "timeout" | "protocol" | "unknown" {
+	const text = message.toLowerCase();
+	if (/401|403|api.?key|unauthori[sz]ed|forbidden|authentication/.test(text)) return "auth";
+	if (/404|not found|enotfound|econnrefused|network|fetch failed|dns/.test(text)) return "endpoint";
+	if (/model.*(not found|invalid|unknown|does not exist)|invalid.*model/.test(text)) return "model";
+	if (/429|rate.?limit|too many requests|quota/.test(text)) return "rate_limit";
+	if (/timeout|timed out|aborted/.test(text)) return "timeout";
+	if (/json|schema|parse|unexpected response|content-type|protocol/.test(text)) return "protocol";
+	return "unknown";
+}
+
+async function testModelConnection(
+	model: Model<Api>,
+	auth: { apiKey?: string; headers?: Record<string, string>; env?: Record<string, string> },
+): Promise<{
+	ok: boolean;
+	latencyMs: number;
+	category?: "auth" | "endpoint" | "model" | "rate_limit" | "timeout" | "protocol" | "unknown";
+	message?: string;
+}> {
+	const startedAt = Date.now();
+	const controller = new AbortController();
+	const timeout = setTimeout(() => controller.abort(), 20000);
+	try {
+		const response = await completeSimple(
+			model,
+			{ messages: [{ role: "user", content: "Reply with OK.", timestamp: Date.now() }] },
+			{
+				apiKey: auth.apiKey,
+				headers: auth.headers,
+				env: auth.env,
+				signal: controller.signal,
+				timeoutMs: 20000,
+				maxRetries: 0,
+			},
+		);
+		const latencyMs = Date.now() - startedAt;
+		if (response.stopReason === "error" || response.stopReason === "aborted") {
+			const message = response.errorMessage || `Request ended with ${response.stopReason}`;
+			return { ok: false, latencyMs, category: classifyConnectionError(message), message };
+		}
+		return { ok: true, latencyMs };
+	} catch (connectionError: unknown) {
+		const message = connectionError instanceof Error ? connectionError.message : String(connectionError);
+		return {
+			ok: false,
+			latencyMs: Date.now() - startedAt,
+			category: classifyConnectionError(message),
+			message,
+		};
+	} finally {
+		clearTimeout(timeout);
+	}
+}
 
 /**
  * Run in RPC mode.
@@ -440,7 +702,7 @@ export async function runRpcMode(runtimeHost: AgentSessionRuntime): Promise<neve
 			// =================================================================
 
 			case "get_state": {
-				const state: RpcSessionState = {
+				const state = {
 					model: session.model,
 					thinkingLevel: session.thinkingLevel,
 					isStreaming: session.isStreaming,
@@ -453,7 +715,7 @@ export async function runRpcMode(runtimeHost: AgentSessionRuntime): Promise<neve
 					autoCompactionEnabled: session.autoCompactionEnabled,
 					messageCount: session.messages.length,
 					pendingMessageCount: session.pendingMessageCount,
-				};
+				} satisfies RpcSessionState satisfies RpcSessionStateDTO;
 				return success(id, "get_state", state);
 			}
 
@@ -481,7 +743,235 @@ export async function runRpcMode(runtimeHost: AgentSessionRuntime): Promise<neve
 
 			case "get_available_models": {
 				const models = await session.modelRegistry.getAvailable();
-				return success(id, "get_available_models", { models });
+				return success(id, "get_available_models", { models } satisfies RpcGetAvailableModelsDataDTO);
+			}
+
+			case "get_auth_status": {
+				const providers =
+					command.providers && command.providers.length > 0
+						? command.providers
+						: [...new Set((await session.modelRegistry.getAvailable()).map((model) => model.provider))];
+				const statuses = Object.fromEntries(
+					providers.map((provider) => [provider, session.modelRegistry.getProviderAuthStatus(provider)]),
+				);
+				return success(id, "get_auth_status", { providers: statuses } satisfies RpcGetAuthStatusDataDTO);
+			}
+
+			case "set_api_key": {
+				const provider = command.provider.trim();
+				const apiKey = command.apiKey.trim();
+				if (!provider) {
+					return error(id, "set_api_key", "Provider is required");
+				}
+				if (!apiKey) {
+					return error(id, "set_api_key", "API key is required");
+				}
+				session.modelRegistry.authStorage.set(provider, { type: "api_key", key: apiKey });
+				return success(id, "set_api_key", {
+					provider,
+					status: session.modelRegistry.getProviderAuthStatus(provider),
+				});
+			}
+
+			case "remove_api_key": {
+				const provider = command.provider.trim();
+				if (!provider) {
+					return error(id, "remove_api_key", "Provider is required");
+				}
+				session.modelRegistry.authStorage.remove(provider);
+				return success(id, "remove_api_key", {
+					provider,
+					status: session.modelRegistry.getProviderAuthStatus(provider),
+				});
+			}
+
+			case "get_custom_models": {
+				const config = readCustomModelsConfig();
+				return success(id, "get_custom_models", {
+					path: getModelsPath(),
+					providers: sanitizeCustomModelsConfig(config).providers,
+				} satisfies RpcGetCustomModelsDataDTO);
+			}
+
+			case "replace_custom_models": {
+				const config = validateImportedCustomModels(command.providers);
+				writeCustomModelsConfig(config);
+				session.modelRegistry.refresh();
+				const models = Object.values(config.providers).reduce(
+					(count, provider) => count + (provider.models?.length || 0),
+					0,
+				);
+				return success(id, "replace_custom_models", {
+					path: getModelsPath(),
+					providers: Object.keys(config.providers).length,
+					models,
+				});
+			}
+
+			case "test_model": {
+				const provider = normalizeProviderId(command.provider);
+				const model = session.modelRegistry.find(provider, command.modelId.trim());
+				if (!model) {
+					return success(id, "test_model", {
+						ok: false,
+						latencyMs: 0,
+						category: "model" as const,
+						message: `Model not found: ${provider}/${command.modelId.trim()}`,
+					});
+				}
+				const auth = await session.modelRegistry.getApiKeyAndHeaders(model);
+				if (!auth.ok || !auth.apiKey) {
+					return success(id, "test_model", {
+						ok: false,
+						latencyMs: 0,
+						category: "auth" as const,
+						message: auth.ok ? `No API key found for "${provider}"` : auth.error,
+					});
+				}
+				return success(id, "test_model", await testModelConnection(model, auth));
+			}
+
+			case "test_custom_model": {
+				const provider = normalizeProviderId(command.provider);
+				const modelId = command.modelId.trim();
+				let baseUrl: URL;
+				try {
+					baseUrl = new URL(command.baseUrl.trim());
+				} catch {
+					return success(id, "test_custom_model", {
+						ok: false,
+						latencyMs: 0,
+						category: "endpoint" as const,
+						message: "Base URL is not a valid URL",
+					});
+				}
+				if (!provider || !modelId || !["http:", "https:"].includes(baseUrl.protocol)) {
+					return success(id, "test_custom_model", {
+						ok: false,
+						latencyMs: 0,
+						category: "endpoint" as const,
+						message:
+							!provider || !modelId ? "Provider and model id are required" : "Base URL must use HTTP or HTTPS",
+					});
+				}
+
+				const model: Model<"openai-completions" | "anthropic-messages"> = {
+					id: modelId,
+					name: modelId,
+					api: command.api,
+					provider,
+					baseUrl: baseUrl.toString().replace(/\/$/, ""),
+					reasoning: false,
+					input: ["text"],
+					cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
+					contextWindow: 4096,
+					maxTokens: 8,
+				};
+				const preservedProvider = command.preserveHeadersFromProvider
+					? readCustomModelsConfig().providers[normalizeProviderId(command.preserveHeadersFromProvider)]
+					: undefined;
+				const headers = mergeRedactedHeaders(command.headers, preservedProvider?.headers);
+				let apiKey = command.apiKey?.trim() || undefined;
+				let env: Record<string, string> | undefined;
+				let storedHeaders: Record<string, string> | undefined;
+				if (!apiKey && command.useStoredAuthProvider) {
+					const storedAuth = await session.modelRegistry.getApiKeyAndHeaders(model);
+					if (storedAuth.ok) {
+						apiKey = storedAuth.apiKey;
+						env = storedAuth.env;
+						storedHeaders = storedAuth.headers;
+					}
+				}
+				return success(
+					id,
+					"test_custom_model",
+					await testModelConnection(model, {
+						apiKey,
+						headers: storedHeaders || headers ? { ...storedHeaders, ...headers } : undefined,
+						env,
+					}),
+				);
+			}
+
+			case "upsert_custom_model": {
+				const provider = normalizeProviderId(command.provider);
+				const baseUrl = command.baseUrl.trim();
+				const modelId = command.model.id.trim();
+				const modelName = command.model.name?.trim();
+				if (!provider) {
+					return error(id, "upsert_custom_model", "Provider id is required");
+				}
+				if (!baseUrl) {
+					return error(id, "upsert_custom_model", "Base URL is required");
+				}
+				if (!modelId) {
+					return error(id, "upsert_custom_model", "Model id is required");
+				}
+
+				const config = readCustomModelsConfig();
+				const providerConfig = config.providers[provider] ?? {};
+				const { headers: _oldHeaders, ...providerConfigWithoutHeaders } = providerConfig;
+				const existingModels = Array.isArray(providerConfig.models) ? providerConfig.models : [];
+				const incomingHeaders =
+					command.headers && typeof command.headers === "object"
+						? Object.fromEntries(
+								Object.entries(command.headers).filter(
+									([key, value]) => key.trim() && typeof value === "string",
+								),
+							)
+						: undefined;
+				const headers = mergeRedactedHeaders(incomingHeaders, _oldHeaders);
+				const input: ("text" | "image")[] = command.model.input?.length ? command.model.input : ["text"];
+				const model = {
+					id: modelId,
+					...(modelName ? { name: modelName } : {}),
+					api: command.api,
+					reasoning: Boolean(command.model.reasoning),
+					input,
+					contextWindow:
+						command.model.contextWindow && command.model.contextWindow > 0 ? command.model.contextWindow : 128000,
+					maxTokens: command.model.maxTokens && command.model.maxTokens > 0 ? command.model.maxTokens : 16384,
+					cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
+				};
+
+				config.providers[provider] = {
+					...providerConfigWithoutHeaders,
+					baseUrl,
+					...(headers && Object.keys(headers).length > 0 ? { headers } : {}),
+					api: command.api,
+					models: [
+						...existingModels.filter((item) => item.id !== modelId && item.id !== command.replaceModelId?.trim()),
+						model,
+					],
+				};
+				writeCustomModelsConfig(config);
+				if (command.apiKey?.trim()) {
+					session.modelRegistry.authStorage.set(provider, { type: "api_key", key: command.apiKey.trim() });
+				}
+				session.modelRegistry.refresh();
+				return success(id, "upsert_custom_model", { path: getModelsPath(), provider, modelId });
+			}
+
+			case "remove_custom_model": {
+				const provider = normalizeProviderId(command.provider);
+				const modelId = command.modelId.trim();
+				if (!provider || !modelId) {
+					return error(id, "remove_custom_model", "Provider and model id are required");
+				}
+				const config = readCustomModelsConfig();
+				const providerConfig = config.providers[provider];
+				if (providerConfig?.models) {
+					providerConfig.models = providerConfig.models.filter((model) => model.id !== modelId);
+					if (providerConfig.models.length === 0) {
+						delete config.providers[provider];
+						if (command.removeAuthWhenEmpty) {
+							session.modelRegistry.authStorage.remove(provider);
+						}
+					}
+					writeCustomModelsConfig(config);
+					session.modelRegistry.refresh();
+				}
+				return success(id, "remove_custom_model", { path: getModelsPath(), provider, modelId });
 			}
 
 			// =================================================================
@@ -565,12 +1055,23 @@ export async function runRpcMode(runtimeHost: AgentSessionRuntime): Promise<neve
 
 			case "get_session_stats": {
 				const stats = session.getSessionStats();
-				return success(id, "get_session_stats", stats);
+				return success(id, "get_session_stats", stats satisfies RpcSessionStatsDTO);
 			}
 
 			case "export_html": {
 				const path = await session.exportToHtml(command.outputPath);
 				return success(id, "export_html", { path });
+			}
+
+			case "get_sessions": {
+				const limit = Math.max(1, Math.min(command.limit ?? 40, 200));
+				const sessions = command.all
+					? await SessionManager.listAll(session.sessionManager.getSessionDir())
+					: await SessionManager.list(session.sessionManager.getCwd(), session.sessionManager.getSessionDir());
+				// Not `satisfies RpcGetSessionsDataDTO`: SessionInfo.created/modified are Date
+				// instances here that serialize to ISO strings on the wire, so the in-memory
+				// object intentionally doesn't match the (post-serialization) DTO.
+				return success(id, "get_sessions", { sessions: sessions.slice(0, limit) });
 			}
 
 			case "switch_session": {
@@ -643,7 +1144,7 @@ export async function runRpcMode(runtimeHost: AgentSessionRuntime): Promise<neve
 			// =================================================================
 
 			case "get_messages": {
-				return success(id, "get_messages", { messages: session.messages });
+				return success(id, "get_messages", { messages: session.messages } satisfies RpcGetMessagesDataDTO);
 			}
 
 			// =================================================================
@@ -680,7 +1181,7 @@ export async function runRpcMode(runtimeHost: AgentSessionRuntime): Promise<neve
 					});
 				}
 
-				return success(id, "get_commands", { commands });
+				return success(id, "get_commands", { commands } satisfies RpcGetCommandsDataDTO);
 			}
 
 			default: {

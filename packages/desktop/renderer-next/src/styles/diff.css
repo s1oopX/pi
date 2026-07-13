@@ -1,0 +1,126 @@
+/* Diff viewer */
+
+.diff-view {
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  overflow: hidden;
+}
+
+.diff-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 6px 12px;
+  background: var(--surface);
+  border-bottom: 1px solid var(--border);
+}
+
+.diff-file-count {
+  font-size: 12px;
+  color: var(--muted);
+}
+
+.diff-format-toggle {
+  display: flex;
+  gap: 2px;
+  background: var(--app-bg);
+  border-radius: var(--radius-sm);
+  padding: 2px;
+}
+
+.diff-format-btn {
+  font-size: 11px;
+  padding: 3px 8px;
+  border-radius: 3px;
+  color: var(--muted);
+  transition: background var(--transition), color var(--transition);
+}
+
+.diff-format-btn:hover {
+  color: var(--text);
+}
+
+.diff-format-btn.active {
+  background: var(--surface);
+  color: var(--text);
+  font-weight: 500;
+}
+
+.diff-content {
+  overflow-x: auto;
+  font-family: var(--font-mono);
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.diff-empty {
+  padding: 24px;
+  text-align: center;
+  font-size: 13px;
+  color: var(--muted);
+}
+
+/* diff2html overrides for theme integration */
+
+.diff-content .d2h-wrapper {
+  border: none;
+}
+
+.diff-content .d2h-file-header {
+  background: var(--surface);
+  border-bottom: 1px solid var(--border);
+  padding: 6px 12px;
+}
+
+.diff-content .d2h-file-name {
+  font-size: 12px;
+  color: var(--text);
+}
+
+.diff-content .d2h-code-line {
+  padding: 0 12px;
+}
+
+.diff-content .d2h-code-line-ctn {
+  white-space: pre-wrap;
+  word-break: break-all;
+}
+
+@media (prefers-color-scheme: dark) {
+  .diff-content .d2h-file-header {
+    background: var(--surface);
+    color: var(--text);
+  }
+
+  .diff-content .d2h-code-linenumber {
+    color: var(--muted);
+    background: var(--app-bg);
+    border-color: var(--border);
+  }
+
+  .diff-content .d2h-code-line {
+    background: var(--main-bg);
+  }
+
+  .diff-content .d2h-ins {
+    background: rgba(46, 160, 67, 0.15);
+  }
+
+  .diff-content .d2h-del {
+    background: rgba(248, 81, 73, 0.15);
+  }
+
+  .diff-content .d2h-ins .d2h-code-line-ctn {
+    background: rgba(46, 160, 67, 0.2);
+  }
+
+  .diff-content .d2h-del .d2h-code-line-ctn {
+    background: rgba(248, 81, 73, 0.2);
+  }
+
+  .diff-content .d2h-info {
+    background: var(--surface);
+    color: var(--muted);
+    border-color: var(--border);
+  }
+}

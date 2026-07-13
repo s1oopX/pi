@@ -8,9 +8,10 @@
 import type { AgentMessage, ThinkingLevel } from "@earendil-works/pi-agent-core";
 import type { ImageContent, Model } from "@earendil-works/pi-ai";
 import type { SessionStats } from "../../core/agent-session.ts";
+import type { AuthStatus } from "../../core/auth-storage.ts";
 import type { BashResult } from "../../core/bash-executor.ts";
 import type { CompactionResult } from "../../core/compaction/index.ts";
-import type { SessionEntry, SessionTreeNode } from "../../core/session-manager.ts";
+import type { SessionEntry, SessionInfo, SessionTreeNode } from "../../core/session-manager.ts";
 import type { SourceInfo } from "../../core/source-info.ts";
 
 // ============================================================================
@@ -32,6 +33,43 @@ export type RpcCommand =
 	| { id?: string; type: "set_model"; provider: string; modelId: string }
 	| { id?: string; type: "cycle_model" }
 	| { id?: string; type: "get_available_models" }
+	| { id?: string; type: "get_auth_status"; providers?: string[] }
+	| { id?: string; type: "set_api_key"; provider: string; apiKey: string }
+	| { id?: string; type: "remove_api_key"; provider: string }
+	| { id?: string; type: "get_custom_models" }
+	| { id?: string; type: "replace_custom_models"; providers: Record<string, unknown> }
+	| { id?: string; type: "test_model"; provider: string; modelId: string }
+	| {
+			id?: string;
+			type: "test_custom_model";
+			provider: string;
+			baseUrl: string;
+			api: "openai-completions" | "anthropic-messages";
+			apiKey?: string;
+			headers?: Record<string, string>;
+			modelId: string;
+			useStoredAuthProvider?: string;
+			preserveHeadersFromProvider?: string;
+	  }
+	| {
+			id?: string;
+			type: "upsert_custom_model";
+			provider: string;
+			baseUrl: string;
+			api: "openai-completions" | "anthropic-messages";
+			apiKey?: string;
+			headers?: Record<string, string>;
+			replaceModelId?: string;
+			model: {
+				id: string;
+				name?: string;
+				reasoning?: boolean;
+				input?: ("text" | "image")[];
+				contextWindow?: number;
+				maxTokens?: number;
+			};
+	  }
+	| { id?: string; type: "remove_custom_model"; provider: string; modelId: string; removeAuthWhenEmpty?: boolean }
 
 	// Thinking
 	| { id?: string; type: "set_thinking_level"; level: ThinkingLevel }
@@ -56,6 +94,7 @@ export type RpcCommand =
 	// Session
 	| { id?: string; type: "get_session_stats" }
 	| { id?: string; type: "export_html"; outputPath?: string }
+	| { id?: string; type: "get_sessions"; all?: boolean; limit?: number }
 	| { id?: string; type: "switch_session"; sessionPath: string }
 	| { id?: string; type: "fork"; entryId: string }
 	| { id?: string; type: "clone" }
@@ -144,6 +183,79 @@ export type RpcResponse =
 			success: true;
 			data: { models: Model<any>[] };
 	  }
+	| {
+			id?: string;
+			type: "response";
+			command: "get_auth_status";
+			success: true;
+			data: { providers: Record<string, AuthStatus> };
+	  }
+	| {
+			id?: string;
+			type: "response";
+			command: "set_api_key";
+			success: true;
+			data: { provider: string; status: AuthStatus };
+	  }
+	| {
+			id?: string;
+			type: "response";
+			command: "remove_api_key";
+			success: true;
+			data: { provider: string; status: AuthStatus };
+	  }
+	| {
+			id?: string;
+			type: "response";
+			command: "get_custom_models";
+			success: true;
+			data: { path: string; providers: Record<string, unknown> };
+	  }
+	| {
+			id?: string;
+			type: "response";
+			command: "replace_custom_models";
+			success: true;
+			data: { path: string; providers: number; models: number };
+	  }
+	| {
+			id?: string;
+			type: "response";
+			command: "test_model";
+			success: true;
+			data: {
+				ok: boolean;
+				latencyMs: number;
+				category?: "auth" | "endpoint" | "model" | "rate_limit" | "timeout" | "protocol" | "unknown";
+				message?: string;
+			};
+	  }
+	| {
+			id?: string;
+			type: "response";
+			command: "test_custom_model";
+			success: true;
+			data: {
+				ok: boolean;
+				latencyMs: number;
+				category?: "auth" | "endpoint" | "model" | "rate_limit" | "timeout" | "protocol" | "unknown";
+				message?: string;
+			};
+	  }
+	| {
+			id?: string;
+			type: "response";
+			command: "upsert_custom_model";
+			success: true;
+			data: { path: string; provider: string; modelId: string };
+	  }
+	| {
+			id?: string;
+			type: "response";
+			command: "remove_custom_model";
+			success: true;
+			data: { path: string; provider: string; modelId: string };
+	  }
 
 	// Thinking
 	| { id?: string; type: "response"; command: "set_thinking_level"; success: true }
@@ -174,6 +286,7 @@ export type RpcResponse =
 	// Session
 	| { id?: string; type: "response"; command: "get_session_stats"; success: true; data: SessionStats }
 	| { id?: string; type: "response"; command: "export_html"; success: true; data: { path: string } }
+	| { id?: string; type: "response"; command: "get_sessions"; success: true; data: { sessions: SessionInfo[] } }
 	| { id?: string; type: "response"; command: "switch_session"; success: true; data: { cancelled: boolean } }
 	| { id?: string; type: "response"; command: "fork"; success: true; data: { text: string; cancelled: boolean } }
 	| { id?: string; type: "response"; command: "clone"; success: true; data: { cancelled: boolean } }
