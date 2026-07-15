@@ -28,6 +28,9 @@ contextBridge.exposeInMainWorld("piDesktop", {
 	openExternal(url) {
 		return ipcRenderer.invoke("backend:open-external", url);
 	},
+	fetchProviderModels(params) {
+		return ipcRenderer.invoke("provider:fetch-models", params);
+	},
 	writeClipboardText(text) {
 		return ipcRenderer.invoke("clipboard:write-text", text);
 	},

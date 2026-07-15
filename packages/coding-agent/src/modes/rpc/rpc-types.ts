@@ -108,7 +108,10 @@ export type RpcCommand =
 	| { id?: string; type: "get_messages" }
 
 	// Commands (available for invocation via prompt)
-	| { id?: string; type: "get_commands" };
+	| { id?: string; type: "get_commands" }
+
+	// Extension flags (runtime-settable, e.g. permission mode)
+	| { id?: string; type: "set_extension_flag"; name: string; value: boolean | string };
 
 // ============================================================================
 // RPC Slash Command (for get_commands response)

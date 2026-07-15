@@ -1,4 +1,4 @@
-import { app, BrowserWindow, clipboard, dialog, ipcMain, nativeTheme, screen, shell } from "electron";
+import { app, BrowserWindow, clipboard, dialog, ipcMain, nativeTheme, Notification, screen, shell } from "electron";
 import { spawn } from "node:child_process";
 import { existsSync, mkdirSync, readFileSync, readdirSync, statSync, writeFileSync } from "node:fs";
 import { readFile, writeFile } from "node:fs/promises";
@@ -179,6 +179,95 @@ async function openExternalSafely(url) {
 	await shell.openExternal(target.toString());
 }
 
+// Fetch the model catalog from an OpenAI/Anthropic-compatible endpoint. Runs in
+// the main process so the API key never touches the renderer origin and CORS
+// does not apply. Sends both auth header styles since compatible gateways vary.
+async function fetchProviderModels({ baseUrl, apiKey, api }) {
+	const trimmedBase = String(baseUrl ?? "").trim().replace(/\/+$/, "");
+	if (!trimmedBase) {
+		throw new Error("Base URL is required");
+	}
+	const base = new URL(trimmedBase);
+	if (!["http:", "https:"].includes(base.protocol)) {
+		throw new Error("Base URL must use HTTP or HTTPS");
+	}
+	const key = String(apiKey ?? "").trim();
+	const headers = { Accept: "application/json" };
+	if (key) {
+		if (api === "anthropic-messages") {
+			headers["x-api-key"] = key;
+			headers["anthropic-version"] = "2023-06-01";
+		} else {
+			headers.Authorization = `Bearer ${key}`;
+		}
+	}
+
+	// Endpoints differ on whether the base already includes /v1. The Anthropic
+	// SDK expects a base WITHOUT /v1 (it appends /v1/messages), while OpenAI
+	// bases usually include /v1. Try both /models and /v1/models so the user
+	// does not have to know which form this endpoint wants.
+	const stripped = trimmedBase.replace(/\/v1$/, "");
+	const candidates = [...new Set([`${trimmedBase}/models`, `${stripped}/v1/models`])];
+
+	let lastError = "";
+	for (const modelsUrl of candidates) {
+		const controller = new AbortController();
+		const timeout = setTimeout(() => controller.abort(), 20000);
+		let response;
+		try {
+			response = await fetch(modelsUrl, { method: "GET", headers, signal: controller.signal });
+		} catch (error) {
+			clearTimeout(timeout);
+			lastError = `Could not reach ${modelsUrl}: ${error instanceof Error ? error.message : String(error)}`;
+			continue;
+		}
+		clearTimeout(timeout);
+
+		if (!response.ok) {
+			let detail = "";
+			try {
+				detail = (await response.text()).slice(0, 300);
+			} catch {
+				// ignore body read failures
+			}
+			lastError = `HTTP ${response.status} from ${modelsUrl}${detail ? `: ${detail}` : ""}`;
+			continue;
+		}
+
+		let body;
+		try {
+			body = await response.json();
+		} catch {
+			lastError = `${modelsUrl} did not return valid JSON`;
+			continue;
+		}
+
+		// Accept OpenAI/Anthropic shape ({data:[...]}) or a bare array.
+		const rawList = Array.isArray(body) ? body : Array.isArray(body?.data) ? body.data : undefined;
+		if (!rawList) {
+			lastError = `Unexpected response shape from ${modelsUrl} (no data array)`;
+			continue;
+		}
+		const models = rawList
+			.map((entry) => {
+				if (typeof entry === "string") return { id: entry };
+				if (entry && typeof entry === "object" && typeof entry.id === "string") {
+					return {
+						id: entry.id,
+						name: typeof entry.display_name === "string" ? entry.display_name : undefined,
+					};
+				}
+				return undefined;
+			})
+			.filter((m) => m && m.id)
+			.slice(0, 500);
+
+		return { models };
+	}
+
+	throw new Error(lastError || "Could not fetch models from endpoint");
+}
+
 function parseBackendLine(line) {
 	if (!line.trim()) {
 		return;
@@ -199,7 +288,36 @@ function parseBackendLine(line) {
 		return;
 	}
 
+	maybeNotify(payload);
 	sendToRenderer("backend:event", payload);
+}
+
+// Surface a desktop notification when a run finishes while the window is not
+// focused, so the user can look away during long agent runs.
+function maybeNotify(payload) {
+	if (payload?.type !== "agent_end" || payload.willRetry) {
+		return;
+	}
+	if (!Notification.isSupported()) {
+		return;
+	}
+	if (mainWindow && !mainWindow.isDestroyed() && mainWindow.isFocused()) {
+		return;
+	}
+	try {
+		const notification = new Notification({
+			title: PRODUCT_NAME,
+			body: "The agent finished responding.",
+			icon: getWindowIconPath(),
+			silent: false,
+		});
+		notification.on("click", () => {
+			focusMainWindow();
+		});
+		notification.show();
+	} catch {
+		// Notifications are best-effort; ignore platform failures.
+	}
 }
 
 function handleBackendStdout(chunk) {
@@ -514,6 +632,10 @@ ipcMain.handle("backend:get-status", () => ({
 
 ipcMain.handle("backend:open-external", async (_event, url) => {
 	await openExternalSafely(url);
+});
+
+ipcMain.handle("provider:fetch-models", async (_event, params) => {
+	return fetchProviderModels(params ?? {});
 });
 
 ipcMain.handle("clipboard:write-text", (_event, text) => {

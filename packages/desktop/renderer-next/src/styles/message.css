@@ -148,11 +148,20 @@
   display: flex;
   align-items: center;
   gap: 6px;
+  width: 100%;
   padding: 6px 12px;
   background: var(--surface);
-  border-bottom: 1px solid var(--border);
   font-size: 12px;
   color: var(--muted);
+  text-align: left;
+}
+
+.tool-call-header:not(:disabled) {
+  cursor: pointer;
+}
+
+.tool-call-header:not(:disabled):hover {
+  color: var(--text);
 }
 
 .tool-call-icon {
@@ -162,6 +171,24 @@
 .tool-call-name {
   font-family: var(--font-mono);
   font-weight: 500;
+}
+
+.tool-call-chevron {
+  margin-left: auto;
+  font-size: 10px;
+}
+
+.tool-call-args {
+  margin: 0;
+  padding: 10px 12px;
+  border-top: 1px solid var(--border);
+  font-family: var(--font-mono);
+  font-size: 12px;
+  line-height: 1.5;
+  white-space: pre-wrap;
+  word-break: break-word;
+  overflow-x: auto;
+  background: var(--main-bg);
 }
 
 .tool-call-result {
@@ -227,4 +254,330 @@
   .code-block-body .shiki span {
     color: var(--shiki-light) !important;
   }
+}
+
+/* Thinking (reasoning) parts */
+.thinking-part {
+  margin: 8px 0;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  overflow: hidden;
+}
+
+.thinking-header {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  width: 100%;
+  padding: 6px 12px;
+  background: var(--surface);
+  font-size: 12px;
+  color: var(--muted);
+  text-align: left;
+  cursor: pointer;
+  transition: color var(--transition);
+}
+
+.thinking-header:hover {
+  color: var(--text);
+}
+
+.thinking-icon {
+  font-size: 12px;
+  color: var(--accent);
+}
+
+.thinking-label {
+  font-weight: 500;
+}
+
+.thinking-chevron {
+  margin-left: auto;
+  font-size: 10px;
+}
+
+.thinking-body {
+  padding: 10px 12px;
+  border-top: 1px solid var(--border);
+  background: var(--main-bg);
+  font-size: 13px;
+  line-height: 1.6;
+  color: var(--muted);
+}
+
+.thinking-body p:last-child {
+  margin-bottom: 0;
+}
+
+/* Assistant error message */
+.message-error {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  margin: 8px 0 0;
+  padding: 10px 12px;
+  border: 1px solid var(--danger);
+  border-radius: var(--radius);
+  background: rgba(229, 57, 53, 0.08);
+}
+
+.message-error-icon {
+  color: var(--danger);
+  flex-shrink: 0;
+}
+
+.message-error-text {
+  font-size: 13px;
+  line-height: 1.5;
+  color: var(--danger);
+  word-break: break-word;
+}
+
+/* Empty response note */
+.message-empty-note {
+  font-size: 13px;
+  color: var(--muted);
+  font-style: italic;
+  margin: 0;
+}
+
+/* Message copy button (hover-revealed) */
+.message-bubble .message-role {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.message-copy-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 3px;
+  border-radius: var(--radius-sm);
+  color: var(--muted);
+  opacity: 0;
+  cursor: pointer;
+  transition: opacity var(--transition), background var(--transition), color var(--transition);
+}
+
+.message-bubble:hover .message-copy-btn {
+  opacity: 1;
+}
+
+.message-copy-btn:hover {
+  background: var(--surface);
+  color: var(--text);
+}
+
+/* Reasoning block while streaming: subtle accent to draw the eye */
+.thinking-part.streaming .thinking-header {
+  color: var(--accent);
+}
+
+/* Elapsed timer in the status bar */
+.status-elapsed {
+  opacity: 0.8;
+  font-variant-numeric: tabular-nums;
+}
+
+/* Tool call status badges */
+.tool-call-status {
+  margin-left: auto;
+  font-size: 10px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.3px;
+  padding: 1px 6px;
+  border-radius: 999px;
+}
+
+.tool-call-status-done {
+  color: var(--success);
+  background: rgba(46, 160, 67, 0.12);
+}
+
+.tool-call-status-error {
+  color: var(--danger);
+  background: rgba(229, 57, 53, 0.12);
+}
+
+.tool-call-status-running {
+  color: var(--accent);
+  background: rgba(88, 128, 255, 0.12);
+}
+
+/* When a status badge is present, the chevron follows it (no auto margin). */
+.tool-call-status + .tool-call-chevron {
+  margin-left: 6px;
+}
+
+.tool-call-part.status-error {
+  border-color: var(--danger);
+}
+
+.tool-call-body {
+  border-top: 1px solid var(--border);
+}
+
+.tool-call-body .tool-call-args {
+  border-top: none;
+}
+
+.tool-call-result-output {
+  margin: 0;
+  padding: 10px 12px;
+  border-top: 1px solid var(--border);
+  font-family: var(--font-mono);
+  font-size: 12px;
+  line-height: 1.5;
+  white-space: pre-wrap;
+  word-break: break-word;
+  overflow-x: auto;
+  max-height: 320px;
+  overflow-y: auto;
+  background: var(--main-bg);
+}
+
+.tool-call-result-output.error {
+  color: var(--danger);
+}
+
+/* File changes aggregate card */
+.file-changes-card {
+  margin: 8px 0;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  overflow: hidden;
+}
+
+.file-changes-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 8px 12px;
+  background: var(--surface);
+  font-size: 13px;
+  color: var(--text);
+  text-align: left;
+  cursor: pointer;
+  transition: background var(--transition);
+}
+
+.file-changes-header:hover {
+  background: var(--border);
+}
+
+.file-changes-icon {
+  display: inline-flex;
+  color: var(--muted);
+}
+
+.file-changes-title {
+  font-weight: 600;
+}
+
+.file-changes-badge {
+  font-size: 10px;
+  font-weight: 600;
+  padding: 1px 6px;
+  border-radius: 999px;
+}
+
+.file-changes-badge.ok {
+  color: var(--success);
+  background: rgba(46, 160, 67, 0.12);
+}
+
+.file-changes-badge.error {
+  color: var(--danger);
+  background: rgba(229, 57, 53, 0.12);
+}
+
+.file-changes-chevron {
+  margin-left: auto;
+  font-size: 10px;
+  color: var(--muted);
+}
+
+.file-changes-list {
+  margin: 0;
+  padding: 6px 0;
+  list-style: none;
+}
+
+.file-changes-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 5px 12px;
+  font-size: 13px;
+}
+
+.file-changes-item-tool {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  text-transform: uppercase;
+  color: var(--muted);
+  min-width: 34px;
+}
+
+.file-changes-item-path {
+  font-family: var(--font-mono);
+  word-break: break-all;
+}
+
+.file-changes-item.error .file-changes-item-path {
+  color: var(--danger);
+}
+
+/* Inline approval card (Codex-style, in message stream) */
+.inline-approval {
+  margin: 8px 0;
+  padding: 12px 14px;
+  border: 1px solid var(--accent);
+  border-radius: var(--radius);
+  background: var(--surface);
+}
+
+.inline-approval-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+
+.inline-approval-icon {
+  display: inline-flex;
+  color: var(--accent);
+  flex-shrink: 0;
+}
+
+.inline-approval-title {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text);
+}
+
+.inline-approval-detail {
+  margin: 0 0 10px;
+  padding: 10px 12px;
+  border-radius: var(--radius-sm);
+  background: var(--main-bg);
+  border: 1px solid var(--border);
+  font-family: var(--font-mono);
+  font-size: 12px;
+  line-height: 1.5;
+  white-space: pre-wrap;
+  word-break: break-word;
+  max-height: 240px;
+  overflow-y: auto;
+}
+
+.inline-approval-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  justify-content: flex-end;
 }

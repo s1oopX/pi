@@ -259,6 +259,14 @@ export interface FollowUpCommand {
   message: string;
 }
 
+// Extension flags (e.g. permission mode)
+
+export interface SetExtensionFlagCommand {
+  type: "set_extension_flag";
+  name: string;
+  value: boolean | string;
+}
+
 export type BackendCommand =
   | GetStateCommand
   | GetMessagesCommand
@@ -300,7 +308,8 @@ export type BackendCommand =
   | BashCommand
   | AbortBashCommand
   | SteerCommand
-  | FollowUpCommand;
+  | FollowUpCommand
+  | SetExtensionFlagCommand;
 
 // Fire-and-forget commands (sent via window.piDesktop.send)
 

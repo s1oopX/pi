@@ -53,3 +53,48 @@
 .status-item {
   white-space: nowrap;
 }
+
+.context-usage {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  white-space: nowrap;
+}
+
+.context-usage-track {
+  width: 60px;
+  height: 5px;
+  border-radius: 3px;
+  background: var(--border);
+  overflow: hidden;
+}
+
+.context-usage-fill {
+  display: block;
+  height: 100%;
+  border-radius: 3px;
+  background: var(--accent);
+  transition: width 0.3s ease;
+}
+
+.context-usage.warn .context-usage-fill {
+  background: #d9930a;
+}
+
+.context-usage.critical .context-usage-fill {
+  background: #d64545;
+}
+
+.context-usage-label {
+  font-variant-numeric: tabular-nums;
+  min-width: 30px;
+  text-align: right;
+}
+
+.context-usage.warn .context-usage-label {
+  color: #d9930a;
+}
+
+.context-usage.critical .context-usage-label {
+  color: #d64545;
+}

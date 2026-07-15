@@ -1,18 +1,23 @@
 /* Composer */
 
+.composer-wrap {
+  border-top: 1px solid var(--border);
+  background: var(--app-bg);
+  box-shadow: 0 -1px 3px rgba(0, 0, 0, 0.04);
+}
+
 .composer {
   display: flex;
   align-items: flex-end;
   gap: 8px;
   padding: 12px 16px;
-  border-top: 1px solid var(--border);
-  background: var(--main-bg);
   max-width: 800px;
   margin: 0 auto;
   width: 100%;
 }
 
 .composer-input-wrap {
+  position: relative;
   flex: 1;
   display: flex;
   border: 1px solid var(--border);
@@ -88,4 +93,227 @@
 
 .composer-abort-btn:hover {
   opacity: 0.85;
+}
+
+/* Slash command / @file suggestions */
+.composer-suggestions {
+  position: absolute;
+  bottom: calc(100% + 6px);
+  left: 0;
+  right: 0;
+  max-height: 260px;
+  overflow-y: auto;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.18);
+  padding: 4px;
+  z-index: 20;
+}
+
+.composer-suggestion {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 6px 8px;
+  border-radius: calc(var(--radius) - 2px);
+  text-align: left;
+  font-size: 13px;
+  color: var(--text);
+}
+
+.composer-suggestion.active {
+  background: var(--accent);
+  color: #fff;
+}
+
+.composer-suggestion-icon {
+  flex-shrink: 0;
+  width: 16px;
+  text-align: center;
+  color: var(--muted);
+  font-weight: 600;
+}
+
+.composer-suggestion.active .composer-suggestion-icon {
+  color: #fff;
+}
+
+.composer-suggestion-label {
+  flex-shrink: 0;
+  font-weight: 500;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 45%;
+}
+
+.composer-suggestion-desc {
+  color: var(--muted);
+  font-size: 12px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.composer-suggestion.active .composer-suggestion-desc {
+  color: rgba(255, 255, 255, 0.8);
+}
+
+/* Queued messages */
+.composer-queue {
+  max-width: 800px;
+  margin: 0 auto;
+  width: 100%;
+  padding: 8px 16px 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.composer-queue-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+  color: var(--muted);
+}
+
+.composer-queue-badge {
+  flex-shrink: 0;
+  padding: 1px 6px;
+  border-radius: 4px;
+  background: var(--border);
+  color: var(--text);
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+}
+
+.composer-queue-text {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* Permission selector (Codex-style tool approval tier picker) */
+.composer-toolbar {
+  max-width: 800px;
+  margin: 0 auto;
+  width: 100%;
+  padding: 8px 16px 0;
+  display: flex;
+  align-items: center;
+}
+
+.permission-selector {
+  position: relative;
+}
+
+.permission-trigger {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 10px;
+  border-radius: 999px;
+  border: 1px solid var(--border);
+  background: var(--surface);
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--text);
+  transition: background var(--transition), border-color var(--transition);
+}
+
+.permission-trigger:hover {
+  background: var(--border);
+}
+
+.permission-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--muted);
+  flex-shrink: 0;
+}
+
+.permission-mode-full .permission-dot {
+  background: var(--danger);
+}
+
+.permission-mode-auto .permission-dot {
+  background: var(--accent);
+}
+
+.permission-mode-ask .permission-dot {
+  background: var(--success);
+}
+
+.permission-chevron {
+  font-size: 9px;
+  color: var(--muted);
+}
+
+.permission-popover {
+  position: absolute;
+  bottom: calc(100% + 6px);
+  left: 0;
+  min-width: 300px;
+  background: var(--main-bg);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.18);
+  padding: 6px;
+  z-index: 30;
+}
+
+.permission-popover-title {
+  padding: 6px 10px;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--muted);
+}
+
+.permission-option {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 8px 10px;
+  border-radius: var(--radius-sm);
+  text-align: left;
+  transition: background var(--transition);
+}
+
+.permission-option:hover {
+  background: var(--surface);
+}
+
+.permission-option.active {
+  background: var(--surface);
+}
+
+.permission-option-body {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  flex: 1;
+}
+
+.permission-option-label {
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--text);
+}
+
+.permission-option-desc {
+  font-size: 11px;
+  color: var(--muted);
+  line-height: 1.4;
+}
+
+.permission-check {
+  display: inline-flex;
+  color: var(--accent);
+  flex-shrink: 0;
 }

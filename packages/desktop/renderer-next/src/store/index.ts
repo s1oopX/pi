@@ -17,6 +17,7 @@ import * as api from "../ipc/api";
 import { type MessageEventType, reduceMessageEvent } from "./messageCursor";
 
 export type Theme = "light" | "dark" | "system";
+export type PermissionMode = "full" | "auto" | "ask";
 export type SettingsRoute =
   | null
   | "models-providers"
@@ -58,6 +59,12 @@ export interface AppState {
   isStreaming: boolean;
   activeTool: string | null;
   extensionUIRequests: ExtensionUIRequestEvent[];
+  queuedSteering: string[];
+  queuedFollowUp: string[];
+
+  // Draft text pushed into the Composer from elsewhere (e.g. empty-state cards).
+  // The Composer consumes it, prefills its local input, then clears it.
+  composerDraft: string | null;
 
   // Streaming cursor: index of the message opened by the current message_start,
   // or null when no message is actively streaming. Message events carry no
@@ -70,6 +77,11 @@ export interface AppState {
   appInfo: AppInfo | null;
   settingsRoute: SettingsRoute;
 
+  // Permission mode (tool approval tier). Lives in the backend extension
+  // runtime as a flag; this is the UI-side source of truth, persisted to
+  // localStorage and re-pushed to the backend whenever it (re)connects.
+  permissionMode: PermissionMode;
+
   // Actions
   updateBackendStatus: (status: BackendStatus) => void;
   addLog: (entry: LogEntry) => void;
@@ -79,8 +91,10 @@ export interface AppState {
   addExtensionUIRequest: (request: ExtensionUIRequestEvent) => void;
   removeExtensionUIRequest: (id: string) => void;
   setTheme: (theme: Theme) => void;
+  setPermissionMode: (mode: PermissionMode) => void;
   openSettings: (route: SettingsRoute) => void;
   closeSettings: () => void;
+  setComposerDraft: (text: string | null) => void;
   refresh: () => void;
   refreshSession: () => void;
   initialize: () => void;
@@ -88,6 +102,8 @@ export interface AppState {
 
 const MAX_LOGS = 200;
 const THEME_STORAGE_KEY = "pi-studio-theme";
+const PERMISSION_MODE_STORAGE_KEY = "pi-studio-permission-mode";
+const PERMISSION_FLAG_NAME = "permission-mode";
 
 function loadSavedTheme(): Theme {
   try {
@@ -97,12 +113,32 @@ function loadSavedTheme(): Theme {
   return "system";
 }
 
+function loadSavedPermissionMode(): PermissionMode {
+  try {
+    const saved = localStorage.getItem(PERMISSION_MODE_STORAGE_KEY);
+    if (saved === "full" || saved === "auto" || saved === "ask") return saved;
+  } catch {}
+  return "ask";
+}
+
 function applyThemeToDocument(theme: Theme): void {
   const root = document.documentElement;
   if (theme === "system") {
     root.removeAttribute("data-theme");
   } else {
     root.setAttribute("data-theme", theme);
+  }
+}
+
+// Pushes the permission mode to the backend extension runtime via the
+// set_extension_flag RPC command. Best-effort: if the backend isn't reachable
+// the local state and localStorage still reflect the user's choice, and the
+// value is re-pushed on the next ready transition.
+async function pushPermissionMode(mode: PermissionMode): Promise<void> {
+  try {
+    await api.setExtensionFlag(PERMISSION_FLAG_NAME, mode);
+  } catch {
+    // Backend not ready; will be re-pushed on next ready transition.
   }
 }
 
@@ -135,16 +171,26 @@ export const useStore = create<AppState>((set, get) => ({
   isStreaming: false,
   activeTool: null,
   extensionUIRequests: [],
+  queuedSteering: [],
+  queuedFollowUp: [],
+  composerDraft: null,
   activeMessageIndex: null,
 
   theme: loadSavedTheme(),
   appInfo: null,
   settingsRoute: null,
+  permissionMode: loadSavedPermissionMode(),
 
   updateBackendStatus(status) {
+    const wasReady = get().backendStatus.ready;
     set({ backendStatus: status });
     if (status.ready && !get().session) {
       get().refresh();
+    }
+    // The backend flag resets to its default whenever the backend (re)starts,
+    // so re-push the UI's chosen permission mode on each ready transition.
+    if (status.ready && !wasReady) {
+      void pushPermissionMode(get().permissionMode);
     }
   },
 
@@ -186,12 +232,22 @@ export const useStore = create<AppState>((set, get) => ({
     applyThemeToDocument(theme);
   },
 
+  setPermissionMode(mode) {
+    set({ permissionMode: mode });
+    try { localStorage.setItem(PERMISSION_MODE_STORAGE_KEY, mode); } catch {}
+    void pushPermissionMode(mode);
+  },
+
   openSettings(route) {
     set({ settingsRoute: route });
   },
 
   closeSettings() {
     set({ settingsRoute: null });
+  },
+
+  setComposerDraft(text) {
+    set({ composerDraft: text });
   },
 
   refresh() {

@@ -39,7 +39,10 @@ export function useBackendEvents(): void {
           store.setActiveTool(null);
           break;
         case "queue_update":
-          store.refreshSession();
+          useStore.setState({
+            queuedSteering: [...event.steering],
+            queuedFollowUp: [...event.followUp],
+          });
           break;
         case "compaction_start":
         case "compaction_end":

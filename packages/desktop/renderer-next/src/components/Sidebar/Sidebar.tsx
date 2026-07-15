@@ -1,3 +1,4 @@
+import { useState } from "react";
 import { useStore } from "../../store";
 import * as api from "../../ipc/api";
 
@@ -11,6 +12,38 @@ export function Sidebar({ collapsed, onToggle }: SidebarProps) {
   const session = useStore((s) => s.session);
   const workspaceCwd = useStore((s) => s.workspaceCwd);
   const backendStatus = useStore((s) => s.backendStatus);
+
+  const [renaming, setRenaming] = useState(false);
+  const [renameValue, setRenameValue] = useState("");
+  const [exporting, setExporting] = useState(false);
+
+  const activeSessionId = session?.sessionId;
+
+  function beginRename() {
+    setRenameValue(session?.sessionName ?? "");
+    setRenaming(true);
+  }
+
+  async function commitRename() {
+    const name = renameValue.trim();
+    setRenaming(false);
+    if (name && name !== session?.sessionName) {
+      await api.setSessionName(name);
+      useStore.getState().refreshSession();
+    }
+  }
+
+  async function handleExport() {
+    if (exporting) return;
+    setExporting(true);
+    try {
+      await api.exportHtml();
+    } catch {
+      // export errors surface via backend log stream
+    } finally {
+      setExporting(false);
+    }
+  }
 
   return (
     <aside className={`sidebar ${collapsed ? "collapsed" : ""}`} aria-label="Sidebar">
@@ -60,17 +93,39 @@ export function Sidebar({ collapsed, onToggle }: SidebarProps) {
               <span>Agents</span>
             </div>
             <div className="agent-list" role="list">
-              {sessions.map((s) => (
-                <button
-                  key={s.path}
-                  className={`agent-row ${session && "path" in session && (session as Record<string, unknown>).path === s.path ? "active" : ""}`}
-                  type="button"
-                  onClick={() => { api.switchSession(s.path); }}
-                  role="listitem"
-                >
-                  <span className="agent-row-title">{s.name ?? s.firstMessage ?? "Untitled"}</span>
-                </button>
-              ))}
+              {sessions.map((s) => {
+                const isActive = activeSessionId != null && s.id === activeSessionId;
+                if (isActive && renaming) {
+                  return (
+                    <input
+                      key={s.path}
+                      className="agent-rename-input"
+                      value={renameValue}
+                      autoFocus
+                      onChange={(e) => setRenameValue(e.target.value)}
+                      onBlur={commitRename}
+                      onKeyDown={(e) => {
+                        if (e.key === "Enter") { e.preventDefault(); commitRename(); }
+                        if (e.key === "Escape") { e.preventDefault(); setRenaming(false); }
+                      }}
+                      aria-label="Rename agent"
+                    />
+                  );
+                }
+                return (
+                  <button
+                    key={s.path}
+                    className={`agent-row ${isActive ? "active" : ""}`}
+                    type="button"
+                    onClick={() => { api.switchSession(s.path); }}
+                    onDoubleClick={() => { if (isActive) beginRename(); }}
+                    title={isActive ? "Double-click to rename" : undefined}
+                    role="listitem"
+                  >
+                    <span className="agent-row-title">{s.name ?? s.firstMessage ?? "Untitled"}</span>
+                  </button>
+                );
+              })}
               {sessions.length === 0 && (
                 <div className="agent-empty-state">No agents yet</div>
               )}
@@ -78,6 +133,21 @@ export function Sidebar({ collapsed, onToggle }: SidebarProps) {
           </div>
 
           <div className="sidebar-footer">
+            {session && (
+              <button
+                className="sidebar-action-btn"
+                type="button"
+                onClick={handleExport}
+                disabled={exporting}
+                title="Export this session to HTML"
+              >
+                <svg viewBox="0 0 24 24" aria-hidden="true" width="14" height="14">
+                  <path d="M12 3v12m0 0 4-4m-4 4-4-4" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
+                  <path d="M4 17v2a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-2" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
+                </svg>
+                <span>{exporting ? "Exporting..." : "Export HTML"}</span>
+              </button>
+            )}
             <div className="workspace-mini">
               <span className="workspace-cwd" title={workspaceCwd}>
                 {workspaceCwd ? workspaceCwd.split(/[\\/]/).pop() : "No workspace"}

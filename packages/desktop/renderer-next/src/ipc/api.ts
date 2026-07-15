@@ -26,6 +26,11 @@ export interface PiDesktopApi {
   getWorkspace(): Promise<{ cwd: string }>;
   listWorkspaceFiles(query?: string): Promise<{ files: string[] }>;
   openExternal(url: string): Promise<void>;
+  fetchProviderModels(params: {
+    baseUrl: string;
+    apiKey?: string;
+    api: CustomModelApi;
+  }): Promise<{ models: { id: string; name?: string }[] }>;
   writeClipboardText(text: string): Promise<void>;
   getAppInfo(): Promise<{ name: string; version: string }>;
   checkForUpdates(): Promise<unknown>;
@@ -254,6 +259,12 @@ export async function sendExtensionUIResponse(id: string, response: Record<strin
   await requireApi().send({ type: "extension_ui_response", id, ...response });
 }
 
+// --- Extension flags (e.g. permission mode) ---
+
+export async function setExtensionFlag(name: string, value: boolean | string): Promise<void> {
+  await requireApi().request({ type: "set_extension_flag", name, value });
+}
+
 // --- Desktop-level APIs (not routed through backend) ---
 
 export async function getBackendStatus(): Promise<BackendStatus> {
@@ -283,6 +294,14 @@ export async function listWorkspaceFiles(query?: string): Promise<string[]> {
 
 export async function openExternal(url: string): Promise<void> {
   await requireApi().openExternal(url);
+}
+
+export async function fetchProviderModels(params: {
+  baseUrl: string;
+  apiKey?: string;
+  api: CustomModelApi;
+}): Promise<{ models: { id: string; name?: string }[] }> {
+  return requireApi().fetchProviderModels(params);
 }
 
 export async function writeClipboardText(text: string): Promise<void> {

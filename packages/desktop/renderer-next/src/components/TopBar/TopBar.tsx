@@ -12,6 +12,8 @@ const THINKING_LABELS: Record<ThinkingLevel, string> = {
   xhigh: "Max",
 };
 
+const THINKING_LEVELS: ThinkingLevel[] = ["off", "minimal", "low", "medium", "high", "xhigh"];
+
 export function TopBar() {
   const session = useStore((s) => s.session);
   const models = useStore((s) => s.models);
@@ -23,9 +25,12 @@ export function TopBar() {
   const modelName = models.find(
     (m) => m.provider === currentModel?.provider && m.id === currentModel?.id
   )?.name ?? currentModel?.id ?? "No model";
+  const modelSupportsThinking = currentModel?.reasoning ?? false;
 
   const [modelOpen, setModelOpen] = useState(false);
+  const [thinkingOpen, setThinkingOpen] = useState(false);
   const dropdownRef = useRef<HTMLDivElement>(null);
+  const thinkingRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     if (!modelOpen) return;
@@ -38,9 +43,25 @@ export function TopBar() {
     return () => document.removeEventListener("mousedown", handleClick);
   }, [modelOpen]);
 
+  useEffect(() => {
+    if (!thinkingOpen) return;
+    function handleClick(e: MouseEvent) {
+      if (thinkingRef.current && !thinkingRef.current.contains(e.target as Node)) {
+        setThinkingOpen(false);
+      }
+    }
+    document.addEventListener("mousedown", handleClick);
+    return () => document.removeEventListener("mousedown", handleClick);
+  }, [thinkingOpen]);
+
   function handleSelectModel(provider: string, modelId: string) {
     setModelOpen(false);
     api.setModel(provider, modelId);
+  }
+
+  function handleSelectThinking(level: ThinkingLevel) {
+    setThinkingOpen(false);
+    api.setThinkingLevel(level);
   }
 
   return (
@@ -89,6 +110,40 @@ export function TopBar() {
             </div>
           )}
         </div>
+
+        {modelSupportsThinking && (
+          <div className="thinking-selector" ref={thinkingRef}>
+            <button
+              className="thinking-selector-btn"
+              type="button"
+              onClick={() => setThinkingOpen((v) => !v)}
+              disabled={isStreaming}
+              aria-haspopup="listbox"
+              aria-expanded={thinkingOpen}
+              title="Thinking level"
+            >
+              <span className="thinking-selector-icon" aria-hidden="true">✦</span>
+              <span className="thinking-selector-label">{THINKING_LABELS[thinkingLevel]}</span>
+            </button>
+
+            {thinkingOpen && (
+              <div className="thinking-dropdown" role="listbox">
+                {THINKING_LEVELS.map((level) => (
+                  <button
+                    key={level}
+                    className={`thinking-dropdown-item ${level === thinkingLevel ? "active" : ""}`}
+                    type="button"
+                    role="option"
+                    aria-selected={level === thinkingLevel}
+                    onClick={() => handleSelectThinking(level)}
+                  >
+                    {THINKING_LABELS[level]}
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
+        )}
       </div>
 
       <div className="top-bar-right">

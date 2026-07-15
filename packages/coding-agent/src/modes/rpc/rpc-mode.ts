@@ -1000,6 +1000,11 @@ export async function runRpcMode(runtimeHost: AgentSessionRuntime): Promise<neve
 				return success(id, "set_steering_mode");
 			}
 
+			case "set_extension_flag": {
+				session.setExtensionFlag(command.name, command.value);
+				return success(id, "set_extension_flag");
+			}
+
 			case "set_follow_up_mode": {
 				session.setFollowUpMode(command.mode);
 				return success(id, "set_follow_up_mode");

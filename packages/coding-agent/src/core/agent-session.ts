@@ -1656,6 +1656,16 @@ export class AgentSession {
 	}
 
 	/**
+	 * Set an extension flag value at runtime. Reads take effect immediately via
+	 * pi.getFlag() since extensions read the shared flagValues Map live. Used by
+	 * RPC clients (e.g. the desktop permission-mode selector) to change extension
+	 * behavior mid-session without restarting.
+	 */
+	setExtensionFlag(name: string, value: boolean | string): void {
+		this._extensionRunner.setFlagValue(name, value);
+	}
+
+	/**
 	 * Set follow-up message mode.
 	 * Saves to settings.
 	 */
