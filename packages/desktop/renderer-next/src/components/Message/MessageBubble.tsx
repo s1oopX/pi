@@ -372,15 +372,54 @@ function getRoleLabel(role: Message["role"]): string {
   }
 }
 
+function MessageAvatar({ role }: { role: Message["role"] }) {
+  if (role === "user") {
+    return (
+      <div className="message-avatar message-avatar-user" aria-hidden="true">
+        <svg viewBox="0 0 24 24" width="16" height="16">
+          <circle cx="12" cy="8" r="4" fill="none" stroke="currentColor" strokeWidth="1.7" />
+          <path d="M4 20c0-3.3 3.6-6 8-6s8 2.7 8 6" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" />
+        </svg>
+      </div>
+    );
+  }
+  return (
+    <div className="message-avatar message-avatar-assistant" aria-hidden="true">
+      <svg viewBox="0 0 24 24" width="16" height="16">
+        <path d="M12 3l2.1 5.4L19.5 10.5 14.1 12.6 12 18l-2.1-5.4L4.5 10.5 9.9 8.4z" fill="currentColor" stroke="none" />
+      </svg>
+    </div>
+  );
+}
+
 export function MessageBubble({ message, streaming, resultsByCallId }: MessageBubbleProps) {
   const copyText = messageToCopyText(message);
-  return (
-    <div className={`message-bubble message-${message.role}`}>
-      <div className="message-role">
-        <span>{getRoleLabel(message.role)}</span>
-        {copyText && <CopyButton text={copyText} />}
+  // Primary conversational roles get the avatar + turn layout; auxiliary roles
+  // (tool results, shell, summaries) render as compact standalone blocks.
+  const isConversational = message.role === "user" || message.role === "assistant";
+
+  if (!isConversational) {
+    return (
+      <div className={`message-bubble message-${message.role}`}>
+        <div className="message-role">
+          <span>{getRoleLabel(message.role)}</span>
+          {copyText && <CopyButton text={copyText} />}
+        </div>
+        <MessageBody message={message} streaming={streaming} resultsByCallId={resultsByCallId} />
       </div>
-      <MessageBody message={message} streaming={streaming} resultsByCallId={resultsByCallId} />
+    );
+  }
+
+  return (
+    <div className={`message-turn message-turn-${message.role}`}>
+      <MessageAvatar role={message.role} />
+      <div className="message-turn-body">
+        <div className="message-turn-head">
+          <span className="message-turn-author">{getRoleLabel(message.role)}</span>
+          {copyText && <CopyButton text={copyText} />}
+        </div>
+        <MessageBody message={message} streaming={streaming} resultsByCallId={resultsByCallId} />
+      </div>
     </div>
   );
 }

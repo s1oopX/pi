@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState, type KeyboardEvent, type FormEven
 import { useStore } from "../../store";
 import * as api from "../../ipc/api";
 import { PermissionSelector } from "../PermissionSelector";
+import { ModelSelector } from "../ModelSelector";
 
 type Suggestion =
   | { kind: "command"; value: string; label: string; description?: string }
@@ -178,6 +179,7 @@ export function Composer() {
     <div className="composer-wrap">
       <div className="composer-toolbar">
         <PermissionSelector />
+        <ModelSelector />
       </div>
       {queued.length > 0 && (
         <div className="composer-queue" aria-label="Queued messages">

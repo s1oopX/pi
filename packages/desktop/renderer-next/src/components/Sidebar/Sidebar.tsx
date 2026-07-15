@@ -117,7 +117,7 @@ export function Sidebar({ collapsed, onToggle }: SidebarProps) {
                     key={s.path}
                     className={`agent-row ${isActive ? "active" : ""}`}
                     type="button"
-                    onClick={() => { api.switchSession(s.path); }}
+                    onClick={async () => { await api.switchSession(s.path); useStore.getState().refresh(); }}
                     onDoubleClick={() => { if (isActive) beginRename(); }}
                     title={isActive ? "Double-click to rename" : undefined}
                     role="listitem"

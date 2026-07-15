@@ -1,17 +1,66 @@
-/* Message bubbles */
+/* Conversational turn layout (avatar + author + content) */
 
-.message-bubble {
-  padding: 12px 16px;
-  border-radius: var(--radius);
-  max-width: 100%;
+.message-turn {
+  display: flex;
+  gap: 12px;
+  padding: 4px 0;
 }
 
-.message-user {
+.message-avatar {
+  flex-shrink: 0;
+  width: 30px;
+  height: 30px;
+  border-radius: var(--radius-sm);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  margin-top: 2px;
+}
+
+.message-avatar-user {
   background: var(--surface);
+  color: var(--text-soft);
+  border: 1px solid var(--border);
 }
 
-.message-assistant {
-  background: transparent;
+.message-avatar-assistant {
+  background: var(--accent);
+  color: var(--accent-contrast);
+  box-shadow: var(--shadow-sm);
+}
+
+.message-turn-body {
+  flex: 1;
+  min-width: 0;
+}
+
+.message-turn-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 4px;
+  min-height: 18px;
+}
+
+.message-turn-author {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text);
+}
+
+/* User turn content sits in a soft bubble; assistant flows plainly */
+.message-turn-user .message-turn-body > .message-content {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 10px 14px;
+}
+
+/* Auxiliary (non-conversational) blocks: tool result, shell, summaries */
+.message-bubble {
+  padding: 6px 0;
+  max-width: 100%;
 }
 
 .message-role {
@@ -21,6 +70,10 @@
   text-transform: uppercase;
   letter-spacing: 0.3px;
   margin-bottom: 6px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
 }
 
 .message-content {
