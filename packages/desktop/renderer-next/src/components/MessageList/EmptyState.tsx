@@ -123,7 +123,7 @@ export function EmptyState() {
           <BrandIcon className="empty-state-brand-icon" />
         </div>
         <h2 className="empty-state-title">
-          {isStarting ? t("Starting the agent...", "正在启动智能体……") : t("Agent offline", "智能体已离线")}
+          {isStarting ? t("Preparing workspace...", "正在准备工作区……") : t("Agent offline", "智能体已离线")}
         </h2>
         <p className="empty-state-subtitle">
           {isStarting

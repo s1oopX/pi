@@ -69,7 +69,7 @@ export function Sidebar({ collapsed, onToggle }: SidebarProps) {
   const [cloning, setCloning] = useState(false);
   const [failedSwitch, setFailedSwitch] = useState<FailedSwitchState | null>(null);
   const [branchNavigatorOpen, setBranchNavigatorOpen] = useState(false);
-  const [switchingWorkspace, setSwitchingWorkspace] = useState(false);
+  const [switchingWorkspaceCwd, setSwitchingWorkspaceCwd] = useState<string | null>(null);
   const [sessionQuery, setSessionQuery] = useState("");
   const [workspaces, setWorkspaces] = useState<string[]>(() => loadWorkspaces(localStorage));
   const [expandedProjects, setExpandedProjects] = useState<string[]>([]);
@@ -79,6 +79,7 @@ export function Sidebar({ collapsed, onToggle }: SidebarProps) {
   const workspaceTriggerRef = useRef<HTMLButtonElement | null>(null);
 
   const activeSessionId = session?.sessionId;
+  const switchingWorkspace = switchingWorkspaceCwd !== null;
   const normalizedSessionQuery = sessionQuery.trim();
   const sessionSearchPending = normalizedSessionQuery !== sessionsQuery;
   const isTaskContext = Boolean(taskCwd && isSameWorkspace(workspaceCwd, taskCwd));
@@ -105,6 +106,17 @@ export function Sidebar({ collapsed, onToggle }: SidebarProps) {
               seconds: Math.max(1, Math.ceil(backendStatus.retryInMs / 1000)),
             })
           : t("Offline", "离线");
+  const switchingWorkspaceName = switchingWorkspaceCwd ? getWorkspaceName(switchingWorkspaceCwd) : workspaceName;
+  const workspaceStatusText = switchingWorkspace
+    ? t("Opening {workspace}...", "正在打开 {workspace}...", { workspace: switchingWorkspaceName })
+    : backendStatusText;
+  const sessionLoadingText = switchingWorkspace
+    ? t("Opening {workspace}...", "正在打开 {workspace}...", { workspace: switchingWorkspaceName })
+    : backendStatus.starting || backendStatus.restarting
+      ? t("Preparing workspace...", "正在准备工作区...")
+      : normalizedSessionQuery
+        ? t("Searching...", "正在搜索...")
+        : t("Loading...", "正在加载...");
 
   useEffect(() => {
     if (!sessionMenu) return;
@@ -147,6 +159,29 @@ export function Sidebar({ collapsed, onToggle }: SidebarProps) {
   useEffect(() => {
     setSessionQuery("");
   }, [workspaceCwd]);
+
+  useEffect(() => {
+    if (!switchingWorkspaceCwd) return;
+    if (
+      isSameWorkspace(workspaceCwd, switchingWorkspaceCwd) &&
+      backendStatus.ready &&
+      isSameWorkspace(backendStatus.cwd, switchingWorkspaceCwd)
+    ) {
+      setSwitchingWorkspaceCwd(null);
+      return;
+    }
+    if (!backendStatus.ready && !backendStatus.starting && !backendStatus.restarting && backendStatus.retryInMs <= 0) {
+      setSwitchingWorkspaceCwd(null);
+    }
+  }, [
+    backendStatus.cwd,
+    backendStatus.ready,
+    backendStatus.restarting,
+    backendStatus.retryInMs,
+    backendStatus.starting,
+    switchingWorkspaceCwd,
+    workspaceCwd,
+  ]);
 
   useEffect(() => {
     if (!sessionSearchPending) return;
@@ -425,20 +460,24 @@ export function Sidebar({ collapsed, onToggle }: SidebarProps) {
       return;
     }
 
-    setSwitchingWorkspace(true);
+    setSwitchingWorkspaceCwd(cwd);
     try {
       const result = await api.openWorkspace(cwd);
       if (!taskCwd || !isSameWorkspace(result.cwd, taskCwd)) retainWorkspace(result.cwd);
-      if (result.changed) useStore.getState().resetForWorkspace(result.cwd);
+      if (result.changed) {
+        setSwitchingWorkspaceCwd(result.cwd);
+        useStore.getState().resetForWorkspace(result.cwd);
+      } else {
+        setSwitchingWorkspaceCwd(null);
+      }
     } catch (error) {
+      setSwitchingWorkspaceCwd(null);
       showToast(
         t("Failed to open workspace: {error}", "打开工作区失败：{error}", {
           error: error instanceof Error ? error.message : String(error),
         }),
         "error",
       );
-    } finally {
-      setSwitchingWorkspace(false);
     }
   }
 
@@ -860,7 +899,7 @@ export function Sidebar({ collapsed, onToggle }: SidebarProps) {
                                 {workspaceDisplay.detail && <span>{workspaceDisplay.detail}</span>}
                               </span>
                               {isCurrent && (
-                                <span className={`workspace-navigation-status ${backendStatus.ready ? "ready" : ""}`} aria-label={backendStatusText} />
+                                <span className={`workspace-navigation-status ${backendStatus.ready && !switchingWorkspace ? "ready" : ""}`} aria-label={workspaceStatusText} />
                               )}
                             </button>
                             <button
@@ -932,7 +971,7 @@ export function Sidebar({ collapsed, onToggle }: SidebarProps) {
               </section>
               {(sessionsLoading || sessionSearchPending) && sessions.length === 0 && (
                 <div className="agent-empty-state">
-                  {normalizedSessionQuery ? t("Searching...", "正在搜索...") : t("Loading...", "正在加载...")}
+                  {sessionLoadingText}
                 </div>
               )}
               {sessionsHasMore && sessions.length > 0 && (
@@ -965,10 +1004,10 @@ export function Sidebar({ collapsed, onToggle }: SidebarProps) {
             </button>
             <div className="status-row" title={backendStatus.error}>
               <span
-                className={`backend-dot ${backendStatus.ready ? "ready" : ""}`}
-                aria-label={backendStatus.ready ? t("Backend running", "后端正在运行") : backendStatusText}
+                className={`backend-dot ${backendStatus.ready && !switchingWorkspace ? "ready" : ""}`}
+                aria-label={switchingWorkspace ? workspaceStatusText : backendStatus.ready ? t("Backend running", "后端正在运行") : workspaceStatusText}
               />
-              <span className="status-text">{backendStatusText}</span>
+              <span className="status-text">{workspaceStatusText}</span>
               {!backendStatus.ready && !backendStatus.starting && !backendStatus.restarting && (
                 <button className="status-row-retry" type="button" onClick={handleRestartBackend}>
                   {t("Retry", "重试")}
@@ -1183,7 +1222,7 @@ export function Sidebar({ collapsed, onToggle }: SidebarProps) {
           <p className={`workspace-menu-note ${isStreaming ? "warning" : ""}`}>
             {isStreaming
               ? t("Finish or stop the current run before switching workspaces.", "请先完成或停止当前运行，再切换工作区。")
-              : t("Switching workspaces restarts the agent context.", "切换工作区会重启智能体上下文。")}
+              : t("Switching workspaces opens that project's context.", "切换工作区会打开该项目的上下文。")}
           </p>
         </div>,
         document.body,
