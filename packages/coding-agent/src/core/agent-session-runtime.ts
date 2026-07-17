@@ -197,10 +197,10 @@ export class AgentSessionRuntime {
 			withSession?: (ctx: ReplacedSessionContext) => Promise<void>;
 			projectTrustContextFactory?: (cwd: string) => ProjectTrustContext;
 		},
-	): Promise<{ cancelled: boolean }> {
+	): Promise<{ cancelled: boolean; cwd: string }> {
 		const beforeResult = await this.emitBeforeSwitch("resume", sessionPath);
 		if (beforeResult.cancelled) {
-			return beforeResult;
+			return { ...beforeResult, cwd: this.cwd };
 		}
 
 		const previousSessionFile = this.session.sessionFile;
@@ -217,32 +217,35 @@ export class AgentSessionRuntime {
 			}),
 		);
 		await this.finishSessionReplacement(options?.withSession);
-		return { cancelled: false };
+		return { cancelled: false, cwd: this.cwd };
 	}
 
 	async newSession(options?: {
+		cwd?: string;
 		parentSession?: string;
 		setup?: (sessionManager: SessionManager) => Promise<void>;
 		withSession?: (ctx: ReplacedSessionContext) => Promise<void>;
-	}): Promise<{ cancelled: boolean }> {
+	}): Promise<{ cancelled: boolean; cwd: string }> {
 		const beforeResult = await this.emitBeforeSwitch("new");
 		if (beforeResult.cancelled) {
-			return beforeResult;
+			return { ...beforeResult, cwd: this.cwd };
 		}
 
 		const previousSessionFile = this.session.sessionFile;
-		const sessionDir = this.session.sessionManager.getSessionDir();
-		const sessionManager = this.session.sessionManager.isPersisted()
-			? SessionManager.create(this.cwd, sessionDir)
-			: SessionManager.inMemory(this.cwd);
-		if (options?.parentSession) {
-			sessionManager.newSession({ parentSession: options.parentSession });
-		}
+		const currentSessionManager = this.session.sessionManager;
+		const targetCwd = resolvePath(options?.cwd ?? this.cwd, this.cwd);
+		const sessionDir = currentSessionManager.usesDefaultSessionDir()
+			? undefined
+			: currentSessionManager.getSessionDir();
+		const newSessionOptions = options?.parentSession ? { parentSession: options.parentSession } : undefined;
+		const sessionManager = currentSessionManager.isPersisted()
+			? SessionManager.create(targetCwd, sessionDir, newSessionOptions)
+			: SessionManager.inMemory(targetCwd, newSessionOptions);
 
 		await this.teardownCurrent("new", sessionManager.getSessionFile());
 		this.apply(
 			await this.createRuntime({
-				cwd: this.cwd,
+				cwd: targetCwd,
 				agentDir: this.services.agentDir,
 				sessionManager,
 				sessionStartEvent: { type: "session_start", reason: "new", previousSessionFile },
@@ -253,7 +256,7 @@ export class AgentSessionRuntime {
 			this.session.agent.state.messages = this.session.sessionManager.buildSessionContext().messages;
 		}
 		await this.finishSessionReplacement(options?.withSession);
-		return { cancelled: false };
+		return { cancelled: false, cwd: this.cwd };
 	}
 
 	async fork(

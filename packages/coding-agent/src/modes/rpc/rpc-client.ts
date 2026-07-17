@@ -10,9 +10,23 @@ import type { ImageContent } from "@earendil-works/pi-ai";
 import type { SessionStats } from "../../core/agent-session.ts";
 import type { BashResult } from "../../core/bash-executor.ts";
 import type { CompactionResult } from "../../core/compaction/index.ts";
-import type { SessionEntry, SessionTreeNode } from "../../core/session-manager.ts";
+import type { SessionEntry } from "../../core/session-manager.ts";
 import { attachJsonlLineReader, serializeJsonLine } from "./jsonl.ts";
-import type { RpcCommand, RpcResponse, RpcSessionState, RpcSlashCommand } from "./rpc-types.ts";
+import type {
+	RpcForkResultDTO,
+	RpcGetResourcesDataDTO,
+	RpcGetSessionsDataDTO,
+	RpcSessionChangeResultDTO,
+	RpcSessionTreeNodeDTO,
+} from "./rpc-desktop-contract.ts";
+import type {
+	RpcCommand,
+	RpcGetResourcesOptions,
+	RpcGetSessionsOptions,
+	RpcResponse,
+	RpcSessionState,
+	RpcSlashCommand,
+} from "./rpc-types.ts";
 
 // ============================================================================
 // Types
@@ -194,8 +208,8 @@ export class RpcClient {
 	 * Returns immediately after sending; use onEvent() to receive streaming events.
 	 * Use waitForIdle() to wait for completion.
 	 */
-	async prompt(message: string, images?: ImageContent[]): Promise<void> {
-		await this.send({ type: "prompt", message, images });
+	async prompt(message: string, images?: ImageContent[], streamingBehavior?: "steer" | "followUp"): Promise<void> {
+		await this.send({ type: "prompt", message, images, streamingBehavior });
 	}
 
 	/**
@@ -222,10 +236,11 @@ export class RpcClient {
 	/**
 	 * Start a new session, optionally with parent tracking.
 	 * @param parentSession - Optional parent session path for lineage tracking
+	 * @param cwd - Optional working directory for the new session
 	 * @returns Object with `cancelled: true` if an extension cancelled the new session
 	 */
-	async newSession(parentSession?: string): Promise<{ cancelled: boolean }> {
-		const response = await this.send({ type: "new_session", parentSession });
+	async newSession(parentSession?: string, cwd?: string): Promise<RpcSessionChangeResultDTO> {
+		const response = await this.send({ type: "new_session", parentSession, cwd });
 		return this.getData(response);
 	}
 
@@ -355,19 +370,27 @@ export class RpcClient {
 	}
 
 	/**
+	 * List sessions in the current working directory, or across all directories.
+	 */
+	async getSessions(options: RpcGetSessionsOptions = {}): Promise<RpcGetSessionsDataDTO> {
+		const response = await this.send({ type: "get_sessions", ...options });
+		return this.getData<RpcGetSessionsDataDTO>(response);
+	}
+
+	/**
 	 * Switch to a different session file.
 	 * @returns Object with `cancelled: true` if an extension cancelled the switch
 	 */
-	async switchSession(sessionPath: string): Promise<{ cancelled: boolean }> {
+	async switchSession(sessionPath: string): Promise<RpcSessionChangeResultDTO> {
 		const response = await this.send({ type: "switch_session", sessionPath });
 		return this.getData(response);
 	}
 
 	/**
 	 * Fork from a specific message.
-	 * @returns Object with `text` (the message text) and `cancelled` (if extension cancelled)
+	 * @returns A cancelled result, or the selected message text for the new branch.
 	 */
-	async fork(entryId: string): Promise<{ text: string; cancelled: boolean }> {
+	async fork(entryId: string): Promise<RpcForkResultDTO> {
 		const response = await this.send({ type: "fork", entryId });
 		return this.getData(response);
 	}
@@ -400,9 +423,9 @@ export class RpcClient {
 	/**
 	 * Get the session entry tree.
 	 */
-	async getTree(): Promise<{ tree: SessionTreeNode[]; leafId: string | null }> {
+	async getTree(): Promise<{ tree: RpcSessionTreeNodeDTO[]; leafId: string | null }> {
 		const response = await this.send({ type: "get_tree" });
-		return this.getData<{ tree: SessionTreeNode[]; leafId: string | null }>(response);
+		return this.getData<{ tree: RpcSessionTreeNodeDTO[]; leafId: string | null }>(response);
 	}
 
 	/**
@@ -434,6 +457,15 @@ export class RpcClient {
 	async getCommands(): Promise<RpcSlashCommand[]> {
 		const response = await this.send({ type: "get_commands" });
 		return this.getData<{ commands: RpcSlashCommand[] }>(response).commands;
+	}
+
+	/**
+	 * Get loaded extensions, skills, prompts, and their diagnostics.
+	 * Pass `reload: true` to reload resources before reading the catalog.
+	 */
+	async getResources(options: RpcGetResourcesOptions = {}): Promise<RpcGetResourcesDataDTO> {
+		const response = await this.send({ type: "get_resources", ...options });
+		return this.getData<RpcGetResourcesDataDTO>(response);
 	}
 
 	// =========================================================================

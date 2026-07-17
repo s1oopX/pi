@@ -207,6 +207,7 @@ const ProviderConfigSchema = Type.Object({
 	apiKey: Type.Optional(Type.String({ minLength: 1 })),
 	api: Type.Optional(Type.String({ minLength: 1 })),
 	headers: Type.Optional(Type.Record(Type.String(), Type.String())),
+	env: Type.Optional(Type.Record(Type.String(), Type.String())),
 	compat: Type.Optional(ProviderCompatSchema),
 	authHeader: Type.Optional(Type.Boolean()),
 	models: Type.Optional(Type.Array(ModelDefinitionSchema)),
@@ -243,6 +244,7 @@ interface ProviderOverride {
 interface ProviderRequestConfig {
 	apiKey?: string;
 	headers?: Record<string, string>;
+	env?: Record<string, string>;
 	authHeader?: boolean;
 }
 
@@ -549,9 +551,15 @@ export class ModelRegistry {
 
 			if (models.length === 0) {
 				// Override-only config: needs baseUrl, headers, compat, modelOverrides, or some combination.
-				if (!providerConfig.baseUrl && !providerConfig.headers && !providerConfig.compat && !hasModelOverrides) {
+				if (
+					!providerConfig.baseUrl &&
+					!providerConfig.headers &&
+					!providerConfig.env &&
+					!providerConfig.compat &&
+					!hasModelOverrides
+				) {
 					throw new Error(
-						`Provider ${providerName}: must specify "baseUrl", "headers", "compat", "modelOverrides", or "models".`,
+						`Provider ${providerName}: must specify "baseUrl", "headers", "env", "compat", "modelOverrides", or "models".`,
 					);
 				}
 			} else if (!isBuiltIn) {
@@ -681,16 +689,18 @@ export class ModelRegistry {
 		config: {
 			apiKey?: string;
 			headers?: Record<string, string>;
+			env?: Record<string, string>;
 			authHeader?: boolean;
 		},
 	): void {
-		if (!config.apiKey && !config.headers && !config.authHeader) {
+		if (!config.apiKey && !config.headers && !config.env && !config.authHeader) {
 			return;
 		}
 
 		this.providerRequestConfigs.set(providerName, {
 			apiKey: config.apiKey,
 			headers: config.headers,
+			env: config.env,
 			authHeader: config.authHeader,
 		});
 	}
@@ -710,7 +720,9 @@ export class ModelRegistry {
 	async getApiKeyAndHeaders(model: Model<Api>): Promise<ResolvedRequestAuth> {
 		try {
 			const providerConfig = this.providerRequestConfigs.get(model.provider);
-			const providerEnv = this.authStorage.getProviderEnv(model.provider);
+			const authStorageEnv = this.authStorage.getProviderEnv(model.provider);
+			const providerEnv =
+				providerConfig?.env || authStorageEnv ? { ...providerConfig?.env, ...authStorageEnv } : undefined;
 			const apiKeyFromAuthStorage = await this.authStorage.getApiKey(model.provider, { includeFallback: false });
 			const apiKey =
 				apiKeyFromAuthStorage ??
@@ -813,10 +825,12 @@ export class ModelRegistry {
 			return apiKey;
 		}
 
-		const providerApiKey = this.providerRequestConfigs.get(provider)?.apiKey;
-		return providerApiKey
-			? resolveConfigValueUncached(providerApiKey, this.authStorage.getProviderEnv(provider))
-			: undefined;
+		const providerConfig = this.providerRequestConfigs.get(provider);
+		const providerApiKey = providerConfig?.apiKey;
+		const authStorageEnv = this.authStorage.getProviderEnv(provider);
+		const providerEnv =
+			providerConfig?.env || authStorageEnv ? { ...providerConfig?.env, ...authStorageEnv } : undefined;
+		return providerApiKey ? resolveConfigValueUncached(providerApiKey, providerEnv) : undefined;
 	}
 
 	/**
@@ -979,6 +993,7 @@ export interface ProviderConfigInput {
 	api?: Api;
 	streamSimple?: (model: Model<Api>, context: Context, options?: SimpleStreamOptions) => AssistantMessageEventStream;
 	headers?: Record<string, string>;
+	env?: Record<string, string>;
 	authHeader?: boolean;
 	/** OAuth provider for /login support */
 	oauth?: Omit<OAuthProviderInterface, "id">;

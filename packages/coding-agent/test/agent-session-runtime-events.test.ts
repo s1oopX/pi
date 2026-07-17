@@ -10,7 +10,7 @@ import {
 	createAgentSessionServices,
 } from "../src/core/agent-session-runtime.ts";
 import { AuthStorage } from "../src/core/auth-storage.ts";
-import { SessionManager } from "../src/core/session-manager.ts";
+import { getDefaultSessionDir, SessionManager } from "../src/core/session-manager.ts";
 import type {
 	ExtensionFactory,
 	SessionBeforeForkEvent,
@@ -34,9 +34,10 @@ describe("AgentSessionRuntime session lifecycle events", () => {
 		}
 	});
 
-	async function createRuntimeHost(extensionFactory: ExtensionFactory) {
+	async function createRuntimeHost(extensionFactory: ExtensionFactory, options: { customSessionDir?: boolean } = {}) {
 		const tempDir = join(tmpdir(), `pi-runtime-events-${Date.now()}-${Math.random().toString(36).slice(2)}`);
 		mkdirSync(tempDir, { recursive: true });
+		const customSessionDir = options.customSessionDir ? join(tempDir, "shared-sessions") : undefined;
 
 		const faux = registerFauxProvider();
 		faux.setResponses([fauxAssistantMessage("one"), fauxAssistantMessage("two"), fauxAssistantMessage("three")]);
@@ -74,7 +75,7 @@ describe("AgentSessionRuntime session lifecycle events", () => {
 		const runtimeHost = await createAgentSessionRuntime(createRuntime, {
 			cwd: tempDir,
 			agentDir: tempDir,
-			sessionManager: SessionManager.create(tempDir),
+			sessionManager: SessionManager.create(tempDir, customSessionDir),
 		});
 		await runtimeHost.session.bindExtensions({});
 
@@ -86,8 +87,36 @@ describe("AgentSessionRuntime session lifecycle events", () => {
 			}
 		});
 
-		return { runtimeHost, faux };
+		return { runtimeHost, faux, tempDir, customSessionDir };
 	}
+
+	it("creates new sessions in a target cwd and selects its default session directory", async () => {
+		const { runtimeHost, tempDir } = await createRuntimeHost(() => {});
+		const originalSessionDir = runtimeHost.session.sessionManager.getSessionDir();
+		const targetCwd = join(tempDir, "project-b");
+		mkdirSync(targetCwd, { recursive: true });
+
+		const result = await runtimeHost.newSession({ cwd: targetCwd });
+
+		expect(result).toEqual({ cancelled: false, cwd: targetCwd });
+		expect(runtimeHost.cwd).toBe(targetCwd);
+		expect(runtimeHost.session.sessionManager.getCwd()).toBe(targetCwd);
+		expect(runtimeHost.session.sessionManager.getSessionDir()).toBe(getDefaultSessionDir(targetCwd));
+		expect(runtimeHost.session.sessionManager.getSessionDir()).not.toBe(originalSessionDir);
+	});
+
+	it("reuses a custom session directory when creating a session for another cwd", async () => {
+		const { runtimeHost, tempDir, customSessionDir } = await createRuntimeHost(() => {}, {
+			customSessionDir: true,
+		});
+		const targetCwd = join(tempDir, "task-root");
+		mkdirSync(targetCwd, { recursive: true });
+
+		const result = await runtimeHost.newSession({ cwd: targetCwd });
+
+		expect(result).toEqual({ cancelled: false, cwd: targetCwd });
+		expect(runtimeHost.session.sessionManager.getSessionDir()).toBe(customSessionDir);
+	});
 
 	it("emits session_before_switch and session_start for new and resume flows", async () => {
 		const events: RecordedSessionEvent[] = [];

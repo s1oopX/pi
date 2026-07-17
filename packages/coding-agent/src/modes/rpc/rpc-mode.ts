@@ -15,6 +15,7 @@ import * as crypto from "node:crypto";
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname } from "node:path";
 import { type Api, completeSimple, type Model } from "@earendil-works/pi-ai/compat";
+import { ProxyAgent, fetch as undiciFetch } from "undici";
 import { getModelsPath } from "../../config.ts";
 import type { AgentSessionRuntime } from "../../core/agent-session-runtime.ts";
 import type {
@@ -29,32 +30,40 @@ import {
 	waitForRawStdoutBackpressure,
 	writeRawStdout,
 } from "../../core/output-guard.ts";
-import { SessionManager } from "../../core/session-manager.ts";
+import { type SessionInfo, SessionManager, type SessionTreeNode } from "../../core/session-manager.ts";
 import { killTrackedDetachedChildren } from "../../utils/shell.ts";
 import { type Theme, theme } from "../interactive/theme/theme.ts";
 import { attachJsonlLineReader, serializeJsonLine } from "./jsonl.ts";
+import { loadResourceCatalog } from "./resource-catalog.ts";
 import type {
+	RpcFetchProviderModelsDataDTO,
+	RpcForkResultDTO,
 	RpcGetAuthStatusDataDTO,
 	RpcGetAvailableModelsDataDTO,
 	RpcGetCommandsDataDTO,
 	RpcGetCustomModelsDataDTO,
 	RpcGetMessagesDataDTO,
+	RpcGetSessionsDataDTO,
 	RpcSessionStateDTO,
 	RpcSessionStatsDTO,
+	RpcSessionTreeNodeDTO,
 } from "./rpc-desktop-contract.ts";
 import type {
 	RpcCommand,
 	RpcExtensionUIRequest,
+	RpcExtensionUIRequestClosed,
 	RpcExtensionUIResponse,
 	RpcResponse,
 	RpcSessionState,
 	RpcSlashCommand,
 } from "./rpc-types.ts";
+import { getSessionPage } from "./session-list-query.ts";
 
 // Re-export types for consumers
 export type {
 	RpcCommand,
 	RpcExtensionUIRequest,
+	RpcExtensionUIRequestClosed,
 	RpcExtensionUIResponse,
 	RpcResponse,
 	RpcSessionState,
@@ -66,6 +75,7 @@ type CustomModelsConfig = {
 		{
 			baseUrl?: string;
 			headers?: Record<string, string>;
+			env?: Record<string, string>;
 			api?: string;
 			apiKey?: string;
 			models?: Array<{
@@ -83,20 +93,64 @@ type CustomModelsConfig = {
 };
 
 const REDACTED_CONFIG_VALUE = "<redacted>";
+const PROXY_ENV_KEYS = ["HTTP_PROXY", "HTTPS_PROXY"] as const;
 
 function isSensitiveHeader(name: string): boolean {
 	return /authorization|api[-_]?key|token|secret|cookie/i.test(name);
 }
 
-function sanitizeCustomModelsConfig(config: CustomModelsConfig): CustomModelsConfig {
+function getProxyUrlFromEnv(env: Record<string, string> | undefined): string | undefined {
+	return env?.HTTPS_PROXY || env?.HTTP_PROXY || undefined;
+}
+
+function mergeProxyEnv(
+	existing: Record<string, string> | undefined,
+	proxyUrl: string | undefined,
+): Record<string, string> | undefined {
+	if (proxyUrl === undefined) return existing;
+	const normalized = proxyUrl.trim();
+	if (normalized) {
+		let parsed: URL;
+		try {
+			parsed = new URL(normalized);
+		} catch {
+			throw new Error("Proxy URL is not a valid URL");
+		}
+		if (!["http:", "https:"].includes(parsed.protocol)) {
+			throw new Error("Proxy URL must use HTTP or HTTPS");
+		}
+		return {
+			...(existing ?? {}),
+			HTTP_PROXY: parsed.toString(),
+			HTTPS_PROXY: parsed.toString(),
+		};
+	}
+
+	const next = { ...(existing ?? {}) };
+	for (const key of PROXY_ENV_KEYS) {
+		delete next[key];
+	}
+	return Object.keys(next).length > 0 ? next : undefined;
+}
+
+function sanitizeCustomModelsConfig(
+	config: CustomModelsConfig,
+	getProviderMetadata?: (provider: string) => {
+		authKind: "api_key" | "none";
+		hasStoredAuth: boolean;
+		proxyUrl?: string;
+	},
+): CustomModelsConfig {
 	return {
 		providers: Object.fromEntries(
 			Object.entries(config.providers).map(([provider, providerConfig]) => {
-				const { apiKey: _apiKey, headers, ...safeConfig } = providerConfig;
+				const { apiKey: _apiKey, env: _env, headers, ...safeConfig } = providerConfig;
+				const metadata = getProviderMetadata?.(provider);
 				return [
 					provider,
 					{
 						...safeConfig,
+						...(metadata ? metadata : {}),
 						...(headers
 							? {
 									headers: Object.fromEntries(
@@ -264,6 +318,50 @@ function classifyConnectionError(
 	return "unknown";
 }
 
+function toRpcSessionTreeNode(node: SessionTreeNode): RpcSessionTreeNodeDTO {
+	const summary = "summary" in node.entry && typeof node.entry.summary === "string" ? node.entry.summary : undefined;
+	const root: RpcSessionTreeNodeDTO = {
+		entry: {
+			type: node.entry.type,
+			id: node.entry.id,
+			parentId: node.entry.parentId,
+			timestamp: node.entry.timestamp,
+			...(summary ? { summary } : {}),
+		},
+		children: [],
+		...(node.label !== undefined ? { label: node.label } : {}),
+		...(node.labelTimestamp !== undefined ? { labelTimestamp: node.labelTimestamp } : {}),
+	};
+	const stack: Array<{ source: SessionTreeNode; target: RpcSessionTreeNodeDTO; nextChild: number }> = [
+		{ source: node, target: root, nextChild: 0 },
+	];
+	while (stack.length > 0) {
+		const frame = stack[stack.length - 1]!;
+		const child = frame.source.children[frame.nextChild++];
+		if (!child) {
+			stack.pop();
+			continue;
+		}
+		const childSummary =
+			"summary" in child.entry && typeof child.entry.summary === "string" ? child.entry.summary : undefined;
+		const childDto: RpcSessionTreeNodeDTO = {
+			entry: {
+				type: child.entry.type,
+				id: child.entry.id,
+				parentId: child.entry.parentId,
+				timestamp: child.entry.timestamp,
+				...(childSummary ? { summary: childSummary } : {}),
+			},
+			children: [],
+			...(child.label !== undefined ? { label: child.label } : {}),
+			...(child.labelTimestamp !== undefined ? { labelTimestamp: child.labelTimestamp } : {}),
+		};
+		frame.target.children.push(childDto);
+		stack.push({ source: child, target: childDto, nextChild: 0 });
+	}
+	return root;
+}
+
 async function testModelConnection(
 	model: Model<Api>,
 	auth: { apiKey?: string; headers?: Record<string, string>; env?: Record<string, string> },
@@ -308,6 +406,117 @@ async function testModelConnection(
 	}
 }
 
+async function fetchRemoteProviderModels(params: {
+	baseUrl: string;
+	api: "openai-completions" | "anthropic-messages";
+	apiKey?: string;
+	headers?: Record<string, string>;
+	env?: Record<string, string>;
+}): Promise<RpcFetchProviderModelsDataDTO> {
+	const trimmedBase = params.baseUrl.trim().replace(/\/+$/, "");
+	if (!trimmedBase) {
+		throw new Error("Base URL is required");
+	}
+	const base = new URL(trimmedBase);
+	if (!["http:", "https:"].includes(base.protocol)) {
+		throw new Error("Base URL must use HTTP or HTTPS");
+	}
+
+	const key = params.apiKey?.trim();
+	const headers: Record<string, string> = {
+		Accept: "application/json",
+		...(params.headers ?? {}),
+	};
+	if (key) {
+		if (params.api === "anthropic-messages") {
+			headers["x-api-key"] ??= key;
+			headers["anthropic-version"] ??= "2023-06-01";
+		} else {
+			headers.Authorization ??= `Bearer ${key}`;
+		}
+	}
+
+	const stripped = trimmedBase.replace(/\/v1$/, "");
+	const candidates = [...new Set([`${trimmedBase}/models`, `${stripped}/v1/models`])];
+	const proxyUrl = getProxyUrlFromEnv(params.env);
+	const dispatcher = proxyUrl ? new ProxyAgent(proxyUrl) : undefined;
+	try {
+		let lastError = "";
+		for (const modelsUrl of candidates) {
+			const controller = new AbortController();
+			const timeout = setTimeout(() => controller.abort(), 20000);
+			let response: Awaited<ReturnType<typeof undiciFetch>>;
+			try {
+				response = await undiciFetch(modelsUrl, {
+					method: "GET",
+					headers,
+					signal: controller.signal,
+					...(dispatcher ? { dispatcher } : {}),
+				});
+			} catch (error) {
+				clearTimeout(timeout);
+				lastError = `Could not reach ${modelsUrl}: ${error instanceof Error ? error.message : String(error)}`;
+				continue;
+			}
+			clearTimeout(timeout);
+
+			if (!response.ok) {
+				let detail = "";
+				try {
+					detail = (await response.text()).slice(0, 300);
+				} catch {
+					// ignore body read failures
+				}
+				lastError = `HTTP ${response.status} from ${modelsUrl}${detail ? `: ${detail}` : ""}`;
+				continue;
+			}
+
+			let body: unknown;
+			try {
+				body = await response.json();
+			} catch {
+				lastError = `${modelsUrl} did not return valid JSON`;
+				continue;
+			}
+
+			const rawList = Array.isArray(body)
+				? body
+				: body && typeof body === "object" && Array.isArray((body as { data?: unknown }).data)
+					? (body as { data: unknown[] }).data
+					: undefined;
+			if (!rawList) {
+				lastError = `Unexpected response shape from ${modelsUrl} (no data array)`;
+				continue;
+			}
+			const models = rawList
+				.map((entry) => {
+					if (typeof entry === "string") return { id: entry };
+					if (entry && typeof entry === "object" && typeof (entry as { id?: unknown }).id === "string") {
+						const item = entry as { id: string; display_name?: unknown; name?: unknown };
+						return {
+							id: item.id,
+							name:
+								typeof item.display_name === "string"
+									? item.display_name
+									: typeof item.name === "string"
+										? item.name
+										: undefined,
+						};
+					}
+					return undefined;
+				})
+				.filter((model): model is { id: string; name?: string } => Boolean(model?.id))
+				.slice(0, 500);
+
+			return { models };
+		}
+
+		throw new Error(lastError || "Could not fetch models from endpoint");
+	} finally {
+		await dispatcher?.close();
+	}
+}
+
 /**
  * Run in RPC mode.
  * Listens for JSON commands on stdin, outputs events and responses on stdout.
@@ -317,8 +526,9 @@ export async function runRpcMode(runtimeHost: AgentSessionRuntime): Promise<neve
 	let session = runtimeHost.session;
 	let unsubscribe: (() => void) | undefined;
 	let unsubscribeBackpressure: (() => void) | undefined;
+	let promptPreflightTail: Promise<void> = Promise.resolve();
 
-	const output = (obj: RpcResponse | RpcExtensionUIRequest | object) => {
+	const output = (obj: RpcResponse | RpcExtensionUIRequest | RpcExtensionUIRequestClosed | object) => {
 		writeRawStdout(serializeJsonLine(obj));
 	};
 
@@ -360,6 +570,9 @@ export async function runRpcMode(runtimeHost: AgentSessionRuntime): Promise<neve
 		const id = crypto.randomUUID();
 		return new Promise((resolve, reject) => {
 			let timeoutId: ReturnType<typeof setTimeout> | undefined;
+			const closeRequest = (reason: RpcExtensionUIRequestClosed["reason"]) => {
+				output({ type: "extension_ui_request_closed", id, reason } satisfies RpcExtensionUIRequestClosed);
+			};
 
 			const cleanup = () => {
 				if (timeoutId) clearTimeout(timeoutId);
@@ -370,6 +583,7 @@ export async function runRpcMode(runtimeHost: AgentSessionRuntime): Promise<neve
 			const onAbort = () => {
 				cleanup();
 				resolve(defaultValue);
+				closeRequest("aborted");
 			};
 			opts?.signal?.addEventListener("abort", onAbort, { once: true });
 
@@ -377,6 +591,7 @@ export async function runRpcMode(runtimeHost: AgentSessionRuntime): Promise<neve
 				timeoutId = setTimeout(() => {
 					cleanup();
 					resolve(defaultValue);
+					closeRequest("timeout");
 				}, opts.timeout);
 			}
 
@@ -652,44 +867,74 @@ export async function runRpcMode(runtimeHost: AgentSessionRuntime): Promise<neve
 			case "prompt": {
 				// Start prompt handling immediately, but emit the authoritative response only after
 				// prompt preflight succeeds. Queued and immediately handled prompts also count as success.
-				let preflightSucceeded = false;
-				void session
-					.prompt(command.message, {
-						images: command.images,
-						streamingBehavior: command.streamingBehavior,
-						source: "rpc",
-						preflightResult: (didSucceed) => {
-							if (didSucceed) {
-								preflightSucceeded = true;
-								output(success(id, "prompt"));
-							}
-						},
-					})
-					.catch((e) => {
+				const previousPrompt = promptPreflightTail;
+				let releasePromptPreflight!: () => void;
+				promptPreflightTail = new Promise((resolve) => {
+					releasePromptPreflight = resolve;
+				});
+				void (async () => {
+					await previousPrompt;
+					let preflightSucceeded = false;
+					try {
+						await session.prompt(command.message, {
+							images: command.images,
+							streamingBehavior: command.streamingBehavior,
+							source: "rpc",
+							preflightResult: (didSucceed) => {
+								queueMicrotask(releasePromptPreflight);
+								if (didSucceed) {
+									preflightSucceeded = true;
+									output(success(id, "prompt"));
+								}
+							},
+						});
+					} catch (e: unknown) {
+						releasePromptPreflight();
 						if (!preflightSucceeded) {
-							output(error(id, "prompt", e.message));
+							output(error(id, "prompt", e instanceof Error ? e.message : String(e)));
 						}
-					});
+					} finally {
+						releasePromptPreflight();
+					}
+				})();
 				return undefined;
 			}
 
 			case "steer": {
+				if (!session.isStreaming) {
+					return error(id, "steer", "Steering is only available while the agent is running");
+				}
 				await session.steer(command.message, command.images);
 				return success(id, "steer");
 			}
 
 			case "follow_up": {
+				if (!session.isStreaming) {
+					return error(id, "follow_up", "Follow-up is only available while the agent is running");
+				}
 				await session.followUp(command.message, command.images);
 				return success(id, "follow_up");
 			}
 
 			case "abort": {
+				await promptPreflightTail;
+				session.clearQueue();
 				await session.abort();
 				return success(id, "abort");
 			}
 
 			case "new_session": {
-				const options = command.parentSession ? { parentSession: command.parentSession } : undefined;
+				const cwd = command.cwd?.trim();
+				if (command.cwd !== undefined && !cwd) {
+					return error(id, "new_session", "Working directory cannot be empty");
+				}
+				const options =
+					cwd || command.parentSession
+						? {
+								...(cwd ? { cwd } : {}),
+								...(command.parentSession ? { parentSession: command.parentSession } : {}),
+							}
+						: undefined;
 				const result = await runtimeHost.newSession(options);
 				if (!result.cancelled) {
 					await rebindSession();
@@ -709,10 +954,14 @@ export async function runRpcMode(runtimeHost: AgentSessionRuntime): Promise<neve
 					isCompacting: session.isCompacting,
 					steeringMode: session.steeringMode,
 					followUpMode: session.followUpMode,
+					cwd: session.sessionManager.getCwd(),
 					sessionFile: session.sessionFile,
 					sessionId: session.sessionId,
 					sessionName: session.sessionName,
 					autoCompactionEnabled: session.autoCompactionEnabled,
+					autoRetryEnabled: session.autoRetryEnabled,
+					isRetrying: session.isRetrying,
+					retryAttempt: session.retryAttempt,
 					messageCount: session.messages.length,
 					pendingMessageCount: session.pendingMessageCount,
 				} satisfies RpcSessionState satisfies RpcSessionStateDTO;
@@ -750,7 +999,12 @@ export async function runRpcMode(runtimeHost: AgentSessionRuntime): Promise<neve
 				const providers =
 					command.providers && command.providers.length > 0
 						? command.providers
-						: [...new Set((await session.modelRegistry.getAvailable()).map((model) => model.provider))];
+						: [
+								...new Set([
+									...session.modelRegistry.getAll().map((model) => model.provider),
+									...session.modelRegistry.authStorage.list(),
+								]),
+							];
 				const statuses = Object.fromEntries(
 					providers.map((provider) => [provider, session.modelRegistry.getProviderAuthStatus(provider)]),
 				);
@@ -758,7 +1012,7 @@ export async function runRpcMode(runtimeHost: AgentSessionRuntime): Promise<neve
 			}
 
 			case "set_api_key": {
-				const provider = command.provider.trim();
+				const provider = normalizeProviderId(command.provider);
 				const apiKey = command.apiKey.trim();
 				if (!provider) {
 					return error(id, "set_api_key", "Provider is required");
@@ -774,7 +1028,7 @@ export async function runRpcMode(runtimeHost: AgentSessionRuntime): Promise<neve
 			}
 
 			case "remove_api_key": {
-				const provider = command.provider.trim();
+				const provider = normalizeProviderId(command.provider);
 				if (!provider) {
 					return error(id, "remove_api_key", "Provider is required");
 				}
@@ -789,7 +1043,19 @@ export async function runRpcMode(runtimeHost: AgentSessionRuntime): Promise<neve
 				const config = readCustomModelsConfig();
 				return success(id, "get_custom_models", {
 					path: getModelsPath(),
-					providers: sanitizeCustomModelsConfig(config).providers,
+					providers: sanitizeCustomModelsConfig(config, (provider) => {
+						const providerConfig = config.providers[provider];
+						const credential = session.modelRegistry.authStorage.get(provider);
+						const credentialEnv = credential?.type === "api_key" ? credential.env : undefined;
+						const env =
+							providerConfig?.env || credentialEnv ? { ...providerConfig?.env, ...credentialEnv } : undefined;
+						const proxyUrl = getProxyUrlFromEnv(env);
+						return {
+							authKind: credential?.type === "api_key" ? "api_key" : "none",
+							hasStoredAuth: credential?.type === "api_key",
+							...(proxyUrl ? { proxyUrl } : {}),
+						};
+					}).providers,
 				} satisfies RpcGetCustomModelsDataDTO);
 			}
 
@@ -806,6 +1072,51 @@ export async function runRpcMode(runtimeHost: AgentSessionRuntime): Promise<neve
 					providers: Object.keys(config.providers).length,
 					models,
 				});
+			}
+
+			case "fetch_provider_models": {
+				const provider = normalizeProviderId(command.provider);
+				if (!provider) {
+					return error(id, "fetch_provider_models", "Provider is required");
+				}
+				const preservedProvider = command.preserveHeadersFromProvider
+					? readCustomModelsConfig().providers[normalizeProviderId(command.preserveHeadersFromProvider)]
+					: undefined;
+				const headers = mergeRedactedHeaders(command.headers, preservedProvider?.headers);
+				let apiKey = command.apiKey?.trim() || undefined;
+				let env = mergeProxyEnv(preservedProvider?.env, command.proxyUrl);
+				let storedHeaders: Record<string, string> | undefined;
+				if (!apiKey && command.useStoredAuthProvider) {
+					const model: Model<"openai-completions" | "anthropic-messages"> = {
+						id: "__model_list__",
+						name: "__model_list__",
+						api: command.api,
+						provider,
+						baseUrl: command.baseUrl.trim().replace(/\/+$/, ""),
+						reasoning: false,
+						input: ["text"],
+						cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
+						contextWindow: 4096,
+						maxTokens: 8,
+					};
+					const storedAuth = await session.modelRegistry.getApiKeyAndHeaders(model);
+					if (storedAuth.ok) {
+						apiKey = storedAuth.apiKey;
+						env = { ...storedAuth.env, ...env };
+						storedHeaders = storedAuth.headers;
+					}
+				}
+				return success(
+					id,
+					"fetch_provider_models",
+					await fetchRemoteProviderModels({
+						baseUrl: command.baseUrl,
+						api: command.api,
+						apiKey,
+						headers: storedHeaders || headers ? { ...storedHeaders, ...headers } : undefined,
+						env,
+					}),
+				);
 			}
 
 			case "test_model": {
@@ -872,13 +1183,13 @@ export async function runRpcMode(runtimeHost: AgentSessionRuntime): Promise<neve
 					: undefined;
 				const headers = mergeRedactedHeaders(command.headers, preservedProvider?.headers);
 				let apiKey = command.apiKey?.trim() || undefined;
-				let env: Record<string, string> | undefined;
+				let env = mergeProxyEnv(preservedProvider?.env, command.proxyUrl);
 				let storedHeaders: Record<string, string> | undefined;
 				if (!apiKey && command.useStoredAuthProvider) {
 					const storedAuth = await session.modelRegistry.getApiKeyAndHeaders(model);
 					if (storedAuth.ok) {
 						apiKey = storedAuth.apiKey;
-						env = storedAuth.env;
+						env = { ...storedAuth.env, ...env };
 						storedHeaders = storedAuth.headers;
 					}
 				}
@@ -910,7 +1221,7 @@ export async function runRpcMode(runtimeHost: AgentSessionRuntime): Promise<neve
 
 				const config = readCustomModelsConfig();
 				const providerConfig = config.providers[provider] ?? {};
-				const { headers: _oldHeaders, ...providerConfigWithoutHeaders } = providerConfig;
+				const { env: oldEnv, headers: _oldHeaders, ...providerConfigWithoutHeaders } = providerConfig;
 				const existingModels = Array.isArray(providerConfig.models) ? providerConfig.models : [];
 				const incomingHeaders =
 					command.headers && typeof command.headers === "object"
@@ -921,6 +1232,7 @@ export async function runRpcMode(runtimeHost: AgentSessionRuntime): Promise<neve
 							)
 						: undefined;
 				const headers = mergeRedactedHeaders(incomingHeaders, _oldHeaders);
+				const env = mergeProxyEnv(oldEnv, command.proxyUrl);
 				const input: ("text" | "image")[] = command.model.input?.length ? command.model.input : ["text"];
 				const model = {
 					id: modelId,
@@ -938,6 +1250,7 @@ export async function runRpcMode(runtimeHost: AgentSessionRuntime): Promise<neve
 					...providerConfigWithoutHeaders,
 					baseUrl,
 					...(headers && Object.keys(headers).length > 0 ? { headers } : {}),
+					...(env && Object.keys(env).length > 0 ? { env } : {}),
 					api: command.api,
 					models: [
 						...existingModels.filter((item) => item.id !== modelId && item.id !== command.replaceModelId?.trim()),
@@ -945,8 +1258,29 @@ export async function runRpcMode(runtimeHost: AgentSessionRuntime): Promise<neve
 					],
 				};
 				writeCustomModelsConfig(config);
-				if (command.apiKey?.trim()) {
-					session.modelRegistry.authStorage.set(provider, { type: "api_key", key: command.apiKey.trim() });
+				if (command.authKind === "none") {
+					session.modelRegistry.authStorage.remove(provider);
+				} else {
+					const existingCredential = session.modelRegistry.authStorage.get(provider);
+					const existingCredentialEnv =
+						existingCredential?.type === "api_key" ? mergeProxyEnv(existingCredential.env, "") : undefined;
+					if (command.apiKey?.trim()) {
+						session.modelRegistry.authStorage.set(provider, {
+							type: "api_key",
+							key: command.apiKey.trim(),
+							...(existingCredentialEnv ? { env: existingCredentialEnv } : {}),
+						});
+					} else if (
+						command.proxyUrl !== undefined &&
+						existingCredential?.type === "api_key" &&
+						existingCredential.env
+					) {
+						session.modelRegistry.authStorage.set(provider, {
+							type: "api_key",
+							key: existingCredential.key,
+							...(existingCredentialEnv ? { env: existingCredentialEnv } : {}),
+						});
+					}
 				}
 				session.modelRegistry.refresh();
 				return success(id, "upsert_custom_model", { path: getModelsPath(), provider, modelId });
@@ -972,6 +1306,21 @@ export async function runRpcMode(runtimeHost: AgentSessionRuntime): Promise<neve
 					session.modelRegistry.refresh();
 				}
 				return success(id, "remove_custom_model", { path: getModelsPath(), provider, modelId });
+			}
+
+			case "remove_custom_provider": {
+				const provider = normalizeProviderId(command.provider);
+				if (!provider) {
+					return error(id, "remove_custom_provider", "Provider is required");
+				}
+				const config = readCustomModelsConfig();
+				delete config.providers[provider];
+				writeCustomModelsConfig(config);
+				if (command.removeAuth !== false) {
+					session.modelRegistry.authStorage.remove(provider);
+				}
+				session.modelRegistry.refresh();
+				return success(id, "remove_custom_provider", { path: getModelsPath(), provider });
 			}
 
 			// =================================================================
@@ -1069,14 +1418,32 @@ export async function runRpcMode(runtimeHost: AgentSessionRuntime): Promise<neve
 			}
 
 			case "get_sessions": {
-				const limit = Math.max(1, Math.min(command.limit ?? 40, 200));
-				const sessions = command.all
-					? await SessionManager.listAll(session.sessionManager.getSessionDir())
-					: await SessionManager.list(session.sessionManager.getCwd(), session.sessionManager.getSessionDir());
+				const cwd = command.cwd?.trim();
+				if (command.cwd !== undefined && !cwd) {
+					return error(id, "get_sessions", "Working directory cannot be empty");
+				}
+				let sessions: SessionInfo[];
+				if (cwd) {
+					const sessionDir = session.sessionManager.usesDefaultSessionDir()
+						? undefined
+						: session.sessionManager.getSessionDir();
+					sessions = await SessionManager.list(cwd, sessionDir);
+				} else {
+					sessions = command.all
+						? session.sessionManager.usesDefaultSessionDir()
+							? await SessionManager.listAll()
+							: await SessionManager.listAll(session.sessionManager.getSessionDir())
+						: await SessionManager.list(session.sessionManager.getCwd(), session.sessionManager.getSessionDir());
+				}
+				const { sessions: pageSessions, ...metadata } = getSessionPage(sessions, command);
+				const wireMetadata = metadata satisfies Omit<RpcGetSessionsDataDTO, "sessions">;
 				// Not `satisfies RpcGetSessionsDataDTO`: SessionInfo.created/modified are Date
 				// instances here that serialize to ISO strings on the wire, so the in-memory
 				// object intentionally doesn't match the (post-serialization) DTO.
-				return success(id, "get_sessions", { sessions: sessions.slice(0, limit) });
+				return success(id, "get_sessions", {
+					sessions: pageSessions,
+					...wireMetadata,
+				});
 			}
 
 			case "switch_session": {
@@ -1088,14 +1455,26 @@ export async function runRpcMode(runtimeHost: AgentSessionRuntime): Promise<neve
 			}
 
 			case "fork": {
-				const result = await runtimeHost.fork(command.entryId);
-				if (!result.cancelled) {
-					await rebindSession();
+				await promptPreflightTail;
+				if (session.isStreaming || session.isCompacting) {
+					return error(id, "fork", "Cannot fork while the agent is running or compacting");
 				}
-				return success(id, "fork", { text: result.selectedText, cancelled: result.cancelled });
+				const result = await runtimeHost.fork(command.entryId);
+				if (result.cancelled) {
+					return success(id, "fork", { cancelled: true } satisfies RpcForkResultDTO);
+				}
+				await rebindSession();
+				return success(id, "fork", {
+					text: result.selectedText ?? "",
+					cancelled: false,
+				} satisfies RpcForkResultDTO);
 			}
 
 			case "clone": {
+				await promptPreflightTail;
+				if (session.isStreaming || session.isCompacting) {
+					return error(id, "clone", "Cannot clone while the agent is running or compacting");
+				}
 				const leafId = session.sessionManager.getLeafId();
 				if (!leafId) {
 					return error(id, "clone", "Cannot clone session: no current entry selected");
@@ -1127,7 +1506,10 @@ export async function runRpcMode(runtimeHost: AgentSessionRuntime): Promise<neve
 
 			case "get_tree": {
 				const sessionManager = session.sessionManager;
-				return success(id, "get_tree", { tree: sessionManager.getTree(), leafId: sessionManager.getLeafId() });
+				return success(id, "get_tree", {
+					tree: sessionManager.getTree().map(toRpcSessionTreeNode),
+					leafId: sessionManager.getLeafId(),
+				});
 			}
 
 			case "get_last_assistant_text": {
@@ -1187,6 +1569,43 @@ export async function runRpcMode(runtimeHost: AgentSessionRuntime): Promise<neve
 				}
 
 				return success(id, "get_commands", { commands } satisfies RpcGetCommandsDataDTO);
+			}
+
+			case "get_resources": {
+				const resources = await loadResourceCatalog(
+					() => {
+						const extensionsResult = session.resourceLoader.getExtensions();
+						const skillsResult = session.resourceLoader.getSkills();
+						const promptsResult = session.resourceLoader.getPrompts();
+						return {
+							extensions: extensionsResult.extensions,
+							extensionErrors: extensionsResult.errors.map((diagnostic) => ({
+								extensionPath: diagnostic.path,
+								error: diagnostic.error,
+							})),
+							extensionDiagnostics: [
+								...session.extensionRunner.getCommandDiagnostics(),
+								...session.extensionRunner.getShortcutDiagnostics(),
+							],
+							skills: skillsResult.skills,
+							skillDiagnostics: skillsResult.diagnostics,
+							prompts: promptsResult.prompts,
+							promptDiagnostics: promptsResult.diagnostics,
+						};
+					},
+					command.reload
+						? async () => {
+								if (session.isStreaming) {
+									throw new Error("Wait for the current response to finish before reloading resources");
+								}
+								if (session.isCompacting) {
+									throw new Error("Wait for compaction to finish before reloading resources");
+								}
+								await session.reload();
+							}
+						: undefined,
+				);
+				return success(id, "get_resources", resources);
 			}
 
 			default: {

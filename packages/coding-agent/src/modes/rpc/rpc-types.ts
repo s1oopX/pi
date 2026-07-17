@@ -11,8 +11,28 @@ import type { SessionStats } from "../../core/agent-session.ts";
 import type { AuthStatus } from "../../core/auth-storage.ts";
 import type { BashResult } from "../../core/bash-executor.ts";
 import type { CompactionResult } from "../../core/compaction/index.ts";
-import type { SessionEntry, SessionInfo, SessionTreeNode } from "../../core/session-manager.ts";
+import type { SessionEntry, SessionInfo } from "../../core/session-manager.ts";
 import type { SourceInfo } from "../../core/source-info.ts";
+import type { RpcForkResultDTO, RpcSessionChangeResultDTO, RpcSessionTreeNodeDTO } from "./rpc-desktop-contract.ts";
+
+export interface RpcGetSessionsOptions {
+	all?: boolean;
+	cwd?: string;
+	offset?: number;
+	limit?: number;
+	query?: string;
+}
+
+export interface RpcGetResourcesOptions {
+	reload?: boolean;
+}
+
+export interface RpcGetSessionsData {
+	sessions: SessionInfo[];
+	total: number;
+	hasMore: boolean;
+	nextOffset: number | null;
+}
 
 // ============================================================================
 // RPC Commands (stdin)
@@ -24,7 +44,7 @@ export type RpcCommand =
 	| { id?: string; type: "steer"; message: string; images?: ImageContent[] }
 	| { id?: string; type: "follow_up"; message: string; images?: ImageContent[] }
 	| { id?: string; type: "abort" }
-	| { id?: string; type: "new_session"; parentSession?: string }
+	| { id?: string; type: "new_session"; cwd?: string; parentSession?: string }
 
 	// State
 	| { id?: string; type: "get_state" }
@@ -38,6 +58,18 @@ export type RpcCommand =
 	| { id?: string; type: "remove_api_key"; provider: string }
 	| { id?: string; type: "get_custom_models" }
 	| { id?: string; type: "replace_custom_models"; providers: Record<string, unknown> }
+	| {
+			id?: string;
+			type: "fetch_provider_models";
+			provider: string;
+			baseUrl: string;
+			api: "openai-completions" | "anthropic-messages";
+			apiKey?: string;
+			headers?: Record<string, string>;
+			useStoredAuthProvider?: string;
+			preserveHeadersFromProvider?: string;
+			proxyUrl?: string;
+	  }
 	| { id?: string; type: "test_model"; provider: string; modelId: string }
 	| {
 			id?: string;
@@ -50,6 +82,7 @@ export type RpcCommand =
 			modelId: string;
 			useStoredAuthProvider?: string;
 			preserveHeadersFromProvider?: string;
+			proxyUrl?: string;
 	  }
 	| {
 			id?: string;
@@ -57,8 +90,10 @@ export type RpcCommand =
 			provider: string;
 			baseUrl: string;
 			api: "openai-completions" | "anthropic-messages";
+			authKind?: "api_key" | "none";
 			apiKey?: string;
 			headers?: Record<string, string>;
+			proxyUrl?: string;
 			replaceModelId?: string;
 			model: {
 				id: string;
@@ -70,6 +105,7 @@ export type RpcCommand =
 			};
 	  }
 	| { id?: string; type: "remove_custom_model"; provider: string; modelId: string; removeAuthWhenEmpty?: boolean }
+	| { id?: string; type: "remove_custom_provider"; provider: string; removeAuth?: boolean }
 
 	// Thinking
 	| { id?: string; type: "set_thinking_level"; level: ThinkingLevel }
@@ -94,7 +130,7 @@ export type RpcCommand =
 	// Session
 	| { id?: string; type: "get_session_stats" }
 	| { id?: string; type: "export_html"; outputPath?: string }
-	| { id?: string; type: "get_sessions"; all?: boolean; limit?: number }
+	| ({ id?: string; type: "get_sessions" } & RpcGetSessionsOptions)
 	| { id?: string; type: "switch_session"; sessionPath: string }
 	| { id?: string; type: "fork"; entryId: string }
 	| { id?: string; type: "clone" }
@@ -109,6 +145,7 @@ export type RpcCommand =
 
 	// Commands (available for invocation via prompt)
 	| { id?: string; type: "get_commands" }
+	| ({ id?: string; type: "get_resources" } & RpcGetResourcesOptions)
 
 	// Extension flags (runtime-settable, e.g. permission mode)
 	| { id?: string; type: "set_extension_flag"; name: string; value: boolean | string };
@@ -140,10 +177,14 @@ export interface RpcSessionState {
 	isCompacting: boolean;
 	steeringMode: "all" | "one-at-a-time";
 	followUpMode: "all" | "one-at-a-time";
+	cwd: string;
 	sessionFile?: string;
 	sessionId: string;
 	sessionName?: string;
 	autoCompactionEnabled: boolean;
+	autoRetryEnabled: boolean;
+	isRetrying: boolean;
+	retryAttempt: number;
 	messageCount: number;
 	pendingMessageCount: number;
 }
@@ -159,7 +200,7 @@ export type RpcResponse =
 	| { id?: string; type: "response"; command: "steer"; success: true }
 	| { id?: string; type: "response"; command: "follow_up"; success: true }
 	| { id?: string; type: "response"; command: "abort"; success: true }
-	| { id?: string; type: "response"; command: "new_session"; success: true; data: { cancelled: boolean } }
+	| { id?: string; type: "response"; command: "new_session"; success: true; data: RpcSessionChangeResultDTO }
 
 	// State
 	| { id?: string; type: "response"; command: "get_state"; success: true; data: RpcSessionState }
@@ -224,6 +265,13 @@ export type RpcResponse =
 	| {
 			id?: string;
 			type: "response";
+			command: "fetch_provider_models";
+			success: true;
+			data: { models: Array<{ id: string; name?: string }> };
+	  }
+	| {
+			id?: string;
+			type: "response";
 			command: "test_model";
 			success: true;
 			data: {
@@ -259,6 +307,13 @@ export type RpcResponse =
 			success: true;
 			data: { path: string; provider: string; modelId: string };
 	  }
+	| {
+			id?: string;
+			type: "response";
+			command: "remove_custom_provider";
+			success: true;
+			data: { path: string; provider: string };
+	  }
 
 	// Thinking
 	| { id?: string; type: "response"; command: "set_thinking_level"; success: true }
@@ -289,9 +344,9 @@ export type RpcResponse =
 	// Session
 	| { id?: string; type: "response"; command: "get_session_stats"; success: true; data: SessionStats }
 	| { id?: string; type: "response"; command: "export_html"; success: true; data: { path: string } }
-	| { id?: string; type: "response"; command: "get_sessions"; success: true; data: { sessions: SessionInfo[] } }
-	| { id?: string; type: "response"; command: "switch_session"; success: true; data: { cancelled: boolean } }
-	| { id?: string; type: "response"; command: "fork"; success: true; data: { text: string; cancelled: boolean } }
+	| { id?: string; type: "response"; command: "get_sessions"; success: true; data: RpcGetSessionsData }
+	| { id?: string; type: "response"; command: "switch_session"; success: true; data: RpcSessionChangeResultDTO }
+	| { id?: string; type: "response"; command: "fork"; success: true; data: RpcForkResultDTO }
 	| { id?: string; type: "response"; command: "clone"; success: true; data: { cancelled: boolean } }
 	| {
 			id?: string;
@@ -312,7 +367,7 @@ export type RpcResponse =
 			type: "response";
 			command: "get_tree";
 			success: true;
-			data: { tree: SessionTreeNode[]; leafId: string | null };
+			data: { tree: RpcSessionTreeNodeDTO[]; leafId: string | null };
 	  }
 	| {
 			id?: string;
@@ -333,6 +388,23 @@ export type RpcResponse =
 			command: "get_commands";
 			success: true;
 			data: { commands: RpcSlashCommand[] };
+	  }
+	| {
+			id?: string;
+			type: "response";
+			command: "get_resources";
+			success: true;
+			data: {
+				extensions: Array<{ name: string; path: string; sourceInfo: SourceInfo }>;
+				skills: Array<{ name: string; description?: string; path: string; sourceInfo: SourceInfo }>;
+				prompts: Array<{ name: string; description?: string; path: string; sourceInfo: SourceInfo }>;
+				diagnostics: Array<{
+					resource: "extension" | "skill" | "prompt";
+					type: "warning" | "error" | "collision";
+					message: string;
+					path?: string;
+				}>;
+			};
 	  }
 
 	// Error response (any command can fail)
@@ -379,6 +451,13 @@ export type RpcExtensionUIRequest =
 	  }
 	| { type: "extension_ui_request"; id: string; method: "setTitle"; title: string }
 	| { type: "extension_ui_request"; id: string; method: "set_editor_text"; text: string };
+
+/** Emitted when the backend settles an interactive request without a client response. */
+export interface RpcExtensionUIRequestClosed {
+	type: "extension_ui_request_closed";
+	id: string;
+	reason: "aborted" | "timeout";
+}
 
 // ============================================================================
 // Extension UI Commands (stdin)

@@ -191,10 +191,14 @@ export interface RpcSessionStateDTO {
 	isCompacting: boolean;
 	steeringMode: RpcQueueMode;
 	followUpMode: RpcQueueMode;
+	cwd: string;
 	sessionFile?: string;
 	sessionId: string;
 	sessionName?: string;
 	autoCompactionEnabled: boolean;
+	autoRetryEnabled: boolean;
+	isRetrying: boolean;
+	retryAttempt: number;
 	messageCount: number;
 	pendingMessageCount: number;
 }
@@ -248,6 +252,21 @@ export interface RpcSessionInfoDTO {
 	allMessagesText: string;
 }
 
+export interface RpcSessionTreeEntryDTO {
+	type: string;
+	id: string;
+	parentId: string | null;
+	timestamp: string;
+	summary?: string;
+}
+
+export interface RpcSessionTreeNodeDTO {
+	entry: RpcSessionTreeEntryDTO;
+	children: RpcSessionTreeNodeDTO[];
+	label?: string;
+	labelTimestamp?: string;
+}
+
 export interface RpcSourceInfoDTO {
 	path: string;
 	source: string;
@@ -261,6 +280,22 @@ export interface RpcSlashCommandDTO {
 	description?: string;
 	source: "extension" | "prompt" | "skill";
 	sourceInfo: RpcSourceInfoDTO;
+}
+
+export type RpcResourceKindDTO = "extension" | "skill" | "prompt";
+
+export interface RpcResourceItemDTO {
+	name: string;
+	description?: string;
+	path: string;
+	sourceInfo: RpcSourceInfoDTO;
+}
+
+export interface RpcResourceDiagnosticDTO {
+	resource: RpcResourceKindDTO;
+	type: "warning" | "error" | "collision";
+	message: string;
+	path?: string;
 }
 
 export interface RpcCustomModelConfigModelDTO {
@@ -278,6 +313,9 @@ export interface RpcCustomModelProviderDTO {
 	baseUrl?: string;
 	headers?: Record<string, string>;
 	api?: string;
+	authKind?: "api_key" | "none";
+	hasStoredAuth?: boolean;
+	proxyUrl?: string;
 	models?: RpcCustomModelConfigModelDTO[];
 }
 
@@ -306,10 +344,14 @@ export interface RpcGetStateDataDTO {
 	isCompacting: boolean;
 	steeringMode: RpcQueueMode;
 	followUpMode: RpcQueueMode;
+	cwd: string;
 	sessionFile?: string;
 	sessionId: string;
 	sessionName?: string;
 	autoCompactionEnabled: boolean;
+	autoRetryEnabled: boolean;
+	isRetrying: boolean;
+	retryAttempt: number;
 	messageCount: number;
 	pendingMessageCount: number;
 }
@@ -331,12 +373,33 @@ export interface RpcGetCustomModelsDataDTO {
 	providers: Record<string, RpcCustomModelProviderDTO>;
 }
 
+export interface RpcFetchProviderModelsDataDTO {
+	models: Array<{ id: string; name?: string }>;
+}
+
 export interface RpcGetSessionsDataDTO {
 	sessions: RpcSessionInfoDTO[];
+	total: number;
+	hasMore: boolean;
+	nextOffset: number | null;
 }
+
+export interface RpcSessionChangeResultDTO {
+	cancelled: boolean;
+	cwd: string;
+}
+
+export type RpcForkResultDTO = { cancelled: true; text?: never } | { cancelled: false; text: string };
 
 export interface RpcGetCommandsDataDTO {
 	commands: RpcSlashCommandDTO[];
+}
+
+export interface RpcGetResourcesDataDTO {
+	extensions: RpcResourceItemDTO[];
+	skills: RpcResourceItemDTO[];
+	prompts: RpcResourceItemDTO[];
+	diagnostics: RpcResourceDiagnosticDTO[];
 }
 
 // ============================================================================
@@ -392,11 +455,32 @@ export interface RpcCompactionEndEventDTO {
 	errorMessage?: string;
 }
 
+export interface RpcAutoRetryStartEventDTO {
+	type: "auto_retry_start";
+	attempt: number;
+	maxAttempts: number;
+	delayMs: number;
+	errorMessage: string;
+}
+
+export interface RpcAutoRetryEndEventDTO {
+	type: "auto_retry_end";
+	success: boolean;
+	attempt: number;
+	finalError?: string;
+}
+
 export interface RpcExtensionUIRequestEventDTO {
 	type: "extension_ui_request";
 	id: string;
 	method: string;
 	[key: string]: unknown;
+}
+
+export interface RpcExtensionUIRequestClosedEventDTO {
+	type: "extension_ui_request_closed";
+	id: string;
+	reason: "aborted" | "timeout";
 }
 
 export type RpcBackendEventDTO =
@@ -408,4 +492,7 @@ export type RpcBackendEventDTO =
 	| RpcQueueUpdateEventDTO
 	| RpcCompactionStartEventDTO
 	| RpcCompactionEndEventDTO
-	| RpcExtensionUIRequestEventDTO;
+	| RpcAutoRetryStartEventDTO
+	| RpcAutoRetryEndEventDTO
+	| RpcExtensionUIRequestEventDTO
+	| RpcExtensionUIRequestClosedEventDTO;

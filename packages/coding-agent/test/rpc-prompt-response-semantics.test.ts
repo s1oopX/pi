@@ -77,6 +77,10 @@ function createAssistantMessage(text: string): AssistantMessage {
 }
 
 type ParsedOutputLine = Record<string, unknown>;
+type CompactTreeNode = {
+	entry: Record<string, unknown>;
+	children: CompactTreeNode[];
+};
 
 function parseOutputLines(outputLines: string[]): ParsedOutputLine[] {
 	return outputLines
@@ -91,8 +95,21 @@ function getPromptResponses(outputLines: string[], id: string): ParsedOutputLine
 	);
 }
 
+function getResponse(outputLines: string[], id: string, command: string): ParsedOutputLine | undefined {
+	return parseOutputLines(outputLines).find(
+		(record) => record.id === id && record.type === "response" && record.command === command,
+	);
+}
+
 function sleep(ms: number): Promise<void> {
 	return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+function expectCompactTreeNodes(nodes: readonly CompactTreeNode[]): void {
+	for (const node of nodes) {
+		expect(node.entry).not.toHaveProperty("message");
+		expectCompactTreeNodes(node.children);
+	}
 }
 
 function createRuntimeHost(options: { withAuth: boolean; responseDelayMs: number; model?: Model<any> }): {
@@ -190,6 +207,28 @@ describe("RPC prompt response semantics", () => {
 		rpcIo.lineHandler = undefined;
 	});
 
+	it("rejects standalone steering and follow-up messages while idle", async () => {
+		const { lineHandler, cleanup } = await startRpcMode({ withAuth: true, responseDelayMs: 0 });
+
+		try {
+			lineHandler(JSON.stringify({ id: "idle-steer", type: "steer", message: "Steer this" }));
+			lineHandler(JSON.stringify({ id: "idle-follow-up", type: "follow_up", message: "Follow this up" }));
+
+			await vi.waitFor(() => {
+				expect(getResponse(rpcIo.outputLines, "idle-steer", "steer")).toMatchObject({
+					success: false,
+					error: expect.stringContaining("only available while the agent is running"),
+				});
+				expect(getResponse(rpcIo.outputLines, "idle-follow-up", "follow_up")).toMatchObject({
+					success: false,
+					error: expect.stringContaining("only available while the agent is running"),
+				});
+			});
+		} finally {
+			await cleanup();
+		}
+	});
+
 	it("emits one failure response when prompt preflight rejects", async () => {
 		const { lineHandler, cleanup } = await startRpcMode({
 			withAuth: false,
@@ -281,6 +320,98 @@ describe("RPC prompt response semantics", () => {
 			});
 
 			await sleep(150);
+		} finally {
+			await cleanup();
+		}
+	});
+
+	it("clears queued streaming prompts when aborting", async () => {
+		const { lineHandler, cleanup } = await startRpcMode({ withAuth: true, responseDelayMs: 100 });
+
+		try {
+			lineHandler(JSON.stringify({ id: "abort-start", type: "prompt", message: "Start" }));
+			await vi.waitFor(() => {
+				expect(getPromptResponses(rpcIo.outputLines, "abort-start")).toHaveLength(1);
+			});
+
+			lineHandler(
+				JSON.stringify({
+					id: "abort-queued",
+					type: "prompt",
+					message: "Do not keep this queued",
+					streamingBehavior: "followUp",
+				}),
+			);
+			await vi.waitFor(() => {
+				expect(getPromptResponses(rpcIo.outputLines, "abort-queued")).toHaveLength(1);
+			});
+
+			lineHandler(JSON.stringify({ id: "abort-now", type: "abort" }));
+			await vi.waitFor(() => {
+				expect(getResponse(rpcIo.outputLines, "abort-now", "abort")).toMatchObject({
+					id: "abort-now",
+					type: "response",
+					command: "abort",
+					success: true,
+				});
+			});
+
+			lineHandler(JSON.stringify({ id: "abort-state", type: "get_state" }));
+			await vi.waitFor(() => {
+				expect(getResponse(rpcIo.outputLines, "abort-state", "get_state")).toMatchObject({
+					data: { pendingMessageCount: 0 },
+				});
+			});
+		} finally {
+			await cleanup();
+		}
+	});
+
+	it("returns a compact session tree without full messages", async () => {
+		const { lineHandler, cleanup } = await startRpcMode({ withAuth: true, responseDelayMs: 0 });
+
+		try {
+			lineHandler(JSON.stringify({ id: "tree-start", type: "prompt", message: "Start" }));
+			await vi.waitFor(() => {
+				expect(getPromptResponses(rpcIo.outputLines, "tree-start")).toHaveLength(1);
+			});
+			await sleep(20);
+
+			lineHandler(JSON.stringify({ id: "tree", type: "get_tree" }));
+			await vi.waitFor(() => {
+				const response = getResponse(rpcIo.outputLines, "tree", "get_tree");
+				expect(response).toMatchObject({
+					id: "tree",
+					type: "response",
+					command: "get_tree",
+					success: true,
+				});
+				const data = response?.data as { tree: CompactTreeNode[] };
+				expectCompactTreeNodes(data.tree);
+			});
+		} finally {
+			await cleanup();
+		}
+	});
+});
+
+describe("RPC fork response semantics", () => {
+	it("omits text when an extension cancels the fork", async () => {
+		const { lineHandler, cleanup } = await startRpcMode({ withAuth: true, responseDelayMs: 0 });
+
+		try {
+			lineHandler(JSON.stringify({ id: "fork-cancelled", type: "fork", entryId: "entry-1" }));
+
+			await vi.waitFor(() => {
+				const response = parseOutputLines(rpcIo.outputLines).find((record) => record.id === "fork-cancelled");
+				expect(response).toEqual({
+					id: "fork-cancelled",
+					type: "response",
+					command: "fork",
+					success: true,
+					data: { cancelled: true },
+				});
+			});
 		} finally {
 			await cleanup();
 		}

@@ -1447,6 +1447,8 @@ export class AgentSession {
 	 */
 	async abort(): Promise<void> {
 		this.abortRetry();
+		this.abortCompaction();
+		this.abortBranchSummary();
 		this.agent.abort();
 		await this.agent.waitForIdle();
 	}
@@ -2488,8 +2490,12 @@ export class AgentSession {
 	}
 
 	async reload(options?: { beforeSessionStart?: () => void | Promise<void> }): Promise<void> {
-		const previousFlagValues = this._extensionRunner.getFlagValues();
-		await emitSessionShutdownEvent(this._extensionRunner, { type: "session_shutdown", reason: "reload" });
+		const previousRunner = this._extensionRunner;
+		const previousFlagValues = previousRunner.getFlagValues();
+		await emitSessionShutdownEvent(previousRunner, { type: "session_shutdown", reason: "reload" });
+		previousRunner.invalidate(
+			"This extension ctx is stale after session reload. Do not use the old ctx after await ctx.reload().",
+		);
 		await this.settingsManager.reload();
 		this.syncQueueModesFromSettings();
 		resetApiProviders();
