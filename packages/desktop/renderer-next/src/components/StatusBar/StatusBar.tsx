@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { useI18n } from "../../i18n";
+import { useElapsedSeconds } from "../../hooks/useElapsedSeconds";
 import { useStore } from "../../store";
 import type { SessionState, SessionStats } from "../../ipc/types";
 import type { CompactionActivity } from "../../store/agentActivity";
@@ -25,30 +26,6 @@ export function hasStatusBarContent({
   const hasStats = messageCount > 0 || tokensIn > 0 || tokensOut > 0 || cost > 0;
   const isCompacting = compactionActivity !== null || Boolean(session?.isCompacting);
   return isStreaming || isCompacting || pendingCount > 0 || hasStats;
-}
-
-function useElapsedSeconds(active: boolean): number {
-  const [elapsed, setElapsed] = useState(0);
-  const startedAt = useRef<number | null>(null);
-
-  useEffect(() => {
-    if (!active) {
-      startedAt.current = null;
-      setElapsed(0);
-      return;
-    }
-
-    startedAt.current = Date.now();
-    setElapsed(0);
-    const timer = setInterval(() => {
-      if (startedAt.current != null) {
-        setElapsed(Math.floor((Date.now() - startedAt.current) / 1000));
-      }
-    }, 1000);
-    return () => clearInterval(timer);
-  }, [active]);
-
-  return elapsed;
 }
 
 export function StatusBar() {

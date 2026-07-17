@@ -377,6 +377,34 @@
   margin-top: 10px;
 }
 
+.agent-working-primary {
+  color: inherit;
+}
+
+.agent-working-elapsed {
+  color: var(--faint);
+  font-variant-numeric: tabular-nums;
+}
+
+.agent-working-elapsed::before {
+  content: "·";
+  margin-right: 6px;
+  color: var(--faint);
+}
+
+.agent-working.tone-compacting {
+  color: var(--warning);
+}
+
+.agent-working.tone-compacting .agent-working-dot {
+  background: var(--warning);
+  box-shadow: 0 0 0 0 color-mix(in srgb, var(--warning) 45%, transparent);
+}
+
+.agent-working.tone-tool .agent-working-primary {
+  color: var(--text-soft);
+}
+
 .agent-working-dot,
 .tool-call-running-dot {
   width: 7px;

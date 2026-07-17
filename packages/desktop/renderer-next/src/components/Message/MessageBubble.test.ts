@@ -100,9 +100,10 @@ describe("Codex-style process presentation", () => {
     }));
     expect(markup).toContain("Working…");
     expect(markup).toContain("agent-working");
+    expect(markup).toContain("tone-working");
   });
 
-  it("keeps a Working tail while streaming after process content", () => {
+  it("keeps a live status tail while streaming after process content", () => {
     const markup = renderToStaticMarkup(createElement(MessageBubble, {
       message: assistantMessage([
         {
@@ -120,6 +121,8 @@ describe("Codex-style process presentation", () => {
     }));
     expect(markup).toContain("Still going.");
     expect(markup).toContain("agent-working-tail");
+    expect(markup).toContain("agent-working-primary");
+    // Default store has no activeTool → plain Working…
     expect(markup).toContain("Working…");
   });
 

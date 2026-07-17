@@ -2,9 +2,12 @@ import { useEffect, useRef, useState } from "react";
 import Markdown from "react-markdown";
 import type { Components } from "react-markdown";
 import { translateText, useI18n, type ResolvedLanguage } from "../../i18n";
+import { useElapsedSeconds } from "../../hooks/useElapsedSeconds";
+import { useStore } from "../../store";
 import { CodeBlock } from "./CodeBlock";
 import { DiffView } from "../DiffView";
 import { buildFileChangeDisplayPlan, type FileChange } from "../MessageList/toolPairing";
+import { formatAgentLiveStatus } from "./agentLiveStatus";
 import {
   createProcessExpandState,
   reduceProcessExpandState,
@@ -90,7 +93,20 @@ function AssistantContent({
   resultsByCallId?: Map<string, Extract<Message, { role: "toolResult" }>>;
   toolExecutionsByCallId: ToolExecutionsByCallId;
 }) {
-  const { t } = useI18n();
+  const { resolvedLanguage, t } = useI18n();
+  const activeTool = useStore((state) => state.activeTool);
+  const compactionActivity = useStore((state) => state.compactionActivity);
+  const sessionCompacting = useStore((state) => Boolean(state.session?.isCompacting));
+  const isCompacting = compactionActivity !== null || sessionCompacting;
+  const elapsedSeconds = useElapsedSeconds(Boolean(streaming) || isCompacting);
+  const liveStatus = formatAgentLiveStatus({
+    isStreaming: Boolean(streaming),
+    elapsedSeconds,
+    activeTool,
+    isCompacting,
+    compactionReason: compactionActivity?.reason,
+    language: resolvedLanguage === "zh-CN" ? "zh-CN" : "en",
+  });
   // Render blocks in their natural order (thinking usually precedes text and
   // tool calls) so the assistant's reasoning shows before its answer.
   const hasRenderableContent = message.content.some(
@@ -164,10 +180,17 @@ function AssistantContent({
         }
         return null;
       })}
-      {streaming && !errorMessage && (
-        <div className="agent-working agent-working-tail" aria-live="polite">
+      {liveStatus.visible && !errorMessage && (
+        <div
+          className={`agent-working agent-working-tail tone-${liveStatus.tone}`}
+          aria-live="polite"
+          aria-label={liveStatus.line}
+        >
           <span className="agent-working-dot" aria-hidden="true" />
-          <span>{t("Working…", "正在处理…")}</span>
+          <span className="agent-working-primary">{liveStatus.primary}</span>
+          {liveStatus.elapsed && (
+            <span className="agent-working-elapsed">{liveStatus.elapsed}</span>
+          )}
         </div>
       )}
       {errorMessage && !suppressError && (
