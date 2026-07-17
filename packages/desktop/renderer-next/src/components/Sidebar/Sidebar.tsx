@@ -925,7 +925,7 @@ export function Sidebar({ collapsed, onToggle }: SidebarProps) {
                                 {workspaceDisplay.detail && <span>{workspaceDisplay.detail}</span>}
                               </span>
                               {isCurrent && (
-                                <span className={`workspace-navigation-status ${backendStatus.ready && !switchingWorkspace ? "ready" : ""}`} aria-label={workspaceStatusText} />
+                                <span className={`workspace-navigation-status ${backendStatus.ready && !switchingWorkspace ? "ready" : ""}`} aria-label={workspaceStatusText ?? undefined} />
                               )}
                             </button>
                             <button
@@ -1031,9 +1031,15 @@ export function Sidebar({ collapsed, onToggle }: SidebarProps) {
             <div className="status-row" title={backendStatus.error}>
               <span
                 className={`backend-dot ${backendStatus.ready && !switchingWorkspace ? "ready" : ""}`}
-                aria-label={switchingWorkspace ? workspaceStatusText : backendStatus.ready ? t("Backend running", "后端正在运行") : workspaceStatusText}
+                aria-label={
+                  switchingWorkspace
+                    ? workspaceStatusText ?? undefined
+                    : backendStatus.ready
+                      ? t("Backend running", "后端正在运行")
+                      : workspaceStatusText ?? undefined
+                }
               />
-              <span className="status-text">{workspaceStatusText}</span>
+              <span className="status-text">{workspaceStatusText ?? ""}</span>
               {!backendStatus.ready && !backendStatus.starting && !backendStatus.restarting && (
                 <button className="status-row-retry" type="button" onClick={handleRestartBackend}>
                   {t("Retry", "重试")}
