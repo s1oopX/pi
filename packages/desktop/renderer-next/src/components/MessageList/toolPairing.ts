@@ -1,6 +1,7 @@
 import type { Message } from "../../ipc/types";
 import type { ToolExecutionsByCallId } from "../../store";
 import { resolveToolPhase, type ToolPhase } from "../Message/toolPresentation";
+import { buildMutationPreviewPatch, looksLikeUnifiedDiff } from "./mutationPreview";
 
 type ToolResult = Extract<Message, { role: "toolResult" }>;
 
@@ -35,6 +36,8 @@ export interface FileChange {
   callId: string;
   phase: ToolPhase;
   resultText?: string;
+  /** Unified-diff style preview reconstructed from tool arguments. */
+  previewPatch?: string;
 }
 
 export interface FileChangeGroup {
@@ -69,6 +72,8 @@ function meaningfulMutationResult(tool: "write" | "edit", result: ToolResult | u
   const text = contentToText(result).trim();
   if (!text) return undefined;
   if (result.isError) return text;
+  // Prefer rendering real patches through DiffView when the tool returned one.
+  if (looksLikeUnifiedDiff(text)) return text;
   const isDefaultSuccess = tool === "write"
     ? /^Successfully wrote \d+ bytes to .+$/.test(text)
     : /^Successfully replaced \d+ block\(s\) in .+\.$/.test(text);
@@ -109,12 +114,18 @@ export function buildFileChangeDisplayPlan(
       return;
     }
     currentStart ??= index;
+    const resultText = meaningfulMutationResult(block.name, result);
     currentChanges.push({
       path,
       tool: block.name,
       callId: block.id,
       phase: resolveToolPhase(block.id, result, executionsByCallId, streaming),
-      resultText: meaningfulMutationResult(block.name, result),
+      resultText,
+      // Prefer a real patch from the tool result when available; otherwise
+      // reconstruct a review preview from the call arguments.
+      previewPatch: resultText && looksLikeUnifiedDiff(resultText)
+        ? resultText
+        : buildMutationPreviewPatch(block.name, path, block.arguments),
     });
     hiddenCallIds.add(block.id);
   });

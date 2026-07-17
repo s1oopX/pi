@@ -101,4 +101,56 @@ describe("Codex-style process presentation", () => {
     expect(markup).toContain("Working…");
     expect(markup).toContain("agent-working");
   });
+
+  it("keeps a Working tail while streaming after process content", () => {
+    const markup = renderToStaticMarkup(createElement(MessageBubble, {
+      message: assistantMessage([
+        {
+          type: "toolCall",
+          id: "call-1",
+          name: "read",
+          arguments: { path: "src/App.tsx" },
+        },
+        { type: "text", text: "Still going." },
+      ]),
+      streaming: true,
+      toolExecutionsByCallId: {
+        "call-1": { toolName: "read", phase: "done" },
+      },
+    }));
+    expect(markup).toContain("Still going.");
+    expect(markup).toContain("agent-working-tail");
+    expect(markup).toContain("Working…");
+  });
+
+  it("expands file changes with a reconstructed diff preview", () => {
+    const markup = renderToStaticMarkup(createElement(MessageBubble, {
+      message: assistantMessage([
+        {
+          type: "toolCall",
+          id: "write-1",
+          name: "write",
+          arguments: { path: "src/new.ts", content: "export const n = 1;\n" },
+        },
+      ]),
+      toolExecutionsByCallId: {
+        "write-1": { toolName: "write", phase: "done" },
+      },
+      resultsByCallId: new Map([
+        ["write-1", {
+          role: "toolResult" as const,
+          toolCallId: "write-1",
+          toolName: "write",
+          content: [{ type: "text" as const, text: "Successfully wrote 18 bytes to src/new.ts" }],
+          isError: false,
+          timestamp: 2,
+        }],
+      ]),
+    }));
+    expect(markup).toContain("Changed 1 file");
+    expect(markup).toContain("src/new.ts");
+    // Single-file groups open by default so the preview is immediately scannable.
+    expect(markup).toContain("file-changes-diff");
+    expect(markup).toContain("diff-view");
+  });
 });

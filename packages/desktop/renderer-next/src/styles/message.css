@@ -373,6 +373,10 @@
   font-weight: 550;
 }
 
+.agent-working-tail {
+  margin-top: 10px;
+}
+
 .agent-working-dot,
 .tool-call-running-dot {
   width: 7px;
@@ -768,11 +772,38 @@
 
 .file-changes-item-main {
   display: grid;
-  grid-template-columns: 38px minmax(0, 1fr) auto;
+  grid-template-columns: 28px minmax(0, 1fr) auto auto;
   align-items: center;
   gap: 8px;
+  width: 100%;
   min-height: 28px;
-  padding: 4px 10px;
+  padding: 4px 0;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  text-align: left;
+  font: inherit;
+  cursor: pointer;
+}
+
+.file-changes-item-main:disabled {
+  cursor: default;
+}
+
+.file-changes-item-main:not(:disabled):hover .file-changes-path {
+  color: var(--text);
+}
+
+.file-changes-item-chevron {
+  color: var(--faint);
+  font-size: calc(9px * var(--font-scale));
+}
+
+.file-changes-diff {
+  margin: 2px 0 8px;
+  padding: 0 0 0 2px;
+  min-width: 0;
+  overflow: auto;
 }
 
 .file-changes-op,

@@ -95,4 +95,21 @@ describe("buildFileChangeDisplayPlan", () => {
     expect(change?.phase).toBe("error");
     expect(change?.resultText).toBe("replacement did not match");
   });
+
+  it("attaches reconstructed preview patches from mutation arguments", () => {
+    const message = assistant([
+      call("write", "write", { path: "a.ts", content: "hello\n" }),
+      call("edit", "edit", {
+        path: "b.ts",
+        edits: [{ oldText: "old", newText: "new" }],
+      }),
+    ]);
+    const plan = buildFileChangeDisplayPlan(message, new Map(), executions, false);
+    const write = plan.groupsByStartIndex.get(0)?.changes[0];
+    const edit = plan.groupsByStartIndex.get(0)?.changes[1];
+
+    expect(write?.previewPatch).toContain("+hello");
+    expect(edit?.previewPatch).toContain("-old");
+    expect(edit?.previewPatch).toContain("+new");
+  });
 });

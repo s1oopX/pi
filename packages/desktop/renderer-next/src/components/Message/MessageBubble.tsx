@@ -158,8 +158,8 @@ function AssistantContent({
         }
         return null;
       })}
-      {streaming && !hasRenderableContent && !errorMessage && (
-        <div className="agent-working" aria-live="polite">
+      {streaming && !errorMessage && (
+        <div className="agent-working agent-working-tail" aria-live="polite">
           <span className="agent-working-dot" aria-hidden="true" />
           <span>{t("Working…", "正在处理…")}</span>
         </div>
@@ -473,14 +473,64 @@ function fileChangeOpLabel(tool: FileChange["tool"]): string {
   return tool === "write" ? "A" : "M";
 }
 
-function FileChangesCard({ changes }: { changes: FileChange[] }) {
+function FileChangeRow({ change, defaultOpen = false }: { change: FileChange; defaultOpen?: boolean }) {
   const { resolvedLanguage, t } = useI18n();
+  const hasPreview = Boolean(change.previewPatch);
+  const errorText = change.phase === "error" ? change.resultText : undefined;
+  const canExpand = hasPreview || Boolean(errorText);
+  const [open, setOpen] = useState(defaultOpen || change.phase === "error");
+  const userToggled = useRef(false);
+
+  useEffect(() => {
+    if (change.phase === "error" && !userToggled.current) setOpen(true);
+  }, [change.phase]);
+
+  return (
+    <li className={`file-changes-item status-${change.phase}${open ? " is-open" : ""}`}>
+      <button
+        className="file-changes-item-main"
+        type="button"
+        disabled={!canExpand}
+        aria-expanded={canExpand ? open : undefined}
+        onClick={() => {
+          if (!canExpand) return;
+          userToggled.current = true;
+          setOpen((value) => !value);
+        }}
+      >
+        <span className="file-changes-op" title={change.tool}>{fileChangeOpLabel(change.tool)}</span>
+        <span className="file-changes-path" title={change.path}>{formatDisplayPath(change.path)}</span>
+        {(change.phase === "error" || change.phase === "running") && (
+          <span className={`file-changes-item-status status-${change.phase}`}>
+            {toolPhaseLabel(change.phase, resolvedLanguage)}
+          </span>
+        )}
+        {canExpand && (
+          <span className="file-changes-item-chevron" aria-hidden="true">{open ? "▾" : "▸"}</span>
+        )}
+      </button>
+      {open && errorText && (
+        <pre className="file-changes-result error">
+          <code>{errorText}</code>
+        </pre>
+      )}
+      {open && hasPreview && (
+        <div className="file-changes-diff" aria-label={t("Change preview", "更改预览")}>
+          <DiffView patch={change.previewPatch!} />
+        </div>
+      )}
+    </li>
+  );
+}
+
+function FileChangesCard({ changes }: { changes: FileChange[] }) {
+  const { t } = useI18n();
   const failed = changes.filter((change) => change.phase === "error").length;
   const running = changes.filter((change) => change.phase === "running").length;
   const queued = changes.filter((change) => change.phase === "queued").length;
   const done = changes.filter((change) => change.phase === "done").length;
   const fileCount = new Set(changes.map((change) => change.path)).size;
-  const [expanded, setExpanded] = useState(failed > 0);
+  const [expanded, setExpanded] = useState(failed > 0 || fileCount === 1);
   const userToggled = useRef(false);
 
   useEffect(() => {
@@ -551,22 +601,11 @@ function FileChangesCard({ changes }: { changes: FileChange[] }) {
       {expanded && (
         <ul className="file-changes-list">
           {changes.map((c) => (
-            <li key={c.callId} className={`file-changes-item status-${c.phase}`}>
-              <div className="file-changes-item-main">
-                <span className="file-changes-op" title={c.tool}>{fileChangeOpLabel(c.tool)}</span>
-                <span className="file-changes-path" title={c.path}>{formatDisplayPath(c.path)}</span>
-                {(c.phase === "error" || c.phase === "running") && (
-                  <span className={`file-changes-item-status status-${c.phase}`}>
-                    {toolPhaseLabel(c.phase, resolvedLanguage)}
-                  </span>
-                )}
-              </div>
-              {c.resultText && (
-                <pre className={`file-changes-result ${c.phase === "error" ? "error" : ""}`}>
-                  <code>{c.resultText}</code>
-                </pre>
-              )}
-            </li>
+            <FileChangeRow
+              key={c.callId}
+              change={c}
+              defaultOpen={fileCount === 1 || c.phase === "error"}
+            />
           ))}
         </ul>
       )}
