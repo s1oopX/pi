@@ -7,30 +7,41 @@
   background: var(--main-bg);
 }
 
+.composer-approval-stack {
+  width: min(100%, calc(var(--thread-width) + 22px));
+  margin: 0 auto 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.composer-approval-stack > .inline-approval {
+  margin: 0;
+}
+
 .composer {
   position: relative;
   display: flex;
   flex-direction: column;
-  width: min(100%, 860px);
+  width: min(100%, calc(var(--thread-width) + 22px));
   margin: 0 auto;
   padding: 6px;
-  border: 1px solid var(--border-strong);
-  border-radius: var(--radius-lg);
-  background: var(--elevated);
-  box-shadow: var(--shadow-sm);
+  border: 0;
+  border-radius: var(--radius-3xl);
+  background: color-mix(in srgb, var(--surface) 90%, transparent);
+  box-shadow: none;
+  backdrop-filter: blur(12px);
   transition:
     border-color var(--transition),
     box-shadow var(--transition);
 }
 
 .composer:focus-within {
-  border-color: var(--focus-border, var(--border-strong));
-  box-shadow: var(--focus-shadow), var(--shadow-sm);
+  box-shadow: 0 0 0 1px var(--border-strong);
 }
 
 .composer.drag-active {
-  border-color: var(--focus-ring);
-  box-shadow: var(--focus-shadow), var(--shadow-sm);
+  box-shadow: var(--focus-shadow);
 }
 
 .composer-drop-overlay {
@@ -43,7 +54,7 @@
   flex-direction: column;
   gap: 4px;
   border: 1px dashed var(--focus-ring);
-  border-radius: calc(var(--radius-lg) - 4px);
+  border-radius: var(--radius-2xl);
   background: color-mix(in srgb, var(--elevated) 94%, transparent);
   color: var(--text);
   pointer-events: none;
@@ -195,8 +206,8 @@
 
 .composer-attach-btn {
   display: inline-flex;
-  width: 30px;
-  height: 30px;
+  width: 28px;
+  height: 28px;
   flex-shrink: 0;
   align-items: center;
   justify-content: center;
@@ -229,9 +240,9 @@
 
 .composer-mic-btn {
   display: inline-flex;
-  width: 30px;
-  height: 30px;
-  flex: 0 0 30px;
+  width: 28px;
+  height: 28px;
+  flex: 0 0 28px;
   align-items: center;
   justify-content: center;
   border-radius: 50%;
@@ -260,14 +271,14 @@
   width: 132px;
   min-height: 30px;
   padding: 0 24px 0 9px;
-  border: 1px solid var(--border);
+  border: 0;
   border-radius: 999px;
   outline: 0;
   appearance: none;
   background:
     linear-gradient(45deg, transparent 50%, var(--faint) 50%) calc(100% - 12px) 12px / 4px 4px no-repeat,
     linear-gradient(135deg, var(--faint) 50%, transparent 50%) calc(100% - 8px) 12px / 4px 4px no-repeat,
-    var(--surface);
+    transparent;
   color: var(--text-soft);
   font: inherit;
   font-size: calc(11px * var(--font-scale));
@@ -300,8 +311,8 @@
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 32px;
-  height: 32px;
+  width: 28px;
+  height: 28px;
   border-radius: 50%;
   background: var(--primary);
   color: var(--primary-contrast);
@@ -456,7 +467,7 @@
 
 .model-picker-trigger {
   max-width: 164px;
-  background: var(--surface);
+  background: transparent;
   color: var(--text-soft);
 }
 

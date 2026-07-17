@@ -11,7 +11,7 @@
   flex: 1;
   overflow-x: hidden;
   overflow-y: auto;
-  padding: 22px clamp(20px, 4vw, 56px) 32px;
+  padding: 32px 20px 24px;
   background: var(--main-bg);
   overscroll-behavior: contain;
 }
@@ -48,7 +48,7 @@
 
 .message-list-inner {
   width: 100%;
-  max-width: 840px;
+  max-width: var(--thread-width);
   margin: 0 auto;
 }
 
@@ -60,13 +60,14 @@
   display: flex;
   flex-wrap: wrap;
   align-items: center;
+  justify-content: flex-end;
   gap: 8px 10px;
-  min-height: 40px;
-  margin: 5px 0 16px 39px;
-  padding: 8px 10px;
-  border: 1px solid var(--border);
-  border-radius: 10px;
-  background: var(--surface);
+  min-height: 28px;
+  margin: 4px 0 8px;
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
   color: var(--text-soft);
 }
 
@@ -75,7 +76,7 @@
 }
 
 .conversation-status-panel .extension-statuses {
-  flex: 1 1 180px;
+  flex: 0 1 auto;
 }
 
 .conversation-queue {
@@ -132,7 +133,7 @@
   align-items: center;
   gap: 4px;
   width: 100%;
-  max-width: 840px;
+  max-width: var(--thread-width);
   margin: 0 auto;
   padding: 2px 0 10px;
   color: var(--muted);

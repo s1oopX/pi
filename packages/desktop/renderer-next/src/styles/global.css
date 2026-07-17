@@ -1,8 +1,8 @@
 :root {
   color-scheme: light;
 
-  --font-sans: "Segoe UI Variable Text", "Segoe UI Variable", "Segoe UI", system-ui, -apple-system, sans-serif;
-  --font-mono: "Cascadia Mono", "Cascadia Code", "SFMono-Regular", "SF Mono", Consolas, monospace;
+  --font-sans: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  --font-mono: ui-monospace, "SFMono-Regular", "SF Mono", Menlo, Consolas, "Liberation Mono", monospace;
   --root-font-size: calc(16px * var(--font-scale));
   --font-scale: 1;
 
@@ -33,48 +33,48 @@
   --space-8: 24px;
   --space-9: 32px;
 
-  --sidebar-width: 240px;
+  --sidebar-width: clamp(240px, 275px, min(520px, calc(100vw - 320px)));
   --sidebar-collapsed-width: 52px;
-  --thread-width: 800px;
+  --thread-width: 48rem;
   --control-height-compact: 28px;
   --control-height: 32px;
   --control-height-comfortable: 36px;
 
-  --app-bg: light-dark(#f3f2ee, #11110f);
-  --main-bg: light-dark(#faf9f6, #171715);
-  --surface: light-dark(#efeee9, #1e1e1b);
-  --surface-hover: light-dark(#e8e7e1, #272723);
-  --elevated: light-dark(#fffefa, #20201d);
-  --text: light-dark(#20201d, #f2f1ec);
-  --text-soft: light-dark(#55554f, #bbb9b1);
-  --muted: light-dark(#77776f, #939189);
-  --faint: light-dark(#9c9b92, #6f6e68);
-  --border: light-dark(rgb(32 32 29 / 10%), rgb(255 255 250 / 9%));
-  --border-strong: light-dark(rgb(32 32 29 / 18%), rgb(255 255 250 / 16%));
+  --app-bg: light-dark(#f9f9f9, #000000);
+  --main-bg: light-dark(#ffffff, #181818);
+  --surface: light-dark(#f3f3f3, #212121);
+  --surface-hover: light-dark(rgb(26 28 31 / 5%), rgb(255 255 255 / 8%));
+  --elevated: light-dark(#ffffff, #282828);
+  --text: light-dark(#1a1c1f, #ffffff);
+  --text-soft: light-dark(rgb(26 28 31 / 70%), rgb(255 255 255 / 70%));
+  --muted: light-dark(rgb(26 28 31 / 50%), rgb(255 255 255 / 50%));
+  --faint: light-dark(rgb(26 28 31 / 35%), rgb(255 255 255 / 35%));
+  --border: light-dark(rgb(26 28 31 / 8%), rgb(255 255 255 / 8%));
+  --border-strong: light-dark(rgb(26 28 31 / 12%), rgb(255 255 255 / 16%));
 
-  --control-bg: light-dark(rgb(32 32 29 / 4%), rgb(255 255 250 / 5%));
-  --control-hover: light-dark(rgb(32 32 29 / 7%), rgb(255 255 250 / 8%));
-  --control-active: light-dark(rgb(32 32 29 / 10%), rgb(255 255 250 / 11%));
+  --control-bg: light-dark(rgb(26 28 31 / 5%), rgb(255 255 255 / 5%));
+  --control-hover: light-dark(rgb(26 28 31 / 5%), rgb(255 255 255 / 8%));
+  --control-active: light-dark(rgb(26 28 31 / 8%), rgb(255 255 255 / 10%));
   --control-border: var(--border);
 
-  --primary: light-dark(#262622, #f1f0eb);
-  --primary-hover: light-dark(#11110f, #ffffff);
-  --primary-contrast: light-dark(#ffffff, #171715);
+  --primary: light-dark(#1a1c1f, #ffffff);
+  --primary-hover: light-dark(#0d0d0d, #ffffff);
+  --primary-contrast: light-dark(#ffffff, #0d0d0d);
 
-  --accent: light-dark(#5368d8, #91a0ff);
-  --accent-hover: light-dark(#4559c4, #a7b2ff);
-  --accent-soft: light-dark(rgb(83 104 216 / 11%), rgb(145 160 255 / 15%));
-  --accent-contrast: light-dark(#ffffff, #151516);
-  --focus-ring: light-dark(#5368d8, #91a0ff);
-  --focus-shadow: 0 0 0 3px light-dark(rgb(83 104 216 / 18%), rgb(145 160 255 / 24%));
+  --accent: light-dark(#0285ff, #99ceff);
+  --accent-hover: light-dark(#006fd6, #b6dcff);
+  --accent-soft: light-dark(rgb(2 133 255 / 11%), rgb(153 206 255 / 15%));
+  --accent-contrast: light-dark(#ffffff, #0d0d0d);
+  --focus-ring: light-dark(#339cff, #99ceff);
+  --focus-shadow: 0 0 0 2px light-dark(rgb(51 156 255 / 22%), rgb(153 206 255 / 24%));
 
-  --success: light-dark(#287a45, #62bd7c);
-  --success-soft: light-dark(rgb(40 122 69 / 10%), rgb(98 189 124 / 14%));
-  --warning: light-dark(#956000, #e1aa52);
-  --warning-soft: light-dark(rgb(149 96 0 / 10%), rgb(225 170 82 / 14%));
-  --danger: light-dark(#ba403a, #ee817a);
-  --danger-soft: light-dark(rgb(186 64 58 / 10%), rgb(238 129 122 / 14%));
-  --danger-contrast: light-dark(#ffffff, #171715);
+  --success: light-dark(#00a240, #40c977);
+  --success-soft: light-dark(rgb(0 162 64 / 10%), rgb(64 201 119 / 14%));
+  --warning: light-dark(#e25507, #ff8549);
+  --warning-soft: light-dark(rgb(226 85 7 / 10%), rgb(255 133 73 / 14%));
+  --danger: light-dark(#e02e2a, #ff6764);
+  --danger-soft: light-dark(rgb(224 46 42 / 10%), rgb(255 103 100 / 14%));
+  --danger-contrast: light-dark(#ffffff, #0d0d0d);
 
   --scrim: light-dark(rgb(20 20 18 / 38%), rgb(0 0 0 / 64%));
   --scrollbar: light-dark(rgb(32 32 29 / 22%), rgb(255 255 250 / 20%));
@@ -82,22 +82,23 @@
   --radius-xs: 4px;
   --radius-sm: 6px;
   --radius: 8px;
-  --radius-lg: 12px;
-  --radius-xl: 16px;
+  --radius-lg: 10px;
+  --radius-xl: 12px;
+  --radius-2xl: 16px;
+  --radius-3xl: 20px;
   --radius-pill: 999px;
 
-  --shadow-sm: 0 1px 2px light-dark(rgb(0 0 0 / 5%), rgb(0 0 0 / 22%));
-  --shadow-md: 0 4px 14px light-dark(rgb(0 0 0 / 8%), rgb(0 0 0 / 30%));
-  --shadow-pop: 0 10px 30px light-dark(rgb(0 0 0 / 11%), rgb(0 0 0 / 42%)),
-    0 1px 4px light-dark(rgb(0 0 0 / 7%), rgb(0 0 0 / 24%));
-  --shadow-dialog: 0 24px 64px light-dark(rgb(0 0 0 / 18%), rgb(0 0 0 / 50%));
+  --shadow-sm: 0 1px 2px -1px rgb(0 0 0 / 8%);
+  --shadow-md: 0 2px 4px -1px rgb(0 0 0 / 8%);
+  --shadow-pop: 0 8px 16px -4px rgb(0 0 0 / 12%), 0 0 0 0.5px var(--border-strong);
+  --shadow-dialog: 0 16px 32px -8px rgb(0 0 0 / 30%);
   --shadow-lg: var(--shadow-pop);
 
   --duration-press: 80ms;
-  --duration-hover: 120ms;
-  --duration-popover: 160ms;
-  --duration-dialog: 200ms;
-  --ease-standard: cubic-bezier(0.2, 0, 0, 1);
+  --duration-hover: 150ms;
+  --duration-popover: 150ms;
+  --duration-dialog: 300ms;
+  --ease-standard: cubic-bezier(0.19, 1, 0.22, 1);
   --transition-fast: var(--duration-press) var(--ease-standard);
   --transition: var(--duration-hover) var(--ease-standard);
 }
@@ -290,8 +291,8 @@ html[data-window-controls-overlay="true"] .window-chrome {
   flex-direction: column;
   gap: var(--space-3);
   padding: 0 10px 10px;
-  border-right: 1px solid var(--border);
-  background: var(--app-bg);
+  border-right: 0.5px solid var(--border-strong);
+  background: var(--main-bg);
   overflow: hidden;
 }
 
@@ -301,7 +302,7 @@ html[data-window-controls-overlay="true"] .window-chrome {
 }
 
 .sidebar-header {
-  height: 44px;
+  height: 46px;
   flex-shrink: 0;
   display: flex;
   align-items: center;

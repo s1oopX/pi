@@ -2,7 +2,7 @@ import { memo, useEffect, useMemo, useRef, useState } from "react";
 import { useVirtualizer } from "@tanstack/react-virtual";
 import { useI18n } from "../../i18n";
 import { useStreamingMessage } from "../../hooks/useStreamingMessage";
-import { MessageBubble, InlineApproval, isInteractiveExtensionUIRequest } from "../Message";
+import { MessageBubble } from "../Message";
 import { getRetryErrorDisplay, RetryNotice } from "../RetryNotice";
 import { ExtensionStatuses, sanitizeExtensionStatusText } from "../ExtensionStatuses";
 import { StatusBar, hasStatusBarContent } from "../StatusBar";
@@ -10,7 +10,7 @@ import { EmptyState } from "./EmptyState";
 import { computeToolPairing, type ToolPairing } from "./toolPairing";
 import { useStore, type ToolExecutionsByCallId } from "../../store";
 import type { RetryActivity } from "../../store/agentActivity";
-import type { ExtensionUIRequestEvent, Message } from "../../ipc/types";
+import type { Message } from "../../ipc/types";
 import { isMessageListNearBottom } from "./scrollState";
 
 const ESTIMATED_MESSAGE_HEIGHT = 80;
@@ -18,16 +18,10 @@ const ESTIMATED_MESSAGE_HEIGHT = 80;
 type ResultsByCallId = ToolPairing["resultsByCallId"];
 type QueuedConversationItem = { kind: "steer" | "follow-up"; message: string };
 
-// A row in the virtualized list is either a real conversation message or a
-// pending approval request. Approval rows live outside the messages array (in
-// extensionUIRequests) so they survive the getMessages() refresh that overwrites
-// messages, and are appended after all messages since the tool call that
-// triggered them is always at the current stream tail.
 type Row =
   | { kind: "message"; message: Message; originalIndex: number; suppressError: boolean }
   | { kind: "retry"; activity: RetryActivity }
-  | { kind: "status"; queued: QueuedConversationItem[]; extensionStatuses: Record<string, string> }
-  | { kind: "approval"; request: ExtensionUIRequestEvent };
+  | { kind: "status"; queued: QueuedConversationItem[]; extensionStatuses: Record<string, string> };
 
 const MemoizedBubble = memo(function MemoizedBubble({
   message,
@@ -64,7 +58,6 @@ export function MessageList() {
   const extensionStatuses = useStore((state) => state.extensionStatuses);
   const scrollRef = useRef<HTMLDivElement>(null);
   const shouldAutoScroll = useRef(true);
-  const previousApprovalId = useRef<string | undefined>(undefined);
   const [showJumpToLatest, setShowJumpToLatest] = useState(false);
 
   // Pair standalone toolResult messages with their originating toolCall so they
@@ -90,15 +83,6 @@ export function MessageList() {
   );
   const hasConversationStatus = hasStatusBarContent({ session, stats, isStreaming, compactionActivity });
 
-  // Dialog-style extension requests suspend the backend until the renderer
-  // responds. Fire-and-forget methods (notify, setStatus, ...) have no card.
-  const extensionUIRequests = useStore((s) => s.extensionUIRequests);
-  const approvals = useMemo(
-    () => extensionUIRequests.filter(isInteractiveExtensionUIRequest),
-    [extensionUIRequests],
-  );
-  const lastApprovalId = approvals.at(-1)?.id;
-
   useEffect(() => {
     shouldAutoScroll.current = true;
     setShowJumpToLatest(false);
@@ -107,8 +91,6 @@ export function MessageList() {
     });
   }, [sessionId]);
 
-  // Merge conversation messages (minus paired toolResults) with pending approval
-  // cards. Approvals go last since the suspended tool call is at the stream tail.
   const rows = useMemo<Row[]>(() => {
     const messageRows: Row[] = messages
       .map((message, originalIndex) => ({
@@ -122,17 +104,15 @@ export function MessageList() {
         !retryErrorDisplay.hiddenIndices.has(row.originalIndex)
       );
     const retryRows: Row[] = retryActivity ? [{ kind: "retry", activity: retryActivity }] : [];
-    const approvalRows: Row[] = approvals.map((request) => ({ kind: "approval" as const, request }));
     const statusRows: Row[] = hasConversationStatus || queued.length > 0 || hasVisibleExtensionStatus
       ? [{ kind: "status", queued, extensionStatuses }]
       : [];
-    return [...messageRows, ...retryRows, ...approvalRows, ...statusRows];
+    return [...messageRows, ...retryRows, ...statusRows];
   }, [
     messages,
     hiddenToolResultIndices,
     retryErrorDisplay,
     retryActivity,
-    approvals,
     hasConversationStatus,
     queued,
     hasVisibleExtensionStatus,
@@ -143,13 +123,17 @@ export function MessageList() {
     count: rows.length,
     getScrollElement: () => scrollRef.current,
     estimateSize: () => ESTIMATED_MESSAGE_HEIGHT,
+    getItemKey: (index) => {
+      const row = rows[index];
+      if (row.kind === "message") return `message:${row.originalIndex}`;
+      if (row.kind === "retry") return `retry:${row.activity.startedAt}`;
+      return "status";
+    },
     overscan: 5,
   });
 
   useEffect(() => {
-    const hasNewApproval = lastApprovalId !== undefined && lastApprovalId !== previousApprovalId.current;
-    previousApprovalId.current = lastApprovalId;
-    if ((!shouldAutoScroll.current && !hasNewApproval) || rows.length === 0) return;
+    if (!shouldAutoScroll.current || rows.length === 0) return;
     setShowJumpToLatest(false);
     virtualizer.scrollToIndex(rows.length - 1, { align: "end", behavior: isStreaming ? "auto" : "smooth" });
   }, [
@@ -157,7 +141,6 @@ export function MessageList() {
     messages[messages.length - 1],
     isStreaming,
     retryActivity?.startedAt,
-    lastApprovalId,
     virtualizer,
   ]);
 
@@ -210,9 +193,7 @@ export function MessageList() {
                   transform: `translateY(${virtualRow.start}px)`,
                 }}
               >
-                {row.kind === "approval" ? (
-                  <InlineApproval key={row.request.id} request={row.request} />
-                ) : row.kind === "status" ? (
+                {row.kind === "status" ? (
                   <ConversationStatus queued={row.queued} extensionStatuses={row.extensionStatuses} />
                 ) : row.kind === "retry" ? (
                   <RetryNotice activity={row.activity} />

@@ -16,6 +16,7 @@ import * as api from "../../ipc/api";
 import { PermissionSelector } from "../PermissionSelector";
 import { ModelSelector } from "../ModelSelector";
 import { ExtensionWidgets } from "../ExtensionWidgets";
+import { InlineApproval, isInteractiveExtensionUIRequest } from "../Message/InlineApproval";
 import { showToast } from "../Toast";
 import {
   MAX_ATTACHMENT_COUNT,
@@ -79,6 +80,7 @@ export function Composer() {
   const backendStatus = useStore((s) => s.backendStatus);
   const commands = useStore((s) => s.commands);
   const extensionWidgets = useStore((s) => s.extensionWidgets);
+  const extensionUIRequests = useStore((s) => s.extensionUIRequests);
   const modelSupportsImages = useStore((s) => s.session?.model?.input.includes("image") ?? true);
   const composerDraft = useStore((s) => s.composerDraft);
   const setComposerDraft = useStore((s) => s.setComposerDraft);
@@ -88,6 +90,10 @@ export function Composer() {
   const dragDepthRef = useRef(0);
 
   const token = getActiveToken(input, input.length);
+  const approvalRequests = useMemo(
+    () => extensionUIRequests.filter(isInteractiveExtensionUIRequest),
+    [extensionUIRequests],
+  );
 
   useEffect(() => {
     setComposerWorkspaceDraft(workspaceCwd, sessionId, input, attachments);
@@ -367,6 +373,13 @@ export function Composer() {
   return (
     <div className="composer-wrap">
       <ExtensionWidgets widgets={extensionWidgets} placement="aboveEditor" />
+      {approvalRequests.length > 0 && (
+        <div className="composer-approval-stack">
+          {approvalRequests.map((request) => (
+            <InlineApproval key={request.id} request={request} />
+          ))}
+        </div>
+      )}
       <form
         className={`composer ${draggingFiles ? "drag-active" : ""}`}
         onSubmit={handleSubmit}
