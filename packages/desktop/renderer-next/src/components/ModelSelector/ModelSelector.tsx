@@ -1,40 +1,201 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useId, useMemo, useRef, useState, type KeyboardEvent as ReactKeyboardEvent } from "react";
+import { useI18n } from "../../i18n";
 import { useStore } from "../../store";
 import * as api from "../../ipc/api";
-import type { ThinkingLevel } from "../../ipc/types";
-
-const THINKING_LABELS: Record<ThinkingLevel, string> = {
-  off: "关闭",
-  minimal: "最低",
-  low: "低",
-  medium: "中",
-  high: "高",
-  xhigh: "极高",
-};
+import type { Model, ThinkingLevel } from "../../ipc/types";
+import { showToast } from "../Toast";
 
 const THINKING_LEVELS: ThinkingLevel[] = ["off", "minimal", "low", "medium", "high", "xhigh"];
+const THINKING_LEVEL_SUFFIX_PATTERN = /^(.*?)(?:[-_: ])(off|minimal|low|medium|high|xhigh)$/i;
 
 // Which submenu (if any) is expanded in the popover.
-type Submenu = null | "model" | "thinking";
+type Submenu = null | "model" | "thinking" | "speed";
+
+interface ModelOption {
+  key: string;
+  label: string;
+  provider: string;
+  models: Model[];
+  byLevel: Partial<Record<ThinkingLevel, Model>>;
+  fallback: Model;
+}
+
+function modelsMatch(a: Model, b: Model): boolean {
+  return a.provider === b.provider && a.id === b.id;
+}
+
+function parseThinkingLevelSuffix(value: string): { base: string; level: ThinkingLevel | null } {
+  const match = THINKING_LEVEL_SUFFIX_PATTERN.exec(value.trim());
+  if (!match) return { base: value, level: null };
+  const base = match[1].trim();
+  if (!base) return { base: value, level: null };
+  return { base, level: match[2].toLowerCase() as ThinkingLevel };
+}
+
+function getModelThinkingLevel(model: Model): ThinkingLevel | null {
+  return parseThinkingLevelSuffix(model.id).level;
+}
+
+function getBaseModelLabel(model: Model): string {
+  const nameParts = parseThinkingLevelSuffix(model.name ?? model.id);
+  if (nameParts.level) return nameParts.base;
+  const idParts = parseThinkingLevelSuffix(model.id);
+  if (idParts.level) return idParts.base;
+  return model.name ?? model.id;
+}
+
+function getGroupedOptionKey(model: Model): string | null {
+  const idParts = parseThinkingLevelSuffix(model.id);
+  if (!idParts.level) return null;
+  return `${model.provider}:${idParts.base.toLocaleLowerCase()}`;
+}
+
+function getThinkingVariantCount(option: ModelOption): number {
+  return THINKING_LEVELS.filter((level) => option.byLevel[level]).length;
+}
+
+function createSingleModelOption(model: Model): ModelOption {
+  return {
+    key: `${model.provider}:${model.id}`,
+    label: model.name ?? model.id,
+    provider: model.provider,
+    models: [model],
+    byLevel: {},
+    fallback: model,
+  };
+}
+
+function createGroupedModelOption(key: string, groupedModels: Model[]): ModelOption {
+  const byLevel: Partial<Record<ThinkingLevel, Model>> = {};
+  for (const model of groupedModels) {
+    const level = getModelThinkingLevel(model);
+    if (level && !byLevel[level]) byLevel[level] = model;
+  }
+  const fallback =
+    byLevel.medium ??
+    byLevel.high ??
+    byLevel.low ??
+    byLevel.xhigh ??
+    byLevel.minimal ??
+    byLevel.off ??
+    groupedModels[0];
+  return {
+    key,
+    label: getBaseModelLabel(fallback),
+    provider: fallback.provider,
+    models: groupedModels,
+    byLevel,
+    fallback,
+  };
+}
+
+function buildModelOptions(models: Model[]): ModelOption[] {
+  const grouped = new Map<string, Model[]>();
+  for (const model of models) {
+    const key = getGroupedOptionKey(model);
+    if (!key) continue;
+    const current = grouped.get(key);
+    if (current) current.push(model);
+    else grouped.set(key, [model]);
+  }
+
+  const emittedGroups = new Set<string>();
+  const options: ModelOption[] = [];
+  for (const model of models) {
+    const key = getGroupedOptionKey(model);
+    if (!key) {
+      options.push(createSingleModelOption(model));
+      continue;
+    }
+
+    const groupedModels = grouped.get(key);
+    if (!groupedModels || groupedModels.length < 2) {
+      options.push(createSingleModelOption(model));
+      continue;
+    }
+
+    if (emittedGroups.has(key)) continue;
+    emittedGroups.add(key);
+    options.push(createGroupedModelOption(key, groupedModels));
+  }
+  return options;
+}
+
+function isThinkingLevelSupported(model: Model, level: ThinkingLevel): boolean {
+  if (!model.reasoning) return false;
+  return model.thinkingLevelMap?.[level] !== null;
+}
+
+function getOptionTargetForThinking(option: ModelOption, level: ThinkingLevel): Model {
+  return option.byLevel[level] ?? option.byLevel.medium ?? option.fallback;
+}
 
 // Codex-style model picker: a compact pill in the composer footer that opens a
 // tiered menu (model / reasoning level), each row expanding into a submenu.
 export function ModelSelector() {
+  const { t } = useI18n();
   const session = useStore((s) => s.session);
   const models = useStore((s) => s.models);
   const isStreaming = useStore((s) => s.isStreaming);
+  const backendStatus = useStore((s) => s.backendStatus);
 
   const currentModel = session?.model;
   const thinkingLevel = (session?.thinkingLevel ?? "medium") as ThinkingLevel;
-  const modelName =
+  const modelOptions = useMemo(() => buildModelOptions(models), [models]);
+  const activeModelOption = currentModel
+    ? modelOptions.find((option) => option.models.some((model) => modelsMatch(model, currentModel)))
+    : undefined;
+  const inferredThinkingLevel = currentModel ? getModelThinkingLevel(currentModel) : null;
+  const effectiveThinkingLevel = inferredThinkingLevel ?? thinkingLevel;
+  const rawModelName =
     models.find((m) => m.provider === currentModel?.provider && m.id === currentModel?.id)?.name ??
     currentModel?.id ??
-    "无模型";
-  const modelSupportsThinking = currentModel?.reasoning ?? false;
+    (backendStatus.ready
+      ? t("No model", "无模型")
+      : backendStatus.starting || backendStatus.restarting
+        ? t("Starting...", "正在启动…")
+        : t("Agent offline", "智能体已离线"));
+  const modelName = activeModelOption?.label ?? rawModelName;
+  const availableThinkingLevels = useMemo(() => {
+    if (activeModelOption && getThinkingVariantCount(activeModelOption) > 0) {
+      return THINKING_LEVELS.filter((level) => activeModelOption.byLevel[level]);
+    }
+    if (!currentModel) return [];
+    return THINKING_LEVELS.filter((level) => isThinkingLevelSupported(currentModel, level));
+  }, [activeModelOption, currentModel]);
+  const modelSupportsThinking = availableThinkingLevels.length > 0;
+
+  function thinkingLabel(level: ThinkingLevel): string {
+    if (level === "off") return t("Off", "关闭");
+    if (level === "minimal") return t("Minimal", "最少");
+    if (level === "low") return t("Low", "低");
+    if (level === "medium") return t("Medium", "中");
+    if (level === "high") return t("High", "高");
+    return t("Maximum", "最高");
+  }
+
+  function compactModelLabel(value: string): string {
+    const trimmed = value.trim();
+    const grokMatch = /^grok[-_\s]?(\d+(?:\.\d+)?)/i.exec(trimmed);
+    if (grokMatch) return `grok ${grokMatch[1]}`;
+    const gptMatch = /^gpt[-_\s]?(\d+(?:\.\d+)?)/i.exec(trimmed);
+    if (gptMatch) return gptMatch[1];
+    const claudeMatch = /^claude[-_\s]?([a-z]+)(?:[-_\s]?(\d+(?:\.\d+)?))?/i.exec(trimmed);
+    if (claudeMatch) return `Claude ${claudeMatch[1]}${claudeMatch[2] ? ` ${claudeMatch[2]}` : ""}`;
+    if (trimmed.length <= 18) return trimmed;
+    const parts = trimmed.split(/[-_\s]+/).filter(Boolean);
+    if (parts.length >= 2) return parts.slice(0, 2).join(" ");
+    return `${trimmed.slice(0, 16)}…`;
+  }
+
+  const compactModelName = compactModelLabel(modelName);
 
   const [open, setOpen] = useState(false);
   const [submenu, setSubmenu] = useState<Submenu>(null);
   const rootRef = useRef<HTMLDivElement>(null);
+  const triggerRef = useRef<HTMLButtonElement>(null);
+  const popoverRef = useRef<HTMLDivElement>(null);
+  const popoverId = useId();
 
   useEffect(() => {
     if (!open) return;
@@ -44,37 +205,143 @@ export function ModelSelector() {
         setSubmenu(null);
       }
     }
+    function onKeyDown(e: globalThis.KeyboardEvent) {
+      if (e.key === "Escape") {
+        e.preventDefault();
+        e.stopPropagation();
+        closeMenu(true);
+      }
+    }
     document.addEventListener("mousedown", onDocClick);
-    return () => document.removeEventListener("mousedown", onDocClick);
+    document.addEventListener("keydown", onKeyDown);
+    return () => {
+      document.removeEventListener("mousedown", onDocClick);
+      document.removeEventListener("keydown", onKeyDown);
+    };
   }, [open]);
 
-  function closeMenu() {
+  useEffect(() => {
+    if (!open) return;
+    const focusFrame = requestAnimationFrame(() => {
+      const popover = popoverRef.current;
+      if (!popover) return;
+      const target =
+        submenu === null
+          ? popover.querySelector<HTMLElement>('[role="menuitem"]')
+          : (popover.querySelector<HTMLElement>('[role="menuitemradio"][aria-checked="true"]') ??
+            popover.querySelector<HTMLElement>('[role="menuitemradio"]'));
+      target?.focus();
+    });
+    return () => cancelAnimationFrame(focusFrame);
+  }, [open, submenu]);
+
+  function closeMenu(restoreFocus = false) {
     setOpen(false);
     setSubmenu(null);
+    if (restoreFocus) requestAnimationFrame(() => triggerRef.current?.focus());
   }
 
-  async function handleSelectModel(provider: string, modelId: string) {
-    closeMenu();
-    await api.setModel(provider, modelId);
-    useStore.getState().refreshSession();
+  async function handleSelectModel(option: ModelOption) {
+    closeMenu(true);
+    const target = getOptionTargetForThinking(option, effectiveThinkingLevel);
+    try {
+      await api.setModel(target.provider, target.id);
+      const targetLevel = getModelThinkingLevel(target);
+      if (targetLevel) await api.setThinkingLevel(targetLevel);
+      useStore.getState().refreshSession();
+    } catch (error) {
+      showToast(t("Failed to switch model: {error}", "切换模型失败：{error}", {
+        error: error instanceof Error ? error.message : String(error),
+      }), "error");
+    }
   }
 
   async function handleSelectThinking(level: ThinkingLevel) {
-    closeMenu();
-    await api.setThinkingLevel(level);
-    useStore.getState().refreshSession();
+    closeMenu(true);
+    try {
+      const target = activeModelOption?.byLevel[level];
+      if (target && (!currentModel || !modelsMatch(target, currentModel))) {
+        await api.setModel(target.provider, target.id);
+      }
+      await api.setThinkingLevel(level);
+      useStore.getState().refreshSession();
+    } catch (error) {
+      showToast(
+        t("Failed to update reasoning effort: {error}", "更新推理强度失败：{error}", {
+          error: error instanceof Error ? error.message : String(error),
+        }),
+        "error",
+      );
+    }
+  }
+
+  async function handleResetDefaults() {
+    if (!modelSupportsThinking) {
+      closeMenu(true);
+      return;
+    }
+    closeMenu(true);
+    try {
+      const resetLevel = availableThinkingLevels.includes("medium") ? "medium" : availableThinkingLevels[0];
+      const target = activeModelOption?.byLevel[resetLevel];
+      if (target && (!currentModel || !modelsMatch(target, currentModel))) {
+        await api.setModel(target.provider, target.id);
+      }
+      await api.setThinkingLevel(resetLevel);
+      useStore.getState().refreshSession();
+    } catch (error) {
+      showToast(
+        t("Failed to reset model settings: {error}", "重置模型设置失败：{error}", {
+          error: error instanceof Error ? error.message : String(error),
+        }),
+        "error",
+      );
+    }
+  }
+
+  function handlePopoverKeyDown(event: ReactKeyboardEvent<HTMLDivElement>) {
+    if (!["ArrowDown", "ArrowUp", "Home", "End"].includes(event.key)) return;
+    const popover = popoverRef.current;
+    if (!popover) return;
+    const items = Array.from(
+      popover.querySelectorAll<HTMLButtonElement>('[role="menuitem"], [role="menuitemradio"]'),
+    ).filter((item) => item.getClientRects().length > 0 && !item.disabled);
+    if (items.length === 0) return;
+
+    event.preventDefault();
+    event.stopPropagation();
+    const currentIndex = items.indexOf(document.activeElement as HTMLButtonElement);
+    let nextIndex: number;
+    if (event.key === "Home") nextIndex = 0;
+    else if (event.key === "End") nextIndex = items.length - 1;
+    else if (event.key === "ArrowUp") nextIndex = currentIndex <= 0 ? items.length - 1 : currentIndex - 1;
+    else nextIndex = currentIndex < 0 || currentIndex === items.length - 1 ? 0 : currentIndex + 1;
+    items[nextIndex]?.focus();
   }
 
   return (
     <div className="model-picker" ref={rootRef}>
       <button
+        ref={triggerRef}
         type="button"
         className="model-picker-trigger"
-        onClick={() => setOpen((v) => !v)}
-        disabled={isStreaming}
+        onClick={() => {
+          if (open) closeMenu();
+          else setOpen(true);
+        }}
+        onKeyDown={(event) => {
+          if (!open && (event.key === "ArrowDown" || event.key === "ArrowUp")) {
+            event.preventDefault();
+            setOpen(true);
+          }
+        }}
+        disabled={isStreaming || !backendStatus.ready}
         aria-haspopup="menu"
         aria-expanded={open}
-        title="模型与推理强度"
+        aria-controls={popoverId}
+        title={backendStatus.ready
+          ? t("Model, reasoning effort, and speed", "模型、推理强度和速度")
+          : t("The agent backend is not ready", "智能体后端尚未就绪")}
       >
         <span className="model-picker-bolt" aria-hidden="true">
           <svg viewBox="0 0 24 24" width="13" height="13">
@@ -85,9 +352,9 @@ export function ModelSelector() {
             />
           </svg>
         </span>
-        <span className="model-picker-name">{modelName}</span>
-        {modelSupportsThinking && thinkingLevel !== "off" && (
-          <span className="model-picker-thinking">{THINKING_LABELS[thinkingLevel]}</span>
+        <span className="model-picker-name">{compactModelName}</span>
+        {modelSupportsThinking && effectiveThinkingLevel !== "off" && (
+          <span className="model-picker-thinking">{thinkingLabel(effectiveThinkingLevel)}</span>
         )}
         <span className="model-picker-chevron" aria-hidden="true">
           <svg viewBox="0 0 24 24" width="12" height="12">
@@ -97,7 +364,13 @@ export function ModelSelector() {
       </button>
 
       {open && (
-        <div className="model-picker-popover" role="menu">
+        <div
+          id={popoverId}
+          ref={popoverRef}
+          className="model-picker-popover"
+          role="menu"
+          onKeyDown={handlePopoverKeyDown}
+        >
           {submenu === null && (
             <>
               <button
@@ -106,7 +379,7 @@ export function ModelSelector() {
                 role="menuitem"
                 onClick={() => setSubmenu("model")}
               >
-                <span className="model-picker-row-label">模型</span>
+                <span className="model-picker-row-label">{t("Model", "模型")}</span>
                 <span className="model-picker-row-value">{modelName}</span>
                 <span className="model-picker-row-arrow" aria-hidden="true">&#8250;</span>
               </button>
@@ -117,11 +390,35 @@ export function ModelSelector() {
                   role="menuitem"
                   onClick={() => setSubmenu("thinking")}
                 >
-                  <span className="model-picker-row-label">推理强度</span>
-                  <span className="model-picker-row-value">{THINKING_LABELS[thinkingLevel]}</span>
+                  <span className="model-picker-row-label">{t("Reasoning effort", "推理强度")}</span>
+                  <span className="model-picker-row-value">{thinkingLabel(effectiveThinkingLevel)}</span>
                   <span className="model-picker-row-arrow" aria-hidden="true">&#8250;</span>
                 </button>
               )}
+              <button
+                type="button"
+                className="model-picker-row"
+                role="menuitem"
+                onClick={() => setSubmenu("speed")}
+              >
+                <span className="model-picker-row-label">{t("Speed", "速度")}</span>
+                <span className="model-picker-row-value">{t("Fast", "快速")}</span>
+                <span className="model-picker-row-arrow" aria-hidden="true">&#8250;</span>
+              </button>
+              <div className="model-picker-separator" role="separator" />
+              <button
+                type="button"
+                className="model-picker-row model-picker-reset"
+                role="menuitem"
+                onClick={handleResetDefaults}
+              >
+                <span className="model-picker-row-label">{t("Reset to defaults", "重置为默认设置")}</span>
+                <span className="model-picker-reset-icon" aria-hidden="true">
+                  <svg viewBox="0 0 18 18">
+                    <path d="M14.5 8.5A5.5 5.5 0 1 1 13 4.7M14.5 3.5v5h-5" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round" />
+                  </svg>
+                </span>
+              </button>
             </>
           )}
 
@@ -131,24 +428,40 @@ export function ModelSelector() {
                 type="button"
                 className="model-picker-back"
                 onClick={() => setSubmenu(null)}
+                role="menuitem"
               >
                 <span aria-hidden="true">&#8249;</span>
-                <span>模型</span>
+                <span>{t("Model", "模型")}</span>
               </button>
               <div className="model-picker-sublist">
-                {models.length === 0 && <div className="model-picker-empty">无可用模型</div>}
-                {models.map((m) => {
-                  const active = m.provider === currentModel?.provider && m.id === currentModel?.id;
+                {modelOptions.length === 0 && (
+                  <div className="model-picker-empty">{t("No models available", "没有可用模型")}</div>
+                )}
+                {modelOptions.map((option) => {
+                  const active = currentModel
+                    ? option.models.some((model) => modelsMatch(model, currentModel))
+                    : false;
+                  const variantCount = getThinkingVariantCount(option);
                   return (
                     <button
-                      key={`${m.provider}:${m.id}`}
+                      key={option.key}
                       type="button"
                       className={`model-picker-suboption ${active ? "active" : ""}`}
                       role="menuitemradio"
                       aria-checked={active}
-                      onClick={() => handleSelectModel(m.provider, m.id)}
+                      onClick={() => handleSelectModel(option)}
                     >
-                      <span className="model-picker-suboption-name">{m.name ?? m.id}</span>
+                      <span className="model-picker-suboption-copy">
+                        <span className="model-picker-suboption-name">{option.label}</span>
+                        <span className="model-picker-suboption-provider">
+                          {variantCount > 1
+                            ? t("{provider} · {count} reasoning levels", "{provider} · {count} 种推理强度", {
+                              provider: option.provider,
+                              count: variantCount,
+                            })
+                            : option.provider}
+                        </span>
+                      </span>
                       {active && (
                         <span className="model-picker-check" aria-hidden="true">
                           <svg viewBox="0 0 24 24" width="14" height="14">
@@ -176,13 +489,14 @@ export function ModelSelector() {
                 type="button"
                 className="model-picker-back"
                 onClick={() => setSubmenu(null)}
+                role="menuitem"
               >
                 <span aria-hidden="true">&#8249;</span>
-                <span>推理强度</span>
+                <span>{t("Reasoning effort", "推理强度")}</span>
               </button>
               <div className="model-picker-sublist">
-                {THINKING_LEVELS.map((level) => {
-                  const active = level === thinkingLevel;
+                {availableThinkingLevels.map((level) => {
+                  const active = level === effectiveThinkingLevel;
                   return (
                     <button
                       key={level}
@@ -192,7 +506,7 @@ export function ModelSelector() {
                       aria-checked={active}
                       onClick={() => handleSelectThinking(level)}
                     >
-                      <span className="model-picker-suboption-name">{THINKING_LABELS[level]}</span>
+                      <span className="model-picker-suboption-name">{thinkingLabel(level)}</span>
                       {active && (
                         <span className="model-picker-check" aria-hidden="true">
                           <svg viewBox="0 0 24 24" width="14" height="14">
@@ -210,6 +524,49 @@ export function ModelSelector() {
                     </button>
                   );
                 })}
+              </div>
+            </>
+          )}
+
+          {submenu === "speed" && (
+            <>
+              <button
+                type="button"
+                className="model-picker-back"
+                onClick={() => setSubmenu(null)}
+                role="menuitem"
+              >
+                <span aria-hidden="true">&#8249;</span>
+                <span>{t("Speed", "速度")}</span>
+              </button>
+              <div className="model-picker-sublist">
+                <button
+                  type="button"
+                  className="model-picker-suboption active"
+                  role="menuitemradio"
+                  aria-checked="true"
+                  title={t("Speed is currently determined by the selected provider and model.", "当前速度由所选提供商和模型决定。")}
+                  onClick={() => closeMenu(true)}
+                >
+                  <span className="model-picker-suboption-copy">
+                    <span className="model-picker-suboption-name">{t("Fast", "快速")}</span>
+                    <span className="model-picker-suboption-provider">
+                      {t("Managed by the provider for now", "暂由提供商决定")}
+                    </span>
+                  </span>
+                  <span className="model-picker-check" aria-hidden="true">
+                    <svg viewBox="0 0 24 24" width="14" height="14">
+                      <path
+                        d="M20 6 9 17l-5-5"
+                        fill="none"
+                        stroke="currentColor"
+                        strokeWidth="2"
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                      />
+                    </svg>
+                  </span>
+                </button>
               </div>
             </>
           )}

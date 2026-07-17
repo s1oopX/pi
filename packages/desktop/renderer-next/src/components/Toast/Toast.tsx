@@ -1,13 +1,15 @@
 import { useEffect, useState, useCallback } from "react";
+import { useI18n } from "../../i18n";
 
 export interface ToastItem {
   id: string;
   message: string;
-  type?: "info" | "success" | "error";
+  type?: "info" | "success" | "warning" | "error";
   duration?: number;
 }
 
 let toastId = 0;
+const MAX_TOASTS = 3;
 const listeners = new Set<(toast: ToastItem) => void>();
 
 export function showToast(message: string, type: ToastItem["type"] = "info", duration = 4000): void {
@@ -19,7 +21,7 @@ export function ToastContainer() {
   const [toasts, setToasts] = useState<ToastItem[]>([]);
 
   const addToast = useCallback((toast: ToastItem) => {
-    setToasts((prev) => [...prev, toast]);
+    setToasts((prev) => [...prev, toast].slice(-MAX_TOASTS));
   }, []);
 
   useEffect(() => {
@@ -27,29 +29,44 @@ export function ToastContainer() {
     return () => { listeners.delete(addToast); };
   }, [addToast]);
 
-  function removeToast(id: string) {
+  const removeToast = useCallback((id: string) => {
     setToasts((prev) => prev.filter((t) => t.id !== id));
-  }
+  }, []);
 
   return (
-    <div className="toast-region" aria-live="polite" aria-atomic="false">
+    <div className="toast-region">
       {toasts.map((toast) => (
-        <ToastEntry key={toast.id} toast={toast} onDismiss={() => removeToast(toast.id)} />
+        <ToastEntry key={toast.id} toast={toast} onDismiss={removeToast} />
       ))}
     </div>
   );
 }
 
-function ToastEntry({ toast, onDismiss }: { toast: ToastItem; onDismiss: () => void }) {
+function ToastEntry({ toast, onDismiss }: { toast: ToastItem; onDismiss: (id: string) => void }) {
+  const { t } = useI18n();
+  const dismiss = useCallback(() => onDismiss(toast.id), [onDismiss, toast.id]);
+
   useEffect(() => {
-    const timer = setTimeout(onDismiss, toast.duration ?? 4000);
+    const timer = setTimeout(dismiss, toast.duration ?? 4000);
     return () => clearTimeout(timer);
-  }, [toast.duration, onDismiss]);
+  }, [dismiss, toast.duration]);
+
+  const isError = toast.type === "error";
 
   return (
-    <div className={`toast toast-${toast.type ?? "info"}`} role="alert">
+    <div
+      className={`toast toast-${toast.type ?? "info"}`}
+      role={isError ? "alert" : "status"}
+      aria-live={isError ? "assertive" : "polite"}
+      aria-atomic="true"
+    >
       <span className="toast-message">{toast.message}</span>
-      <button className="toast-dismiss" type="button" onClick={onDismiss} aria-label="Dismiss">
+      <button
+        className="toast-dismiss"
+        type="button"
+        onClick={dismiss}
+        aria-label={t("Dismiss", "关闭通知")}
+      >
         &times;
       </button>
     </div>

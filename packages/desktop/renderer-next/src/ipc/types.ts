@@ -11,11 +11,17 @@ import type {
   RpcAuthStatusDTO,
   RpcBackendEventDTO,
   RpcCustomModelsConfigDTO,
+  RpcExtensionUIRequestClosedEventDTO,
   RpcExtensionUIRequestEventDTO,
+  RpcForkResultDTO,
+  RpcGetResourcesDataDTO,
+  RpcGetSessionsDataDTO,
+  RpcImageContentDTO,
   RpcModelDTO,
   RpcSessionInfoDTO,
   RpcSessionStateDTO,
   RpcSessionStatsDTO,
+  RpcSessionTreeNodeDTO,
   RpcSlashCommandDTO,
   RpcToolCallDTO,
 } from "../../../../coding-agent/src/modes/rpc/rpc-desktop-contract.ts";
@@ -50,19 +56,29 @@ export interface GetCommandsCommand {
   type: "get_commands";
 }
 
+export interface GetResourcesCommand {
+  type: "get_resources";
+  reload?: boolean;
+}
+
 export interface GetSessionsCommand {
   type: "get_sessions";
+  all?: boolean;
+  offset?: number;
   limit?: number;
+  query?: string;
 }
 
 export interface GetAuthStatusCommand {
   type: "get_auth_status";
-  providers: string[];
+  providers?: string[];
 }
 
 export interface PromptCommand {
   type: "prompt";
   message: string;
+  images?: ImageContent[];
+  streamingBehavior?: "followUp" | "steer";
 }
 
 export interface AbortCommand {
@@ -71,6 +87,7 @@ export interface AbortCommand {
 
 export interface NewSessionCommand {
   type: "new_session";
+  cwd?: string;
 }
 
 export interface SwitchSessionCommand {
@@ -163,17 +180,32 @@ export interface TestCustomModelCommand {
   modelId: string;
   useStoredAuthProvider?: string;
   preserveHeadersFromProvider?: string;
+  proxyUrl?: string;
 }
 
 // Custom model CRUD
+
+export interface FetchProviderModelsCommand {
+  type: "fetch_provider_models";
+  provider: string;
+  baseUrl: string;
+  api: CustomModelApi;
+  apiKey?: string;
+  headers?: Record<string, string>;
+  useStoredAuthProvider?: string;
+  preserveHeadersFromProvider?: string;
+  proxyUrl?: string;
+}
 
 export interface UpsertCustomModelCommand {
   type: "upsert_custom_model";
   provider: string;
   baseUrl: string;
   api: CustomModelApi;
+  authKind?: "api_key" | "none";
   apiKey?: string;
   headers?: Record<string, string>;
+  proxyUrl?: string;
   replaceModelId?: string;
   model: {
     id: string;
@@ -190,6 +222,12 @@ export interface RemoveCustomModelCommand {
   provider: string;
   modelId: string;
   removeAuthWhenEmpty?: boolean;
+}
+
+export interface RemoveCustomProviderCommand {
+  type: "remove_custom_provider";
+  provider: string;
+  removeAuth?: boolean;
 }
 
 export interface ReplaceCustomModelsCommand {
@@ -224,7 +262,7 @@ export interface GetForkMessagesCommand {
 
 export interface GetEntriesCommand {
   type: "get_entries";
-  sinceEntryId?: string;
+  since?: string;
 }
 
 export interface GetTreeCommand {
@@ -252,11 +290,13 @@ export interface AbortBashCommand {
 export interface SteerCommand {
   type: "steer";
   message: string;
+  images?: ImageContent[];
 }
 
 export interface FollowUpCommand {
   type: "follow_up";
   message: string;
+  images?: ImageContent[];
 }
 
 // Extension flags (e.g. permission mode)
@@ -274,6 +314,7 @@ export type BackendCommand =
   | GetCustomModelsCommand
   | GetSessionStatsCommand
   | GetCommandsCommand
+  | GetResourcesCommand
   | GetSessionsCommand
   | GetAuthStatusCommand
   | PromptCommand
@@ -294,8 +335,10 @@ export type BackendCommand =
   | RemoveApiKeyCommand
   | TestModelCommand
   | TestCustomModelCommand
+  | FetchProviderModelsCommand
   | UpsertCustomModelCommand
   | RemoveCustomModelCommand
+  | RemoveCustomProviderCommand
   | ReplaceCustomModelsCommand
   | SetSessionNameCommand
   | ExportHtmlCommand
@@ -329,21 +372,38 @@ export type BackendSendCommand = ExtensionUIResponseCommand;
 export type BackendEvent = RpcBackendEventDTO;
 
 export type ExtensionUIRequestEvent = RpcExtensionUIRequestEventDTO;
+export type ExtensionUIRequestClosedEvent = RpcExtensionUIRequestClosedEventDTO;
 
 // Domain models. These are re-exported straight from the backend wire contract
 // so field names match exactly what crosses stdio (e.g. Model.id, not modelId;
 // Message.content is a content-block array, not a string).
 
 export type Message = RpcAgentMessageDTO;
+export type ImageContent = RpcImageContentDTO;
 export type ToolCall = RpcToolCallDTO;
 export type AssistantContentBlock = RpcAssistantContentBlockDTO;
 export type Model = RpcModelDTO;
 export type AuthStatus = RpcAuthStatusDTO;
 export type SessionInfo = RpcSessionInfoDTO;
+export type SessionListPage = RpcGetSessionsDataDTO;
+export type ForkResult = RpcForkResultDTO;
 export type SessionState = RpcSessionStateDTO;
 export type SessionStats = RpcSessionStatsDTO;
 export type SlashCommand = RpcSlashCommandDTO;
+export type ResourcesData = RpcGetResourcesDataDTO;
 export type CustomModelsConfig = RpcCustomModelsConfigDTO;
+
+export interface ForkMessage {
+  entryId: string;
+  text: string;
+}
+
+export type SessionTreeNode = RpcSessionTreeNodeDTO;
+
+export interface SessionTreeData {
+  tree: SessionTreeNode[];
+  leafId: string | null;
+}
 
 // Backend status (from getBackendStatus / onStatus)
 
@@ -361,4 +421,12 @@ export interface BackendStatus {
 export interface LogEntry {
   level: string;
   message: string;
+}
+
+export interface WorkspaceGitStatus {
+  cwd: string;
+  kind: "repository" | "not-repository" | "unavailable";
+  branch: string | null;
+  detached: boolean;
+  dirty: boolean;
 }

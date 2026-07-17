@@ -1,0 +1,208 @@
+.shortcuts-settings {
+  max-width: 720px;
+}
+
+.shortcuts-heading {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 20px;
+}
+
+.shortcuts-heading .settings-section-desc {
+  margin-bottom: 0;
+}
+
+.shortcuts-reset-all {
+  flex-shrink: 0;
+  margin-top: 2px;
+}
+
+.shortcuts-instructions {
+  margin: 22px 0 5px;
+  font-size: calc(12px * var(--font-scale));
+  line-height: 1.5;
+  color: var(--muted);
+}
+
+.shortcuts-feedback {
+  min-height: 30px;
+  padding: 6px 0;
+  font-size: calc(11px * var(--font-scale));
+  line-height: calc(18px * var(--font-scale));
+  color: var(--text-soft);
+}
+
+.shortcuts-feedback.error {
+  color: var(--danger);
+}
+
+.shortcuts-list {
+  margin: 0;
+  padding: 0;
+  overflow: hidden;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--elevated);
+  list-style: none;
+}
+
+.shortcuts-row {
+  display: grid;
+  grid-template-columns: minmax(180px, 1fr) auto;
+  align-items: center;
+  gap: 18px;
+  min-height: 64px;
+  padding: 10px 12px;
+  border-bottom: 1px solid var(--border);
+  transition: background var(--transition);
+}
+
+.shortcuts-row:last-child {
+  border-bottom: 0;
+}
+
+.shortcuts-row:hover {
+  background: var(--surface);
+}
+
+.shortcuts-row.recording {
+  background: var(--accent-soft);
+}
+
+.shortcuts-copy {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 1px;
+}
+
+.shortcuts-command-label {
+  overflow: hidden;
+  font-size: calc(12px * var(--font-scale));
+  font-weight: 600;
+  line-height: calc(18px * var(--font-scale));
+  color: var(--text);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.shortcuts-command-description {
+  overflow: hidden;
+  font-size: calc(11px * var(--font-scale));
+  line-height: calc(17px * var(--font-scale));
+  color: var(--muted);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.shortcuts-actions {
+  display: flex;
+  flex-shrink: 0;
+  align-items: center;
+  gap: 5px;
+}
+
+.shortcut-recorder {
+  display: inline-flex;
+  min-width: 142px;
+  min-height: 32px;
+  align-items: center;
+  justify-content: center;
+  padding: 5px 10px;
+  border: 1px solid var(--control-border);
+  border-radius: var(--radius-sm);
+  background: var(--control-bg);
+  box-shadow: var(--shadow-sm);
+  color: var(--text-soft);
+  transition:
+    background var(--transition),
+    border-color var(--transition),
+    color var(--transition),
+    box-shadow var(--transition);
+}
+
+.shortcut-recorder:hover {
+  border-color: var(--border-strong);
+  background: var(--control-hover);
+  color: var(--text);
+}
+
+.shortcut-recorder[aria-pressed="true"] {
+  border-color: var(--accent);
+  background: var(--elevated);
+  box-shadow: var(--focus-shadow);
+  color: var(--text);
+}
+
+.shortcut-recorder kbd {
+  overflow: hidden;
+  font-family: var(--font-mono);
+  font-size: calc(11px * var(--font-scale));
+  font-weight: 550;
+  line-height: calc(18px * var(--font-scale));
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.shortcut-action {
+  min-height: 28px;
+  padding: 4px 6px;
+  border-radius: var(--radius-sm);
+  font-size: calc(11px * var(--font-scale));
+  font-weight: 500;
+  color: var(--muted);
+  transition:
+    background var(--transition),
+    color var(--transition),
+    opacity var(--transition);
+}
+
+.shortcut-action:hover:not(:disabled) {
+  background: var(--control-hover);
+  color: var(--text);
+}
+
+.shortcut-action:disabled {
+  opacity: 0.38;
+}
+
+@media (max-width: 700px) {
+  .shortcuts-heading,
+  .shortcuts-row {
+    align-items: stretch;
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .shortcuts-heading {
+    flex-direction: column;
+    gap: 10px;
+  }
+
+  .shortcuts-reset-all {
+    align-self: flex-start;
+  }
+
+  .shortcuts-actions {
+    justify-content: flex-start;
+  }
+}
+
+@media (max-width: 430px) {
+  .shortcuts-actions {
+    align-items: stretch;
+    flex-wrap: wrap;
+  }
+
+  .shortcut-recorder {
+    width: 100%;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .shortcuts-row,
+  .shortcut-recorder,
+  .shortcut-action {
+    transition: none;
+  }
+}

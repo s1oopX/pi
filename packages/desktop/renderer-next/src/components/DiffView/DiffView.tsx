@@ -1,6 +1,7 @@
 import { useMemo, useState } from "react";
 import { html, parse } from "diff2html";
 import type { DiffFile } from "diff2html/lib/types";
+import { useI18n } from "../../i18n";
 
 type OutputFormat = "side-by-side" | "line-by-line";
 
@@ -10,6 +11,7 @@ interface DiffViewProps {
 }
 
 export function DiffView({ patch, defaultFormat = "line-by-line" }: DiffViewProps) {
+  const { t } = useI18n();
   const [format, setFormat] = useState<OutputFormat>(defaultFormat);
 
   const diffFiles: DiffFile[] = useMemo(() => {
@@ -27,23 +29,31 @@ export function DiffView({ patch, defaultFormat = "line-by-line" }: DiffViewProp
   }, [diffFiles, format]);
 
   if (!patch.trim()) {
-    return <div className="diff-empty">No changes</div>;
+    return <div className="diff-empty">{t("No changes", "没有更改")}</div>;
   }
 
   return (
     <div className="diff-view">
       <div className="diff-toolbar">
         <span className="diff-file-count">
-          {diffFiles.length} file{diffFiles.length !== 1 ? "s" : ""} changed
+          {t(
+            diffFiles.length === 1 ? "{count} file changed" : "{count} files changed",
+            "{count} 个文件已更改",
+            { count: diffFiles.length },
+          )}
         </span>
-        <div className="diff-format-toggle" role="group" aria-label="Diff display format">
+        <div
+          className="diff-format-toggle"
+          role="group"
+          aria-label={t("Diff display format", "差异显示格式")}
+        >
           <button
             className={`diff-format-btn ${format === "line-by-line" ? "active" : ""}`}
             type="button"
             onClick={() => setFormat("line-by-line")}
             aria-pressed={format === "line-by-line"}
           >
-            Inline
+            {t("Inline", "行内")}
           </button>
           <button
             className={`diff-format-btn ${format === "side-by-side" ? "active" : ""}`}
@@ -51,7 +61,7 @@ export function DiffView({ patch, defaultFormat = "line-by-line" }: DiffViewProp
             onClick={() => setFormat("side-by-side")}
             aria-pressed={format === "side-by-side"}
           >
-            Side by side
+            {t("Side by side", "并排")}
           </button>
         </div>
       </div>

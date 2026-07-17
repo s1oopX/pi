@@ -1,40 +1,17 @@
-import { useEffect, useRef, useState } from "react";
-import { useStore, type PermissionMode } from "../../store";
-
-interface ModeOption {
-  mode: PermissionMode;
-  label: string;
-  description: string;
-}
-
-// Ordered most-permissive to least, matching the Codex-style picker.
-const MODE_OPTIONS: ModeOption[] = [
-  {
-    mode: "full",
-    label: "完全访问",
-    description: "所有操作自动执行，不打断",
-  },
-  {
-    mode: "auto",
-    label: "替我审批",
-    description: "仅对检测到的风险操作请求批准",
-  },
-  {
-    mode: "ask",
-    label: "请求批准",
-    description: "每次改文件或跑命令前都询问",
-  },
-];
-
-function optionFor(mode: PermissionMode): ModeOption {
-  return MODE_OPTIONS.find((o) => o.mode === mode) ?? MODE_OPTIONS[2];
-}
+import { useEffect, useId, useRef, useState, type KeyboardEvent as ReactKeyboardEvent } from "react";
+import { useI18n } from "../../i18n";
+import { useStore } from "../../store";
+import { optionForPermissionMode, PERMISSION_MODE_OPTIONS } from "./permissionModes";
 
 export function PermissionSelector() {
+  const { t } = useI18n();
   const permissionMode = useStore((s) => s.permissionMode);
   const setPermissionMode = useStore((s) => s.setPermissionMode);
   const [open, setOpen] = useState(false);
   const rootRef = useRef<HTMLDivElement>(null);
+  const triggerRef = useRef<HTMLButtonElement>(null);
+  const popoverRef = useRef<HTMLDivElement>(null);
+  const popoverId = useId();
 
   // Close the popover on any outside click.
   useEffect(() => {
@@ -44,30 +21,108 @@ export function PermissionSelector() {
         setOpen(false);
       }
     }
+    function onKeyDown(e: globalThis.KeyboardEvent) {
+      if (e.key === "Escape") {
+        e.preventDefault();
+        e.stopPropagation();
+        closeMenu(true);
+      }
+    }
     document.addEventListener("mousedown", onDocClick);
-    return () => document.removeEventListener("mousedown", onDocClick);
+    document.addEventListener("keydown", onKeyDown);
+    return () => {
+      document.removeEventListener("mousedown", onDocClick);
+      document.removeEventListener("keydown", onKeyDown);
+    };
   }, [open]);
 
-  const active = optionFor(permissionMode);
+  useEffect(() => {
+    if (!open) return;
+    const focusFrame = requestAnimationFrame(() => {
+      const popover = popoverRef.current;
+      const target =
+        popover?.querySelector<HTMLElement>('[role="option"][aria-selected="true"]') ??
+        popover?.querySelector<HTMLElement>('[role="option"]');
+      target?.focus();
+    });
+    return () => cancelAnimationFrame(focusFrame);
+  }, [open]);
+
+  function closeMenu(restoreFocus = false) {
+    setOpen(false);
+    if (restoreFocus) requestAnimationFrame(() => triggerRef.current?.focus());
+  }
+
+  function handlePopoverKeyDown(event: ReactKeyboardEvent<HTMLDivElement>) {
+    if (!["ArrowDown", "ArrowUp", "Home", "End"].includes(event.key)) return;
+    const popover = popoverRef.current;
+    if (!popover) return;
+    const items = Array.from(popover.querySelectorAll<HTMLButtonElement>('[role="option"]')).filter(
+      (item) => item.getClientRects().length > 0 && !item.disabled,
+    );
+    if (items.length === 0) return;
+
+    event.preventDefault();
+    event.stopPropagation();
+    const currentIndex = items.indexOf(document.activeElement as HTMLButtonElement);
+    let nextIndex: number;
+    if (event.key === "Home") nextIndex = 0;
+    else if (event.key === "End") nextIndex = items.length - 1;
+    else if (event.key === "ArrowUp") nextIndex = currentIndex <= 0 ? items.length - 1 : currentIndex - 1;
+    else nextIndex = currentIndex < 0 || currentIndex === items.length - 1 ? 0 : currentIndex + 1;
+    items[nextIndex]?.focus();
+  }
+
+  const active = optionForPermissionMode(permissionMode);
+
+  function optionLabel(mode: typeof permissionMode): string {
+    if (mode === "full") return t("Full access", "完全访问");
+    if (mode === "auto") return t("Auto approve", "自动批准");
+    return t("Ask every time", "每次询问");
+  }
+
+  function optionDescription(mode: typeof permissionMode): string {
+    if (mode === "full") return t("Run all tool actions without asking.", "无需询问即可运行所有工具操作。");
+    if (mode === "auto") return t("Ask only for potentially risky operations.", "仅对可能有风险的操作进行询问。");
+    return t("Ask before commands or file changes.", "运行命令或更改文件前询问。");
+  }
 
   return (
     <div className="permission-selector" ref={rootRef}>
       <button
+        ref={triggerRef}
         type="button"
         className={`permission-trigger permission-mode-${permissionMode}`}
-        onClick={() => setOpen((v) => !v)}
+        onClick={() => {
+          if (open) closeMenu();
+          else setOpen(true);
+        }}
+        onKeyDown={(event) => {
+          if (!open && (event.key === "ArrowDown" || event.key === "ArrowUp")) {
+            event.preventDefault();
+            setOpen(true);
+          }
+        }}
         aria-haspopup="listbox"
         aria-expanded={open}
-        title="Tool permission mode"
+        aria-controls={popoverId}
+        title={t("Tool permission mode", "工具权限模式")}
       >
         <span className="permission-dot" aria-hidden="true" />
-        <span className="permission-trigger-label">{active.label}</span>
+        <span className="permission-trigger-label">{optionLabel(active.mode)}</span>
         <span className="permission-chevron" aria-hidden="true">{open ? "\u25be" : "\u25b8"}</span>
       </button>
       {open && (
-        <div className="permission-popover" role="listbox" aria-label="Permission mode">
-          <div className="permission-popover-title">如何批准工具操作？</div>
-          {MODE_OPTIONS.map((option) => (
+        <div
+          id={popoverId}
+          ref={popoverRef}
+          className="permission-popover"
+          role="listbox"
+          aria-label={t("Permission mode", "权限模式")}
+          onKeyDown={handlePopoverKeyDown}
+        >
+          <div className="permission-popover-title">{t("Tool permissions", "工具权限")}</div>
+          {PERMISSION_MODE_OPTIONS.map((option) => (
             <button
               key={option.mode}
               type="button"
@@ -76,12 +131,12 @@ export function PermissionSelector() {
               className={`permission-option ${option.mode === permissionMode ? "active" : ""}`}
               onClick={() => {
                 setPermissionMode(option.mode);
-                setOpen(false);
+                closeMenu(true);
               }}
             >
               <div className="permission-option-body">
-                <span className="permission-option-label">{option.label}</span>
-                <span className="permission-option-desc">{option.description}</span>
+                <span className="permission-option-label">{optionLabel(option.mode)}</span>
+                <span className="permission-option-desc">{optionDescription(option.mode)}</span>
               </div>
               {option.mode === permissionMode && (
                 <span className="permission-check" aria-hidden="true">

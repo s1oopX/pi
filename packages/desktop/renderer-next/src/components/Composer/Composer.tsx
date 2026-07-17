@@ -1,8 +1,42 @@
-import { useEffect, useMemo, useRef, useState, type KeyboardEvent, type FormEvent } from "react";
+import {
+  useEffect,
+  useId,
+  useMemo,
+  useRef,
+  useState,
+  type ChangeEvent,
+  type ClipboardEvent,
+  type DragEvent,
+  type FormEvent,
+  type KeyboardEvent,
+} from "react";
+import { useI18n } from "../../i18n";
 import { useStore } from "../../store";
 import * as api from "../../ipc/api";
 import { PermissionSelector } from "../PermissionSelector";
 import { ModelSelector } from "../ModelSelector";
+import { ExtensionWidgets } from "../ExtensionWidgets";
+import { showToast } from "../Toast";
+import {
+  MAX_ATTACHMENT_COUNT,
+  MAX_ATTACHMENT_MEGABYTES,
+  ImageAttachmentError,
+  appendAttachments,
+  getTransferredFiles,
+  getPromptText,
+  readImageAttachment,
+  toImageContent,
+  type ComposerAttachment,
+} from "./attachments";
+import {
+  resolvePromptStreamingBehavior,
+  type StreamingSubmitMode,
+} from "./submission";
+import {
+  clearComposerWorkspaceDraft,
+  getComposerWorkspaceDraft,
+  setComposerWorkspaceDraft,
+} from "./workspaceDrafts";
 
 type Suggestion =
   | { kind: "command"; value: string; label: string; description?: string }
@@ -26,20 +60,38 @@ function getActiveToken(text: string, caret: number): { trigger: "/" | "@"; quer
 }
 
 export function Composer() {
-  const [input, setInput] = useState("");
+  const { t } = useI18n();
+  const suggestionsListboxId = useId();
+  const workspaceCwd = useStore((state) => state.workspaceCwd);
+  const sessionId = useStore((state) => state.session?.sessionId ?? null);
+  const [input, setInput] = useState(() => getComposerWorkspaceDraft(workspaceCwd, sessionId).input);
+  const [attachments, setAttachments] = useState<ComposerAttachment[]>(
+    () => getComposerWorkspaceDraft(workspaceCwd, sessionId).attachments,
+  );
+  const [readingAttachments, setReadingAttachments] = useState(false);
+  const [submitting, setSubmitting] = useState(false);
+  const [streamingSubmitMode, setStreamingSubmitMode] = useState<StreamingSubmitMode>("follow-up");
+  const [draggingFiles, setDraggingFiles] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
   const [activeIndex, setActiveIndex] = useState(0);
   const [fileMatches, setFileMatches] = useState<string[]>([]);
   const isStreaming = useStore((s) => s.isStreaming);
+  const backendStatus = useStore((s) => s.backendStatus);
   const commands = useStore((s) => s.commands);
-  const queuedSteering = useStore((s) => s.queuedSteering);
-  const queuedFollowUp = useStore((s) => s.queuedFollowUp);
+  const extensionWidgets = useStore((s) => s.extensionWidgets);
+  const modelSupportsImages = useStore((s) => s.session?.model?.input.includes("image") ?? true);
   const composerDraft = useStore((s) => s.composerDraft);
   const setComposerDraft = useStore((s) => s.setComposerDraft);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
   const fileRequestSeq = useRef(0);
+  const dragDepthRef = useRef(0);
 
   const token = getActiveToken(input, input.length);
+
+  useEffect(() => {
+    setComposerWorkspaceDraft(workspaceCwd, sessionId, input, attachments);
+  }, [attachments, input, sessionId, workspaceCwd]);
 
   // Consume a draft pushed from elsewhere (e.g. empty-state action cards):
   // prefill the input, focus, size to fit, then clear the shared draft.
@@ -115,14 +167,108 @@ export function Composer() {
     });
   }
 
-  async function submit(message: string) {
-    // During a run, plain messages queue as follow-up; slash commands must go
-    // through prompt (backend rejects extension commands via steer/follow_up).
-    if (isStreaming && !message.startsWith("/")) {
-      await api.followUp(message);
-    } else {
-      await api.sendPrompt(message);
+  async function submit(message: string, images: ReturnType<typeof toImageContent> | undefined) {
+    await api.sendPrompt(message, images, resolvePromptStreamingBehavior(isStreaming, message, streamingSubmitMode));
+  }
+
+  async function addAttachmentFiles(selectedFiles: readonly File[]) {
+    if (selectedFiles.length === 0) return;
+    if (!modelSupportsImages) {
+      showToast(t("The current model does not support image input", "当前模型不支持图片输入"), "error");
+      return;
     }
+    if (submitting || readingAttachments) {
+      showToast(t("Wait for the current message or images to finish processing", "请等待当前消息或图片处理完成"), "info");
+      return;
+    }
+
+    const availableSlots = Math.max(0, MAX_ATTACHMENT_COUNT - attachments.length);
+    if (availableSlots === 0) {
+      showToast(t("You can attach up to {count} images", "最多可附加 {count} 张图片", {
+        count: MAX_ATTACHMENT_COUNT,
+      }), "error");
+      return;
+    }
+
+    setReadingAttachments(true);
+    try {
+      const filesToRead = selectedFiles.slice(0, availableSlots);
+      const results = await Promise.allSettled(filesToRead.map((file) => readImageAttachment(file)));
+      const accepted = results.flatMap((result) => (result.status === "fulfilled" ? [result.value] : []));
+      const errors = results.flatMap((result) =>
+        result.status === "rejected"
+          ? [result.reason instanceof ImageAttachmentError
+              ? result.reason.reason === "unsupported"
+                ? t("{name} is not a supported image", "{name} 不是受支持的图片", {
+                    name: result.reason.attachmentName,
+                  })
+                : t("{name} exceeds the {size} MB attachment limit", "{name} 超出 {size} MB 的附件上限", {
+                    name: result.reason.attachmentName,
+                    size: MAX_ATTACHMENT_MEGABYTES,
+                  })
+              : result.reason instanceof Error
+                ? result.reason.message
+                : String(result.reason)]
+          : [],
+      );
+      setAttachments((current) => appendAttachments(current, accepted).attachments);
+
+      const dropped = selectedFiles.length - filesToRead.length;
+      if (errors.length > 0) {
+        const suffix = errors.length > 1
+          ? t(" (+{count} more)", "（另有 {count} 个）", { count: errors.length - 1 })
+          : "";
+        showToast(`${errors[0]}${suffix}`, "error");
+      }
+      if (dropped > 0) {
+        showToast(t("Only the first {count} images were attached", "仅附加了前 {count} 张图片", {
+          count: availableSlots,
+        }), "info");
+      }
+    } finally {
+      setReadingAttachments(false);
+    }
+  }
+
+  function handleAttachmentSelection(event: ChangeEvent<HTMLInputElement>) {
+    const selectedFiles = Array.from(event.currentTarget.files ?? []);
+    event.currentTarget.value = "";
+    void addAttachmentFiles(selectedFiles);
+  }
+
+  function handlePaste(event: ClipboardEvent<HTMLTextAreaElement>) {
+    const pastedFiles = getTransferredFiles(event.clipboardData);
+    if (pastedFiles.length === 0) return;
+    event.preventDefault();
+    void addAttachmentFiles(pastedFiles);
+  }
+
+  function handleDragEnter(event: DragEvent<HTMLFormElement>) {
+    if (!Array.from(event.dataTransfer.types).includes("Files")) return;
+    event.preventDefault();
+    dragDepthRef.current += 1;
+    setDraggingFiles(true);
+  }
+
+  function handleDragOver(event: DragEvent<HTMLFormElement>) {
+    if (!Array.from(event.dataTransfer.types).includes("Files")) return;
+    event.preventDefault();
+    event.dataTransfer.dropEffect = "copy";
+  }
+
+  function handleDragLeave(event: DragEvent<HTMLFormElement>) {
+    if (dragDepthRef.current === 0) return;
+    event.preventDefault();
+    dragDepthRef.current = Math.max(0, dragDepthRef.current - 1);
+    if (dragDepthRef.current === 0) setDraggingFiles(false);
+  }
+
+  function handleDrop(event: DragEvent<HTMLFormElement>) {
+    if (!Array.from(event.dataTransfer.types).includes("Files")) return;
+    event.preventDefault();
+    dragDepthRef.current = 0;
+    setDraggingFiles(false);
+    void addAttachmentFiles(getTransferredFiles(event.dataTransfer));
   }
 
   async function handleSubmit(e?: FormEvent) {
@@ -131,13 +277,40 @@ export function Composer() {
       applySuggestion(suggestions[activeIndex]);
       return;
     }
-    const message = input.trim();
-    if (!message) return;
-    setInput("");
-    if (textareaRef.current) {
-      textareaRef.current.style.height = "auto";
+    if (!backendStatus.ready) {
+      showToast(
+        backendStatus.error
+          ? t("Agent unavailable: {error}", "智能体不可用：{error}", { error: backendStatus.error })
+          : t("The agent is not ready yet", "智能体尚未就绪"),
+        "error",
+      );
+      return;
     }
-    await submit(message);
+    const message = input.trim();
+    if ((!message && attachments.length === 0) || submitting || readingAttachments) return;
+    if (attachments.length > 0 && !modelSupportsImages) {
+      showToast(t("The current model does not support image input", "当前模型不支持图片输入"), "error");
+      return;
+    }
+    setSubmitting(true);
+    try {
+      const images = toImageContent(attachments);
+      await submit(getPromptText(message, images.length), images.length > 0 ? images : undefined);
+      clearComposerWorkspaceDraft(workspaceCwd, sessionId);
+      setInput("");
+      setAttachments([]);
+      if (textareaRef.current) textareaRef.current.style.height = "auto";
+    } catch (error) {
+      showToast(t("Failed to send message: {error}", "发送消息失败：{error}", {
+        error: error instanceof Error ? error.message : String(error),
+      }), "error");
+      requestAnimationFrame(() => {
+        textareaRef.current?.focus();
+        autosize();
+      });
+    } finally {
+      setSubmitting(false);
+    }
   }
 
   function handleKeyDown(e: KeyboardEvent<HTMLTextAreaElement>) {
@@ -170,33 +343,94 @@ export function Composer() {
   }
 
   async function handleAbort() {
-    await api.abort();
+    try {
+      await api.abort();
+    } catch (error) {
+      showToast(t("Failed to stop generation: {error}", "停止生成失败：{error}", {
+        error: error instanceof Error ? error.message : String(error),
+      }), "error");
+    }
   }
 
-  const queued = [...queuedSteering, ...queuedFollowUp];
+  const isSlashCommand = input.trimStart().startsWith("/");
+  const streamingSubmitLabel = isSlashCommand
+    ? t("Run command", "运行命令")
+    : streamingSubmitMode === "steer"
+      ? t("Steer current run", "引导当前运行")
+      : t("Queue follow-up", "加入跟进队列");
+  const inputPlaceholder = backendStatus.ready
+    ? t("Send a message...", "发送消息…")
+    : backendStatus.starting || backendStatus.restarting
+      ? t("Write while the agent starts...", "智能体启动中，可先输入…")
+      : t("Write a draft...", "输入草稿…");
 
   return (
     <div className="composer-wrap">
-      <div className="composer-toolbar">
-        <PermissionSelector />
-        <ModelSelector />
-      </div>
-      {queued.length > 0 && (
-        <div className="composer-queue" aria-label="Queued messages">
-          {queued.map((msg, i) => (
-            <div className="composer-queue-item" key={i} title={msg}>
-              <span className="composer-queue-badge">queued</span>
-              <span className="composer-queue-text">{msg}</span>
-            </div>
-          ))}
-        </div>
-      )}
-      <form className="composer" onSubmit={handleSubmit}>
+      <ExtensionWidgets widgets={extensionWidgets} placement="aboveEditor" />
+      <form
+        className={`composer ${draggingFiles ? "drag-active" : ""}`}
+        onSubmit={handleSubmit}
+        onDragEnter={handleDragEnter}
+        onDragOver={handleDragOver}
+        onDragLeave={handleDragLeave}
+        onDrop={handleDrop}
+      >
+        {draggingFiles && (
+          <div
+            className={`composer-drop-overlay ${modelSupportsImages ? "" : "unsupported"}`}
+            role="status"
+            aria-live="polite"
+          >
+            <span className="composer-drop-title">
+              {modelSupportsImages
+                ? t("Drop images to attach", "拖放图片以附加")
+                : t("This model cannot accept images", "此模型无法接收图片")}
+            </span>
+            <span className="composer-drop-description">
+              {t(
+                "PNG, JPEG, GIF, or WebP; up to {count} images; {size} MB each",
+                "支持 PNG、JPEG、GIF 或 WebP；最多 {count} 张；每张 {size} MB",
+                { count: MAX_ATTACHMENT_COUNT, size: MAX_ATTACHMENT_MEGABYTES },
+              )}
+            </span>
+          </div>
+        )}
+        {attachments.length > 0 && (
+          <div className="composer-attachments" aria-label={t("Image attachments", "图片附件")}>
+            {attachments.map((attachment) => (
+              <div className="composer-attachment" key={attachment.id}>
+                <img
+                  src={`data:${attachment.mimeType};base64,${attachment.data}`}
+                  alt={attachment.name}
+                  title={attachment.name}
+                />
+                <button
+                  className="composer-attachment-remove"
+                  type="button"
+                  aria-label={t("Remove {name}", "移除 {name}", { name: attachment.name })}
+                  title={t("Remove image", "移除图片")}
+                  disabled={submitting}
+                  onClick={() => setAttachments((current) => current.filter((item) => item.id !== attachment.id))}
+                >
+                  <svg viewBox="0 0 16 16" aria-hidden="true">
+                    <path d="M4 4l8 8m0-8-8 8" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" />
+                  </svg>
+                </button>
+              </div>
+            ))}
+          </div>
+        )}
         <div className="composer-input-wrap">
           {menuOpen && suggestions.length > 0 && (
-            <div className="composer-suggestions" role="listbox">
+            <div
+              id={suggestionsListboxId}
+              className="composer-suggestions"
+              role="listbox"
+              aria-label={token?.trigger === "/" ? t("Commands", "命令") : t("Workspace files", "工作区文件")}
+            >
               {suggestions.map((s, i) => (
                 <button
+                  id={`${suggestionsListboxId}-${i}`}
                   key={`${s.kind}:${s.value}`}
                   type="button"
                   role="option"
@@ -225,35 +459,133 @@ export function Composer() {
             value={input}
             onChange={(e) => { setInput(e.target.value); autosize(); }}
             onKeyDown={handleKeyDown}
-            placeholder={isStreaming ? "Queue a follow-up message..." : "Send a message... (/ for commands, @ for files)"}
+            onPaste={handlePaste}
+            placeholder={inputPlaceholder}
             rows={1}
-            aria-label="Message input"
+            role="combobox"
+            aria-autocomplete="list"
+            aria-controls={menuOpen ? suggestionsListboxId : undefined}
+            aria-expanded={menuOpen}
+            aria-activedescendant={menuOpen && suggestions[activeIndex] ? `${suggestionsListboxId}-${activeIndex}` : undefined}
+            aria-label={t("Message input", "消息输入框")}
+            aria-describedby="composer-image-attachment-hint"
+            disabled={submitting}
           />
+          <span className="composer-a11y-description" id="composer-image-attachment-hint">
+            {t(
+              "Paste or drop PNG, JPEG, GIF, or WebP images to attach them. Up to {count} images, {size} megabytes each.",
+              "粘贴或拖放 PNG、JPEG、GIF 或 WebP 图片以附加。最多 {count} 张，每张 {size} MB。",
+              { count: MAX_ATTACHMENT_COUNT, size: MAX_ATTACHMENT_MEGABYTES },
+            )}
+          </span>
         </div>
-        <div className="composer-actions">
-          {isStreaming && (
+        <div className="composer-footer">
+          <div className="composer-toolbar">
+            <input
+              ref={fileInputRef}
+              className="composer-file-input"
+              type="file"
+              accept="image/png,image/jpeg,image/gif,image/webp"
+              multiple
+              tabIndex={-1}
+              onChange={handleAttachmentSelection}
+            />
             <button
-              className="composer-abort-btn"
+              className="composer-attach-btn"
               type="button"
-              onClick={handleAbort}
-              aria-label="Stop generating"
+              aria-label={t("Attach images", "附加图片")}
+              title={modelSupportsImages
+                ? t("Attach images", "附加图片")
+                : t("Current model does not support images", "当前模型不支持图片")}
+              disabled={submitting || readingAttachments || !modelSupportsImages}
+              onClick={() => fileInputRef.current?.click()}
             >
-              Stop
+              <svg viewBox="0 0 24 24" aria-hidden="true">
+                <path d="m20.5 11.5-8.2 8.2a6 6 0 0 1-8.5-8.5l9-9a4 4 0 0 1 5.7 5.7l-9 9a2 2 0 1 1-2.8-2.8l8.2-8.2" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" />
+              </svg>
             </button>
-          )}
-          <button
-            className="composer-send-btn"
-            type="submit"
-            disabled={!input.trim()}
-            aria-label={isStreaming ? "Queue message" : "Send message"}
-          >
-            <svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true">
-              <path d="M22 2 11 13" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
-              <path d="m22 2-7 20-4-9-9-4z" fill="none" stroke="currentColor" strokeWidth="2" strokeLinejoin="round" />
-            </svg>
-          </button>
+            <PermissionSelector />
+          </div>
+          <div className="composer-footer-end">
+            <ModelSelector />
+            <button
+              className="composer-mic-btn"
+              type="button"
+              aria-label={t("Voice input", "语音输入")}
+              title={t("Voice input is not available yet", "语音输入暂不可用")}
+              onClick={() => showToast(t("Voice input is not available yet", "语音输入暂不可用"), "info")}
+            >
+              <svg viewBox="0 0 24 24" aria-hidden="true">
+                <path d="M12 14a3 3 0 0 0 3-3V6a3 3 0 0 0-6 0v5a3 3 0 0 0 3 3Z" fill="none" stroke="currentColor" strokeWidth="1.7" />
+                <path d="M5 11a7 7 0 0 0 14 0M12 18v3" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" />
+              </svg>
+            </button>
+            <div className="composer-actions">
+              {isStreaming && (
+                <>
+                  <label className="composer-streaming-mode">
+                    <span className="composer-a11y-description">
+                      {t("Send behavior during the current run", "当前运行期间的发送方式")}
+                    </span>
+                    <select
+                      value={streamingSubmitMode}
+                      onChange={(event) => setStreamingSubmitMode(event.target.value as StreamingSubmitMode)}
+                      title={
+                        streamingSubmitMode === "steer"
+                          ? t("Add guidance before the agent's next model step", "在智能体下一次模型调用前添加引导")
+                          : t("Run this message after the current task finishes", "当前任务完成后运行此消息")
+                      }
+                    >
+                      <option value="follow-up">{t("Queue follow-up", "跟进消息入队")}</option>
+                      <option value="steer">{t("Steer current run", "引导当前运行")}</option>
+                    </select>
+                  </label>
+                  <button
+                    className="composer-abort-btn"
+                    type="button"
+                    onClick={handleAbort}
+                    aria-label={t("Stop generating", "停止生成")}
+                  >
+                    <span className="composer-abort-icon" aria-hidden="true" />
+                    <span>{t("Stop", "停止")}</span>
+                  </button>
+                </>
+              )}
+              <button
+                className={`composer-send-btn ${isStreaming ? "queue-mode" : ""}`}
+                type="submit"
+                disabled={
+                  submitting ||
+                  readingAttachments ||
+                  !backendStatus.ready ||
+                  (!input.trim() && attachments.length === 0) ||
+                  (attachments.length > 0 && !modelSupportsImages)
+                }
+                aria-label={isStreaming ? streamingSubmitLabel : t("Send message", "发送消息")}
+                title={
+                  !backendStatus.ready
+                    ? t("The agent backend is not ready", "智能体后端尚未就绪")
+                    : isStreaming
+                      ? t("{action} (Enter)", "{action}（Enter）", { action: streamingSubmitLabel })
+                      : t("Send message (Enter)", "发送消息（Enter）")
+                }
+              >
+                {isStreaming ? (
+                  <svg viewBox="0 0 24 24" width="17" height="17" aria-hidden="true">
+                    <path d="M5 7h14M5 12h9M5 17h6" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" />
+                    <path d="M18 13v6m-3-3h6" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" />
+                  </svg>
+                ) : (
+                  <svg viewBox="0 0 24 24" width="17" height="17" aria-hidden="true">
+                    <path d="M12 19V5m0 0-5.5 5.5M12 5l5.5 5.5" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+                  </svg>
+                )}
+              </button>
+            </div>
+          </div>
         </div>
       </form>
+      <ExtensionWidgets widgets={extensionWidgets} placement="belowEditor" />
     </div>
   );
 }

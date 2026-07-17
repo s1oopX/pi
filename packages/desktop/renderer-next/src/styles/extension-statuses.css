@@ -1,0 +1,26 @@
+.extension-statuses {
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+
+.extension-statuses::-webkit-scrollbar {
+  display: none;
+}
+
+.extension-status {
+  max-width: 220px;
+  flex: 0 0 auto;
+  overflow: hidden;
+  padding: 1px 6px;
+  border-radius: var(--radius-pill);
+  background: var(--control-bg);
+  color: var(--muted);
+  font-size: var(--font-size-meta);
+  line-height: var(--line-height-meta);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}

@@ -1,6 +1,4 @@
-import { useRef, useCallback } from "react";
 import { useStore } from "../store";
-import type { Message } from "../ipc/types";
 
 /**
  * Returns the current messages array and a stable reference to the last message
@@ -10,24 +8,18 @@ import type { Message } from "../ipc/types";
 export function useStreamingMessage() {
   const messages = useStore((s) => s.messages);
   const isStreaming = useStore((s) => s.isStreaming);
-  const lastMessageRef = useRef<Message | null>(null);
-
-  const getStreamingMessage = useCallback((): Message | null => {
-    if (!isStreaming || messages.length === 0) return null;
-    const last = messages[messages.length - 1];
-    if (last.role === "assistant") {
-      lastMessageRef.current = last;
-      return last;
-    }
-    return null;
-  }, [messages, isStreaming]);
+  const activeMessageIndex = useStore((s) => s.activeMessageIndex);
+  const streamingIndex =
+    isStreaming &&
+    activeMessageIndex !== null &&
+    messages[activeMessageIndex]?.role === "assistant"
+      ? activeMessageIndex
+      : -1;
 
   return {
     messages,
     isStreaming,
-    streamingMessage: getStreamingMessage(),
-    streamingIndex: isStreaming && messages.length > 0 && messages[messages.length - 1].role === "assistant"
-      ? messages.length - 1
-      : -1,
+    streamingMessage: streamingIndex >= 0 ? messages[streamingIndex] : null,
+    streamingIndex,
   };
 }

@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from "react";
+import { useI18n } from "../../i18n";
 import { highlightCode } from "../../lib/markdown";
 import * as ipcApi from "../../ipc/api";
 
@@ -8,6 +9,7 @@ interface CodeBlockProps {
 }
 
 export function CodeBlock({ code, language }: CodeBlockProps) {
+  const { t } = useI18n();
   const [html, setHtml] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
   const containerRef = useRef<HTMLDivElement>(null);
@@ -36,9 +38,9 @@ export function CodeBlock({ code, language }: CodeBlockProps) {
           className="code-block-copy"
           type="button"
           onClick={handleCopy}
-          aria-label="Copy code"
+          aria-label={t("Copy code", "复制代码")}
         >
-          {copied ? "Copied" : "Copy"}
+          {copied ? t("Copied", "已复制") : t("Copy", "复制")}
         </button>
       </div>
       {html ? (

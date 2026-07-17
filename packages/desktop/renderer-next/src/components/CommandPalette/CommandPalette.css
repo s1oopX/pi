@@ -1,0 +1,200 @@
+.command-palette-overlay {
+  position: fixed;
+  z-index: 500;
+  inset: 0;
+  display: flex;
+  align-items: flex-start;
+  justify-content: center;
+  padding: min(16vh, 132px) 16px 24px;
+  background: var(--scrim);
+  backdrop-filter: blur(2px);
+  animation: command-palette-backdrop-in var(--duration-popover) var(--ease-standard);
+}
+
+.command-palette {
+  width: min(620px, 100%);
+  max-height: min(560px, calc(100vh - 48px));
+  overflow: hidden;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-lg);
+  background: var(--elevated);
+  box-shadow: var(--shadow-dialog);
+  animation: command-palette-in var(--duration-popover) var(--ease-standard);
+}
+
+.command-palette-title {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
+.command-palette-search {
+  display: grid;
+  grid-template-columns: 20px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: var(--space-4);
+  min-height: 54px;
+  padding: 8px 14px;
+  border-bottom: 1px solid var(--border);
+}
+
+.command-palette-search > svg {
+  width: 20px;
+  height: 20px;
+  color: var(--muted);
+}
+
+.command-palette-search input {
+  min-width: 0;
+  padding: 7px 0;
+  border: 0;
+  outline: 0;
+  background: transparent;
+  color: var(--text);
+  font-size: var(--font-size-section);
+  line-height: var(--line-height-section);
+}
+
+.command-palette-search input::placeholder {
+  color: var(--faint);
+}
+
+.command-palette kbd {
+  display: inline-flex;
+  min-width: 22px;
+  min-height: 21px;
+  align-items: center;
+  justify-content: center;
+  padding: 1px 6px;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-xs);
+  background: var(--control-bg);
+  box-shadow: 0 1px 0 var(--border-strong);
+  color: var(--muted);
+  font-family: var(--font-sans);
+  font-size: var(--font-size-meta);
+  font-weight: 550;
+  line-height: var(--line-height-meta);
+  white-space: nowrap;
+}
+
+.command-palette-results {
+  max-height: min(420px, calc(100vh - 176px));
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding: var(--space-3);
+}
+
+.command-palette-item {
+  display: flex;
+  width: 100%;
+  min-height: 54px;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-6);
+  padding: 8px 10px;
+  border-radius: var(--radius-sm);
+  text-align: left;
+}
+
+.command-palette-item.active:not(:disabled) {
+  background: var(--control-hover);
+}
+
+.command-palette-item:disabled {
+  opacity: 0.48;
+}
+
+.command-palette-item-copy {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+}
+
+.command-palette-item-copy strong {
+  overflow: hidden;
+  color: var(--text);
+  font-size: var(--font-size-ui);
+  font-weight: 600;
+  line-height: var(--line-height-ui);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.command-palette-item-copy span {
+  overflow: hidden;
+  color: var(--muted);
+  font-size: var(--font-size-meta);
+  line-height: var(--line-height-meta);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.command-palette-empty {
+  padding: 36px 16px;
+  color: var(--muted);
+  font-size: var(--font-size-ui);
+  text-align: center;
+}
+
+.command-palette-footer {
+  display: flex;
+  min-height: 36px;
+  align-items: center;
+  justify-content: flex-end;
+  gap: var(--space-6);
+  padding: 7px 12px;
+  border-top: 1px solid var(--border);
+  background: var(--surface);
+  color: var(--muted);
+  font-size: var(--font-size-meta);
+  line-height: var(--line-height-meta);
+}
+
+.command-palette-footer span {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.command-palette-footer kbd {
+  min-width: 20px;
+  min-height: 19px;
+  padding-inline: 4px;
+  font-size: calc(10px * var(--font-scale));
+}
+
+@keyframes command-palette-in {
+  from {
+    opacity: 0;
+    transform: translateY(-8px) scale(0.985);
+  }
+}
+
+@keyframes command-palette-backdrop-in {
+  from {
+    opacity: 0;
+  }
+}
+
+@media (max-width: 520px) {
+  .command-palette-overlay {
+    padding: 48px 10px 10px;
+  }
+
+  .command-palette-item-copy span,
+  .command-palette-footer {
+    display: none;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .command-palette-overlay,
+  .command-palette {
+    animation: none;
+  }
+}

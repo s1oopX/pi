@@ -5,15 +5,22 @@ import type {
   BackendStatus,
   CustomModelApi,
   CustomModelsConfig,
+  ForkMessage,
+  ForkResult,
+  GetSessionsCommand,
+  ImageContent,
   LogEntry,
   Message,
   Model,
   QueueMode,
-  SessionInfo,
+  ResourcesData,
+  SessionListPage,
   SessionState,
   SessionStats,
+  SessionTreeData,
   SlashCommand,
   ThinkingLevel,
+  WorkspaceGitStatus,
 } from "./types";
 
 export interface PiDesktopApi {
@@ -23,8 +30,12 @@ export interface PiDesktopApi {
   restartBackend(): Promise<void>;
   chooseWorkspace(): Promise<{ cwd: string; changed: boolean }>;
   openWorkspace(cwd: string): Promise<{ cwd: string; changed: boolean }>;
-  getWorkspace(): Promise<{ cwd: string }>;
+  getWorkspace(): Promise<{ cwd: string; taskCwd: string }>;
+  getWorkspaceGitStatus(): Promise<WorkspaceGitStatus>;
   listWorkspaceFiles(query?: string): Promise<{ files: string[] }>;
+  openWorkspaceLocation(cwd?: string): Promise<{ opened: boolean }>;
+  revealSessionFile(sessionPath: string): Promise<{ revealed: boolean }>;
+  trashSessionFile(sessionPath: string): Promise<{ trashed: boolean }>;
   openExternal(url: string): Promise<void>;
   fetchProviderModels(params: {
     baseUrl: string;
@@ -88,19 +99,28 @@ export async function cycleModel(): Promise<void> {
   await requireApi().request({ type: "cycle_model" });
 }
 
-export async function getAuthStatus(providers: string[]): Promise<Record<string, AuthStatus>> {
-  const result = (await requireApi().request({ type: "get_auth_status", providers })) as {
+export async function getAuthStatus(providers?: string[]): Promise<Record<string, AuthStatus>> {
+  const result = (await requireApi().request({
+    type: "get_auth_status",
+    ...(providers ? { providers } : {}),
+  })) as {
     providers: Record<string, AuthStatus>;
   };
   return result.providers ?? {};
 }
 
-export async function setApiKey(provider: string, apiKey: string): Promise<void> {
-  await requireApi().request({ type: "set_api_key", provider, apiKey });
+export async function setApiKey(provider: string, apiKey: string): Promise<{ provider: string; status: AuthStatus }> {
+  return (await requireApi().request({ type: "set_api_key", provider, apiKey })) as {
+    provider: string;
+    status: AuthStatus;
+  };
 }
 
-export async function removeApiKey(provider: string): Promise<void> {
-  await requireApi().request({ type: "remove_api_key", provider });
+export async function removeApiKey(provider: string): Promise<{ provider: string; status: AuthStatus }> {
+  return (await requireApi().request({ type: "remove_api_key", provider })) as {
+    provider: string;
+    status: AuthStatus;
+  };
 }
 
 export async function testModel(provider: string, modelId: string): Promise<unknown> {
@@ -116,16 +136,35 @@ export async function testCustomModel(params: {
   modelId: string;
   useStoredAuthProvider?: string;
   preserveHeadersFromProvider?: string;
+  proxyUrl?: string;
 }): Promise<unknown> {
   return requireApi().request({ type: "test_custom_model", ...params });
+}
+
+export async function fetchProviderModels(params: {
+  provider: string;
+  baseUrl: string;
+  api: CustomModelApi;
+  apiKey?: string;
+  headers?: Record<string, string>;
+  useStoredAuthProvider?: string;
+  preserveHeadersFromProvider?: string;
+  proxyUrl?: string;
+}): Promise<{ models: { id: string; name?: string }[] }> {
+  const result = (await requireApi().request({ type: "fetch_provider_models", ...params })) as {
+    models: { id: string; name?: string }[];
+  };
+  return { models: result.models ?? [] };
 }
 
 export async function upsertCustomModel(params: {
   provider: string;
   baseUrl: string;
   api: CustomModelApi;
+  authKind?: "api_key" | "none";
   apiKey?: string;
   headers?: Record<string, string>;
+  proxyUrl?: string;
   replaceModelId?: string;
   model: {
     id: string;
@@ -141,6 +180,10 @@ export async function upsertCustomModel(params: {
 
 export async function removeCustomModel(provider: string, modelId: string, removeAuthWhenEmpty?: boolean): Promise<void> {
   await requireApi().request({ type: "remove_custom_model", provider, modelId, removeAuthWhenEmpty });
+}
+
+export async function removeCustomProvider(provider: string, removeAuth?: boolean): Promise<void> {
+  await requireApi().request({ type: "remove_custom_provider", provider, removeAuth });
 }
 
 export async function replaceCustomModels(providers: Record<string, unknown>): Promise<void> {
@@ -196,9 +239,14 @@ export async function getCommands(): Promise<SlashCommand[]> {
   return result.commands ?? [];
 }
 
-export async function getSessions(limit = 48): Promise<SessionInfo[]> {
-  const result = (await requireApi().request({ type: "get_sessions", limit })) as { sessions: SessionInfo[] };
-  return result.sessions ?? [];
+export type GetSessionsOptions = Omit<GetSessionsCommand, "type">;
+
+export async function getSessions(options: GetSessionsOptions = {}): Promise<SessionListPage> {
+  return (await requireApi().request({ type: "get_sessions", ...options })) as SessionListPage;
+}
+
+export async function getResources(options: { reload?: boolean } = {}): Promise<ResourcesData> {
+  return (await requireApi().request({ type: "get_resources", ...options })) as ResourcesData;
 }
 
 export async function setSessionName(name: string): Promise<void> {
@@ -209,38 +257,51 @@ export async function exportHtml(outputPath?: string): Promise<unknown> {
   return requireApi().request({ type: "export_html", outputPath });
 }
 
-export async function forkSession(entryId: string): Promise<void> {
-  await requireApi().request({ type: "fork", entryId });
+export async function forkSession(entryId: string): Promise<ForkResult> {
+  return (await requireApi().request({ type: "fork", entryId })) as ForkResult;
 }
 
-export async function cloneSession(): Promise<void> {
-  await requireApi().request({ type: "clone" });
+export async function cloneSession(): Promise<{ cancelled: boolean }> {
+  return (await requireApi().request({ type: "clone" })) as { cancelled: boolean };
+}
+
+export async function getForkMessages(): Promise<ForkMessage[]> {
+  const result = (await requireApi().request({ type: "get_fork_messages" })) as { messages: ForkMessage[] };
+  return result.messages ?? [];
+}
+
+export async function getSessionTree(): Promise<SessionTreeData> {
+  return (await requireApi().request({ type: "get_tree" })) as SessionTreeData;
 }
 
 // --- Prompting ---
 
-export async function sendPrompt(message: string): Promise<void> {
-  await requireApi().request({ type: "prompt", message });
+export async function sendPrompt(
+  message: string,
+  images?: ImageContent[],
+  streamingBehavior?: "followUp" | "steer",
+): Promise<void> {
+  await requireApi().request({ type: "prompt", message, images, streamingBehavior });
 }
 
-export async function steer(message: string): Promise<void> {
-  await requireApi().request({ type: "steer", message });
+export async function steer(message: string, images?: ImageContent[]): Promise<void> {
+  await requireApi().request({ type: "steer", message, images });
 }
 
-export async function followUp(message: string): Promise<void> {
-  await requireApi().request({ type: "follow_up", message });
+export async function followUp(message: string, images?: ImageContent[]): Promise<void> {
+  await requireApi().request({ type: "follow_up", message, images });
 }
 
 export async function abort(): Promise<void> {
   await requireApi().request({ type: "abort" });
 }
 
-export async function newSession(): Promise<void> {
-  await requireApi().request({ type: "new_session" });
+export async function newSession(cwd?: string): Promise<{ cancelled: boolean; cwd: string }> {
+  return (await requireApi().request({ type: "new_session", cwd })) as { cancelled: boolean; cwd: string };
 }
 
-export async function switchSession(sessionPath: string): Promise<void> {
-  await requireApi().request({ type: "switch_session", sessionPath });
+export async function switchSession(sessionPath: string): Promise<{ cancelled: boolean; cwd: string }> {
+  return (await requireApi().request({ type: "switch_session", sessionPath })) as { cancelled: boolean; cwd: string };
 }
 
 // --- Bash ---
@@ -283,8 +344,12 @@ export async function openWorkspace(cwd: string): Promise<{ cwd: string; changed
   return requireApi().openWorkspace(cwd);
 }
 
-export async function getWorkspace(): Promise<{ cwd: string }> {
+export async function getWorkspace(): Promise<{ cwd: string; taskCwd: string }> {
   return requireApi().getWorkspace();
+}
+
+export async function getWorkspaceGitStatus(): Promise<WorkspaceGitStatus> {
+  return requireApi().getWorkspaceGitStatus();
 }
 
 export async function listWorkspaceFiles(query?: string): Promise<string[]> {
@@ -292,16 +357,20 @@ export async function listWorkspaceFiles(query?: string): Promise<string[]> {
   return result.files ?? [];
 }
 
-export async function openExternal(url: string): Promise<void> {
-  await requireApi().openExternal(url);
+export async function openWorkspaceLocation(cwd?: string): Promise<void> {
+  await requireApi().openWorkspaceLocation(cwd);
 }
 
-export async function fetchProviderModels(params: {
-  baseUrl: string;
-  apiKey?: string;
-  api: CustomModelApi;
-}): Promise<{ models: { id: string; name?: string }[] }> {
-  return requireApi().fetchProviderModels(params);
+export async function revealSessionFile(sessionPath: string): Promise<void> {
+  await requireApi().revealSessionFile(sessionPath);
+}
+
+export async function trashSessionFile(sessionPath: string): Promise<void> {
+  await requireApi().trashSessionFile(sessionPath);
+}
+
+export async function openExternal(url: string): Promise<void> {
+  await requireApi().openExternal(url);
 }
 
 export async function writeClipboardText(text: string): Promise<void> {

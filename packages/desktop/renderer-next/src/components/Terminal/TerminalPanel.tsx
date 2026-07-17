@@ -1,7 +1,10 @@
 import { useEffect, useImperativeHandle, useRef, forwardRef } from "react";
-import { Terminal } from "@xterm/xterm";
+import { Terminal, type ITheme } from "@xterm/xterm";
 import { FitAddon } from "@xterm/addon-fit";
 import "@xterm/xterm/css/xterm.css";
+import { useAppearancePreferences } from "../../appearance/preferences";
+import { useI18n } from "../../i18n";
+import { type ResolvedTheme, useStore } from "../../store";
 
 export interface TerminalPanelHandle {
   write(data: string): void;
@@ -17,9 +20,12 @@ interface TerminalPanelProps {
 
 export const TerminalPanel = forwardRef<TerminalPanelHandle, TerminalPanelProps>(
   function TerminalPanel({ fontSize = 13, className = "" }, ref) {
+    const { t } = useI18n();
+    const { fontScale } = useAppearancePreferences();
     const containerRef = useRef<HTMLDivElement>(null);
     const termRef = useRef<Terminal | null>(null);
     const fitRef = useRef<FitAddon | null>(null);
+    const resolvedTheme = useStore((state) => state.resolvedTheme);
 
     useImperativeHandle(ref, () => ({
       write(data: string) {
@@ -46,7 +52,7 @@ export const TerminalPanel = forwardRef<TerminalPanelHandle, TerminalPanelProps>
         disableStdin: true,
         convertEol: true,
         scrollback: 5000,
-        theme: getTerminalTheme(),
+        theme: getTerminalTheme(useStore.getState().resolvedTheme),
       });
 
       const fitAddon = new FitAddon();
@@ -62,78 +68,82 @@ export const TerminalPanel = forwardRef<TerminalPanelHandle, TerminalPanelProps>
       });
       resizeObserver.observe(containerRef.current);
 
-      const mediaQuery = window.matchMedia("(prefers-color-scheme: dark)");
-      const handleThemeChange = () => {
-        term.options.theme = getTerminalTheme();
-      };
-      mediaQuery.addEventListener("change", handleThemeChange);
-
       return () => {
-        mediaQuery.removeEventListener("change", handleThemeChange);
         resizeObserver.disconnect();
         term.dispose();
         termRef.current = null;
         fitRef.current = null;
       };
-    }, [fontSize]);
+    }, []);
+
+    useEffect(() => {
+      if (!termRef.current) return;
+      termRef.current.options.fontSize = fontSize * fontScale;
+      requestAnimationFrame(() => fitRef.current?.fit());
+    }, [fontScale, fontSize]);
+
+    useEffect(() => {
+      if (termRef.current) {
+        termRef.current.options.theme = getTerminalTheme(resolvedTheme);
+      }
+    }, [resolvedTheme]);
 
     return (
       <div
         ref={containerRef}
         className={`terminal-panel ${className}`}
         role="log"
-        aria-label="Terminal output"
+        aria-label={t("Terminal output", "终端输出")}
       />
     );
   }
 );
 
-function getTerminalTheme() {
-  const isDark = window.matchMedia("(prefers-color-scheme: dark)").matches;
-  if (isDark) {
+function getTerminalTheme(theme: ResolvedTheme): ITheme {
+  if (theme === "dark") {
     return {
-      background: "#1e1e1e",
-      foreground: "#cccccc",
-      cursor: "#cccccc",
-      selectionBackground: "#264f78",
-      black: "#1e1e1e",
-      red: "#f44747",
-      green: "#6a9955",
-      yellow: "#d7ba7d",
-      blue: "#569cd6",
-      magenta: "#c586c0",
-      cyan: "#4ec9b0",
-      white: "#d4d4d4",
-      brightBlack: "#808080",
-      brightRed: "#f44747",
-      brightGreen: "#6a9955",
-      brightYellow: "#d7ba7d",
-      brightBlue: "#569cd6",
-      brightMagenta: "#c586c0",
-      brightCyan: "#4ec9b0",
-      brightWhite: "#ffffff",
+      background: "#171715",
+      foreground: "#d8d7d1",
+      cursor: "#91a0ff",
+      selectionBackground: "#343a56",
+      black: "#242421",
+      red: "#ee817a",
+      green: "#62bd7c",
+      yellow: "#e1aa52",
+      blue: "#91a0ff",
+      magenta: "#c49be8",
+      cyan: "#61b7b2",
+      white: "#d8d7d1",
+      brightBlack: "#72716a",
+      brightRed: "#ff9a93",
+      brightGreen: "#7ed495",
+      brightYellow: "#f1c36f",
+      brightBlue: "#acb7ff",
+      brightMagenta: "#d8b2f2",
+      brightCyan: "#7bcac5",
+      brightWhite: "#f2f1ec",
     };
   }
   return {
-    background: "#ffffff",
-    foreground: "#383a42",
-    cursor: "#383a42",
-    selectionBackground: "#add6ff",
-    black: "#383a42",
-    red: "#e45649",
-    green: "#50a14f",
-    yellow: "#c18401",
-    blue: "#4078f2",
-    magenta: "#a626a4",
-    cyan: "#0184bc",
-    white: "#fafafa",
-    brightBlack: "#a0a1a7",
-    brightRed: "#e45649",
-    brightGreen: "#50a14f",
-    brightYellow: "#c18401",
-    brightBlue: "#4078f2",
-    brightMagenta: "#a626a4",
-    brightCyan: "#0184bc",
-    brightWhite: "#ffffff",
+    background: "#faf9f6",
+    foreground: "#353531",
+    cursor: "#5368d8",
+    selectionBackground: "#dce1f7",
+    black: "#353531",
+    red: "#ba403a",
+    green: "#287a45",
+    yellow: "#956000",
+    blue: "#5368d8",
+    magenta: "#8557a6",
+    cyan: "#247a78",
+    white: "#e7e6e0",
+    brightBlack: "#77776f",
+    brightRed: "#d45b54",
+    brightGreen: "#3d9359",
+    brightYellow: "#ad7818",
+    brightBlue: "#697de6",
+    brightMagenta: "#9c6fbb",
+    brightCyan: "#378f8c",
+    brightWhite: "#fffefa",
   };
 }
