@@ -53,6 +53,28 @@ function compactSingleLine(value: string, limit = SUMMARY_TEXT_LIMIT): string {
   return `${compact.slice(0, Math.max(0, limit - 1)).trimEnd()}…`;
 }
 
+/** Short path for process-row subject (Codex-style scannable headers). */
+export function formatDisplayPath(path: string, limit = 56): string {
+  const normalized = path.replace(/\\/g, "/").trim();
+  if (!normalized) return path;
+  if (normalized.length <= limit) return normalized;
+
+  const segments = normalized.split("/").filter(Boolean);
+  if (segments.length <= 1) return compactSingleLine(normalized, limit);
+
+  const file = segments[segments.length - 1] ?? normalized;
+  if (file.length >= limit - 2) return compactSingleLine(file, limit);
+
+  // Keep basename + as many parent segments as fit: …/parent/file
+  let display = file;
+  for (let i = segments.length - 2; i >= 0; i -= 1) {
+    const candidate = `${segments[i]}/${display}`;
+    if (candidate.length + 1 > limit) break;
+    display = candidate;
+  }
+  return display === normalized ? display : `…/${display}`;
+}
+
 function firstCommandLine(command: string): string {
   const firstLine = command.split(/\r?\n/).find((line) => line.trim());
   return compactSingleLine(firstLine ?? command);
@@ -206,6 +228,7 @@ export function describeToolCall(
 ): ToolPresentation {
   const args = call.arguments;
   const path = pathArg(args);
+  const displayPath = path ? formatDisplayPath(path) : undefined;
   let action: string;
   let subject: string | undefined;
   let meta: string | undefined;
@@ -219,7 +242,7 @@ export function describeToolCall(
         error: localize(language, "Failed to read", "读取失败"),
         unknown: localize(language, "Read", "读取"),
       });
-      subject = path;
+      subject = displayPath;
       const offset = numberArg(args, "offset");
       const limit = numberArg(args, "limit");
       if (offset !== undefined && limit !== undefined) {
@@ -252,7 +275,7 @@ export function describeToolCall(
             error: localize(language, "Failed to edit", "编辑失败"),
             unknown: localize(language, "Edit", "编辑"),
           });
-      subject = path;
+      subject = displayPath;
       meta = mutationMeta(call.name, args, language);
       break;
     }
@@ -281,7 +304,7 @@ export function describeToolCall(
         unknown: localize(language, "Search", "搜索"),
       });
       const pattern = stringArg(args, "pattern");
-      const target = path ?? ".";
+      const target = displayPath ?? ".";
       subject = pattern
         ? localize(language, "{pattern} in {target}", "在 {target} 中搜索 {pattern}", {
             pattern: quote(pattern),
@@ -300,7 +323,7 @@ export function describeToolCall(
         unknown: localize(language, "Find", "查找"),
       });
       const pattern = stringArg(args, "pattern");
-      const target = path ?? ".";
+      const target = displayPath ?? ".";
       subject = pattern
         ? localize(language, "{pattern} in {target}", "在 {target} 中查找 {pattern}", {
             pattern: compactSingleLine(pattern, 90),
@@ -317,7 +340,7 @@ export function describeToolCall(
         error: localize(language, "Listing failed", "列出失败"),
         unknown: localize(language, "List", "列出"),
       });
-      subject = path ?? ".";
+      subject = displayPath ?? ".";
       break;
     }
     default: {
@@ -327,11 +350,11 @@ export function describeToolCall(
         : phase === "error"
           ? localize(language, "{tool} failed", "{tool} 失败", { tool: label })
           : label;
-      subject = path
+      subject = displayPath
         ?? stringArg(args, "command")
         ?? stringArg(args, "query")
         ?? stringArg(args, "pattern");
-      if (subject) subject = compactSingleLine(subject);
+      if (subject && !displayPath) subject = compactSingleLine(subject);
       break;
     }
   }

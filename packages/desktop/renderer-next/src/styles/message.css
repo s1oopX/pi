@@ -348,10 +348,51 @@
 
 :is(.thinking-part, .tool-call-part, .file-changes-card) {
   overflow: visible;
-  margin: 8px 0;
+  margin: 2px 0;
   border: 0;
   border-radius: 0;
   background: transparent;
+}
+
+/* First answer block after process log: visual gear-change (Codex-style). */
+.message-answer.after-process {
+  margin-top: 14px;
+}
+
+.message-answer > :first-child {
+  margin-top: 0;
+}
+
+.agent-working {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  margin: 4px 0 2px;
+  color: var(--muted);
+  font-size: calc(12px * var(--font-scale));
+  font-weight: 550;
+}
+
+.agent-working-dot,
+.tool-call-running-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 999px;
+  background: var(--accent);
+  box-shadow: 0 0 0 0 color-mix(in srgb, var(--accent) 45%, transparent);
+  animation: agent-pulse 1.2s var(--ease-standard) infinite;
+}
+
+@keyframes agent-pulse {
+  0% { box-shadow: 0 0 0 0 color-mix(in srgb, var(--accent) 40%, transparent); opacity: 1; }
+  70% { box-shadow: 0 0 0 6px color-mix(in srgb, var(--accent) 0%, transparent); opacity: 0.85; }
+  100% { box-shadow: 0 0 0 0 color-mix(in srgb, var(--accent) 0%, transparent); opacity: 1; }
+}
+
+.tool-call-meta-line {
+  color: var(--muted);
+  font-size: calc(12px * var(--font-scale));
+  line-height: 1.4;
 }
 
 :is(.thinking-header, .tool-call-header, .file-changes-header) {
@@ -519,6 +560,14 @@
 
 @keyframes tool-status-pulse {
   50% { opacity: 0.35; }
+}
+
+.tool-call-part.status-running .tool-call-action {
+  color: var(--text-soft);
+}
+
+.tool-call-part.status-error .tool-call-action {
+  color: var(--danger);
 }
 
 .tool-call-chevron {
@@ -1032,7 +1081,9 @@
     transition: none;
   }
 
-  .tool-call-status-running::before {
+  .tool-call-status-running::before,
+  .agent-working-dot,
+  .tool-call-running-dot {
     animation: none;
   }
 }

@@ -5,7 +5,13 @@ import { translateText, useI18n, type ResolvedLanguage } from "../../i18n";
 import { CodeBlock } from "./CodeBlock";
 import { DiffView } from "../DiffView";
 import { buildFileChangeDisplayPlan, type FileChange } from "../MessageList/toolPairing";
-import { describeToolCall, resolveToolPhase, toolPhaseLabel, type ToolPhase } from "./toolPresentation";
+import {
+  describeToolCall,
+  formatDisplayPath,
+  resolveToolPhase,
+  toolPhaseLabel,
+  type ToolPhase,
+} from "./toolPresentation";
 import * as ipcApi from "../../ipc/api";
 import type { Message, ToolCall } from "../../ipc/types";
 import type { ToolExecutionsByCallId } from "../../store";
@@ -102,11 +108,16 @@ function AssistantContent({
     Boolean(streaming),
   );
 
+  // Track whether any process row has already been emitted so the first answer
+  // paragraph can get a visual "gear change" away from the process log.
+  let processEmitted = false;
+
   return (
     <div className="message-content">
       {message.content.map((block, i) => {
         const fileChangeGroup = fileChangePlan.groupsByStartIndex.get(i);
         if (fileChangeGroup) {
+          processEmitted = true;
           return (
             <FileChangesCard
               key={`file-changes:${fileChangeGroup.changes[0].callId}`}
@@ -116,17 +127,26 @@ function AssistantContent({
         }
         if (block.type === "thinking") {
           const blockStreaming = streaming && i > lastTextOrToolIndex;
-          return block.thinking ? (
+          if (!block.thinking) return null;
+          processEmitted = true;
+          return (
             <ThinkingPart key={i} thinking={block.thinking} redacted={block.redacted} streaming={blockStreaming} />
-          ) : null;
+          );
         }
         if (block.type === "text") {
-          return block.text ? <Markdown key={i} components={markdownComponents}>{block.text}</Markdown> : null;
+          if (!block.text) return null;
+          const answerClass = processEmitted ? "message-answer after-process" : "message-answer";
+          return (
+            <div key={i} className={answerClass}>
+              <Markdown components={markdownComponents}>{block.text}</Markdown>
+            </div>
+          );
         }
         if (block.type === "toolCall") {
           if (fileChangePlan.hiddenCallIds.has(block.id)) return null;
           const result = block.id ? resultsByCallId?.get(block.id) : undefined;
           const phase = resolveToolPhase(block.id, result, toolExecutionsByCallId, Boolean(streaming));
+          processEmitted = true;
           return (
             <ToolCallPart
               key={block.id ?? i}
@@ -138,13 +158,19 @@ function AssistantContent({
         }
         return null;
       })}
+      {streaming && !hasRenderableContent && !errorMessage && (
+        <div className="agent-working" aria-live="polite">
+          <span className="agent-working-dot" aria-hidden="true" />
+          <span>{t("Working…", "正在处理…")}</span>
+        </div>
+      )}
       {errorMessage && !suppressError && (
         <div className="message-error" role="alert">
           <span className="message-error-icon" aria-hidden="true">&#9888;</span>
           <span className="message-error-text">{errorMessage}</span>
         </div>
       )}
-      {!hasRenderableContent && !errorMessage && (
+      {!hasRenderableContent && !errorMessage && !streaming && (
         <p className="message-empty-note">{t("The model returned an empty response.", "模型返回了空响应。")}</p>
       )}
     </div>
@@ -162,8 +188,8 @@ function ThinkingPart({
 }) {
   const { t } = useI18n();
   const [expanded, setExpanded] = useState(Boolean(streaming));
-  // Auto-expand while the reasoning is streaming in, then auto-collapse once it
-  // finishes, unless the user has manually toggled it in the meantime.
+  // Auto-expand while thinking streams in, then auto-collapse once it finishes,
+  // unless the user has manually toggled it in the meantime.
   const userToggled = useRef(false);
   const prevStreaming = useRef(Boolean(streaming));
   useEffect(() => {
@@ -173,6 +199,12 @@ function ThinkingPart({
       setExpanded(Boolean(streaming));
     }
   }, [streaming]);
+
+  const label = redacted
+    ? t("Thoughts hidden", "思考内容已隐藏")
+    : streaming
+      ? t("Thinking…", "正在思考…")
+      : t("Thought for a moment", "已思考片刻");
 
   return (
     <div className={`thinking-part ${streaming ? "streaming" : ""}`}>
@@ -186,13 +218,7 @@ function ThinkingPart({
         aria-expanded={expanded}
       >
         <span className="thinking-icon" aria-hidden="true">&#10022;</span>
-        <span className="thinking-label">
-          {redacted
-            ? t("Reasoning (redacted)", "推理（已隐藏）")
-            : streaming
-              ? t("Reasoning...", "正在推理...")
-              : t("Reasoning", "推理")}
-        </span>
+        <span className="thinking-label">{label}</span>
         <span className="thinking-chevron" aria-hidden="true">{expanded ? "\u25be" : "\u25b8"}</span>
       </button>
       {expanded && (
@@ -222,6 +248,13 @@ function ToolCallPart({
   const hasInput = Boolean(presentation.inputText && presentation.inputText !== "{}");
   const hasOutput = Boolean(resultText || resultImages.length > 0);
   const hasBody = hasInput || hasOutput;
+  // Full path stays in title when subject was shortened for the header row.
+  const subjectTitle = typeof call.arguments.path === "string"
+    ? call.arguments.path
+    : typeof call.arguments.file_path === "string"
+      ? call.arguments.file_path
+      : presentation.subject;
+  const showStatusLabel = phase === "error" || phase === "unknown";
 
   useEffect(() => {
     if (phase === "error" && !userToggled.current) setExpanded(true);
@@ -241,24 +274,40 @@ function ToolCallPart({
         disabled={!hasBody}
       >
         <span className="tool-call-icon" aria-hidden="true">
-          <svg viewBox="0 0 16 16" width="13" height="13">
-            <path d="M2.5 8h3l1.2-3 2.1 6 1.2-3h3.5" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round" />
-          </svg>
+          {phase === "running" ? (
+            <span className="tool-call-running-dot" />
+          ) : (
+            <svg viewBox="0 0 16 16" width="13" height="13">
+              <path d="M2.5 8h3l1.2-3 2.1 6 1.2-3h3.5" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round" />
+            </svg>
+          )}
         </span>
         <span className="tool-call-summary">
           <span className="tool-call-action">{presentation.action}</span>
-          {presentation.subject && <span className="tool-call-subject" title={presentation.subject}>{presentation.subject}</span>}
-          {presentation.meta && <span className="tool-call-meta">{presentation.meta}</span>}
+          {presentation.subject && (
+            <span className="tool-call-subject" title={subjectTitle}>{presentation.subject}</span>
+          )}
+          {presentation.meta && phase !== "done" && (
+            <span className="tool-call-meta" title={presentation.meta}>{presentation.meta}</span>
+          )}
         </span>
-        <span className={`tool-call-status tool-call-status-${phase}`}>
-          {toolPhaseLabel(phase, resolvedLanguage)}
-        </span>
+        {showStatusLabel && (
+          <span className={`tool-call-status tool-call-status-${phase}`}>
+            {toolPhaseLabel(phase, resolvedLanguage)}
+          </span>
+        )}
         {hasBody && (
           <span className="tool-call-chevron" aria-hidden="true">{expanded ? "\u25be" : "\u25b8"}</span>
         )}
       </button>
       {expanded && hasBody && (
         <div className="tool-call-body">
+          {presentation.meta && (
+            <div className="tool-call-section">
+              <div className="tool-call-section-label">{t("Details", "详情")}</div>
+              <div className="tool-call-meta-line">{presentation.meta}</div>
+            </div>
+          )}
           {hasInput && (
             <div className="tool-call-section">
               <div className="tool-call-section-label">{t("Input", "输入")}</div>
@@ -420,13 +469,16 @@ function messageToCopyText(message: Message): string {
   }
 }
 
+function fileChangeOpLabel(tool: FileChange["tool"]): string {
+  return tool === "write" ? "A" : "M";
+}
+
 function FileChangesCard({ changes }: { changes: FileChange[] }) {
   const { resolvedLanguage, t } = useI18n();
   const failed = changes.filter((change) => change.phase === "error").length;
   const running = changes.filter((change) => change.phase === "running").length;
   const queued = changes.filter((change) => change.phase === "queued").length;
   const done = changes.filter((change) => change.phase === "done").length;
-  const unknown = changes.filter((change) => change.phase === "unknown").length;
   const fileCount = new Set(changes.map((change) => change.path)).size;
   const [expanded, setExpanded] = useState(failed > 0);
   const userToggled = useRef(false);
@@ -437,26 +489,20 @@ function FileChangesCard({ changes }: { changes: FileChange[] }) {
 
   const countValues = { count: fileCount };
   let title = t(
-    fileCount === 1 ? "{count} file change" : "{count} file changes",
-    "{count} 个文件更改",
+    fileCount === 1 ? "Changed {count} file" : "Changed {count} files",
+    "已更改 {count} 个文件",
     countValues,
   );
   if (running > 0) {
     title = t(
-      fileCount === 1 ? "Changing {count} file" : "Changing {count} files",
-      "正在更改 {count} 个文件",
+      fileCount === 1 ? "Editing {count} file…" : "Editing {count} files…",
+      "正在编辑 {count} 个文件…",
       countValues,
     );
   } else if (queued > 0) {
     title = t(
-      fileCount === 1 ? "Waiting to change {count} file" : "Waiting to change {count} files",
-      "等待更改 {count} 个文件",
-      countValues,
-    );
-  } else if (done === changes.length) {
-    title = t(
-      fileCount === 1 ? "Changed {count} file" : "Changed {count} files",
-      "已更改 {count} 个文件",
+      fileCount === 1 ? "Waiting to edit {count} file" : "Waiting to edit {count} files",
+      "等待编辑 {count} 个文件",
       countValues,
     );
   } else if (failed === changes.length) {
@@ -465,16 +511,16 @@ function FileChangesCard({ changes }: { changes: FileChange[] }) {
       "更改 {count} 个文件失败",
       countValues,
     );
-  } else if (unknown === changes.length) {
+  } else if (done !== changes.length && failed === 0) {
     title = t(
-      fileCount === 1 ? "{count} unresolved file change" : "{count} unresolved file changes",
-      "{count} 个未解析的文件更改",
+      fileCount === 1 ? "{count} file change" : "{count} file changes",
+      "{count} 个文件更改",
       countValues,
     );
   }
 
   return (
-    <div className="file-changes-card">
+    <div className={`file-changes-card ${running > 0 ? "status-running" : failed > 0 ? "status-error" : ""}`}>
       <button
         className="file-changes-header"
         type="button"
@@ -485,10 +531,14 @@ function FileChangesCard({ changes }: { changes: FileChange[] }) {
         aria-expanded={expanded}
       >
         <span className="file-changes-icon" aria-hidden="true">
-          <svg viewBox="0 0 24 24" width="15" height="15">
-            <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinejoin="round" />
-            <path d="M14 2v6h6" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinejoin="round" />
-          </svg>
+          {running > 0 ? (
+            <span className="tool-call-running-dot" />
+          ) : (
+            <svg viewBox="0 0 24 24" width="15" height="15">
+              <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinejoin="round" />
+              <path d="M14 2v6h6" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinejoin="round" />
+            </svg>
+          )}
         </span>
         <span className="file-changes-title">{title}</span>
         {failed > 0 && (
@@ -496,38 +546,20 @@ function FileChangesCard({ changes }: { changes: FileChange[] }) {
             {t("{count} failed", "{count} 个失败", { count: failed })}
           </span>
         )}
-        {running > 0 && (
-          <span className="file-changes-badge running">
-            {t("{count} running", "{count} 个运行中", { count: running })}
-          </span>
-        )}
-        {queued > 0 && (
-          <span className="file-changes-badge queued">
-            {t("{count} queued", "{count} 个已排队", { count: queued })}
-          </span>
-        )}
-        {done > 0 && (
-          <span className="file-changes-badge ok">
-            {t("{count} done", "{count} 个已完成", { count: done })}
-          </span>
-        )}
-        {unknown > 0 && (
-          <span className="file-changes-badge unknown">
-            {t("{count} unavailable", "{count} 个不可用", { count: unknown })}
-          </span>
-        )}
-        <span className="file-changes-chevron" aria-hidden="true">{expanded ? "\u25be" : "\u25b8"}</span>
+        <span className="file-changes-chevron" aria-hidden="true">{expanded ? "▾" : "▸"}</span>
       </button>
       {expanded && (
         <ul className="file-changes-list">
           {changes.map((c) => (
             <li key={c.callId} className={`file-changes-item status-${c.phase}`}>
               <div className="file-changes-item-main">
-                <span className="file-changes-op">{c.tool}</span>
-                <span className="file-changes-path" title={c.path}>{c.path}</span>
-                <span className={`file-changes-item-status status-${c.phase}`}>
-                  {toolPhaseLabel(c.phase, resolvedLanguage)}
-                </span>
+                <span className="file-changes-op" title={c.tool}>{fileChangeOpLabel(c.tool)}</span>
+                <span className="file-changes-path" title={c.path}>{formatDisplayPath(c.path)}</span>
+                {(c.phase === "error" || c.phase === "running") && (
+                  <span className={`file-changes-item-status status-${c.phase}`}>
+                    {toolPhaseLabel(c.phase, resolvedLanguage)}
+                  </span>
+                )}
               </div>
               {c.resultText && (
                 <pre className={`file-changes-result ${c.phase === "error" ? "error" : ""}`}>

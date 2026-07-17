@@ -221,7 +221,7 @@ export function MessageList() {
           <div
             className="streaming-indicator"
             aria-live="polite"
-            aria-label={t("Generating response", "正在生成响应")}
+            aria-label={t("Working…", "正在处理…")}
           >
             <span className="streaming-dot" />
             <span className="streaming-dot" />

@@ -1,7 +1,13 @@
 import { describe, expect, it } from "vitest";
 import type { Message, ToolCall } from "../../ipc/types";
 import type { ToolExecutionsByCallId } from "../../store";
-import { describeToolCall, resolveToolPhase, serializeToolInput, toolPhaseLabel } from "./toolPresentation";
+import {
+  describeToolCall,
+  formatDisplayPath,
+  resolveToolPhase,
+  serializeToolInput,
+  toolPhaseLabel,
+} from "./toolPresentation";
 
 function call(name: string, args: Record<string, unknown>, id = "call-1"): ToolCall {
   return { type: "toolCall", id, name, arguments: args };
@@ -17,6 +23,16 @@ function result(isError: boolean): Extract<Message, { role: "toolResult" }> {
     timestamp: 1,
   };
 }
+
+describe("formatDisplayPath", () => {
+  it("keeps short paths and shortens deep absolute-style paths", () => {
+    expect(formatDisplayPath("src/App.tsx")).toBe("src/App.tsx");
+    expect(formatDisplayPath("C:\\Users\\me\\project\\packages\\desktop\\renderer-next\\src\\components\\Message\\MessageBubble.tsx"))
+      .toMatch(/MessageBubble\.tsx$/);
+    expect(formatDisplayPath("C:\\Users\\me\\project\\packages\\desktop\\renderer-next\\src\\components\\Message\\MessageBubble.tsx"))
+      .toMatch(/^…\//);
+  });
+});
 
 describe("describeToolCall", () => {
   it("describes all built-in tools from their real argument shapes", () => {
@@ -34,6 +50,9 @@ describe("describeToolCall", () => {
       .toMatchObject({ action: "Waiting to find", subject: "**/*.test.ts in src" });
     expect(describeToolCall(call("ls", {}), "done"))
       .toMatchObject({ action: "Listed", subject: "." });
+    expect(describeToolCall(call("read", {
+      path: "packages/desktop/renderer-next/src/components/Message/MessageBubble.tsx",
+    }), "done").subject).toMatch(/MessageBubble\.tsx$/);
   });
 
   it("humanizes unknown tools and uses a safe common subject", () => {
