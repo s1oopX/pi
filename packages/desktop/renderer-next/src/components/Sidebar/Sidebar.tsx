@@ -285,8 +285,9 @@ export function Sidebar({ collapsed, onToggle }: SidebarProps) {
       if (result.cancelled) return;
       if (!isSameWorkspace(result.cwd, useStore.getState().workspaceCwd)) {
         useStore.getState().resetForWorkspace(result.cwd);
+      } else {
+        useStore.getState().refreshSession();
       }
-      await useStore.getState().refreshAsync();
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
       setFailedSwitch({ path: sessionPath, error: message });
