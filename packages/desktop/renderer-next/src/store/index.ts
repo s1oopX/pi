@@ -22,6 +22,7 @@ import {
   type RetryActivity,
 } from "./agentActivity";
 import { type MessageEventType, reduceMessageEvent } from "./messageCursor";
+import { shouldApplyMessageRefresh } from "./messageRefreshGuard";
 
 export type Theme = "light" | "dark" | "system";
 export type ResolvedTheme = Exclude<Theme, "system">;
@@ -66,6 +67,8 @@ export interface AppState {
   // Session
   session: SessionState | null;
   messages: Message[];
+  /** Bumped on workspace reset / full refresh start so stale get_messages cannot apply. */
+  messageRefreshGeneration: number;
   stats: SessionStats | undefined;
   sessions: SessionInfo[];
   sessionsTotal: number;
@@ -251,6 +254,7 @@ export const useStore = create<AppState>((set, get) => ({
 
   session: null,
   messages: [],
+  messageRefreshGeneration: 0,
   stats: undefined,
   sessions: [],
   sessionsTotal: 0,
@@ -457,6 +461,7 @@ export const useStore = create<AppState>((set, get) => ({
       workspaceGitStatusLoading: false,
       session: null,
       messages: [],
+      messageRefreshGeneration: get().messageRefreshGeneration + 1,
       stats: undefined,
       models: [],
       customModelsConfig: null,
@@ -539,10 +544,16 @@ export const useStore = create<AppState>((set, get) => ({
 }));
 
 async function refreshState(): Promise<void> {
-  useStore.setState({ toolExecutionsByCallId: {}, activeTool: null });
+  useStore.setState((state) => ({
+    toolExecutionsByCallId: {},
+    activeTool: null,
+    messageRefreshGeneration: state.messageRefreshGeneration + 1,
+  }));
   const apiRef = api.getApi();
   if (!apiRef) return;
 
+  const generation = useStore.getState().messageRefreshGeneration;
+  const workspaceCwd = useStore.getState().workspaceCwd;
   void loadSessionPage(useStore.getState().sessionsQuery, 0, false);
 
   try {
@@ -556,6 +567,37 @@ async function refreshState(): Promise<void> {
     ]);
 
     const authStatuses = await api.getAuthStatus().catch(() => ({}) as Record<string, AuthStatus>);
+    const current = useStore.getState();
+    const decision = shouldApplyMessageRefresh(
+      {
+        workspaceCwd: current.workspaceCwd,
+        generation: current.messageRefreshGeneration,
+        isStreaming: current.isStreaming,
+        activeMessageIndex: current.activeMessageIndex,
+      },
+      {
+        workspaceCwd,
+        generation,
+        messageCount: messages.length,
+      },
+    );
+
+    if (!decision.apply) {
+      // Still refresh non-message catalog state when the workspace matches.
+      if (normalizeWorkspaceKey(current.workspaceCwd) === normalizeWorkspaceKey(workspaceCwd)) {
+        useStore.setState({
+          session,
+          models,
+          customModelsConfig: customModels,
+          stats,
+          commands,
+          authStatuses,
+          isStreaming: Boolean(session?.isStreaming),
+        });
+      }
+      void refreshWorkspaceGitStatus();
+      return;
+    }
 
     useStore.setState({
       session,
@@ -571,6 +613,10 @@ async function refreshState(): Promise<void> {
   } catch {
     // Backend may have disconnected; status events will handle reconnect
   }
+}
+
+function normalizeWorkspaceKey(cwd: string): string {
+  return cwd.replace(/\\/g, "/").replace(/\/+$/, "").toLowerCase();
 }
 
 function appendUniqueSessions(current: SessionInfo[], incoming: SessionInfo[]): SessionInfo[] {
@@ -646,12 +692,41 @@ async function refreshSessionState(): Promise<void> {
   const apiRef = api.getApi();
   if (!apiRef) return;
 
+  const generation = useStore.getState().messageRefreshGeneration;
+  const workspaceCwd = useStore.getState().workspaceCwd;
+
   try {
     const [session, messages, stats] = await Promise.all([
       api.getState(),
       api.getMessages(),
       api.getSessionStats().catch(() => undefined),
     ]);
+
+    const current = useStore.getState();
+    const decision = shouldApplyMessageRefresh(
+      {
+        workspaceCwd: current.workspaceCwd,
+        generation: current.messageRefreshGeneration,
+        isStreaming: current.isStreaming,
+        activeMessageIndex: current.activeMessageIndex,
+      },
+      {
+        workspaceCwd,
+        generation,
+        messageCount: messages.length,
+      },
+    );
+
+    if (!decision.apply) {
+      if (normalizeWorkspaceKey(current.workspaceCwd) === normalizeWorkspaceKey(workspaceCwd)) {
+        useStore.setState({
+          session,
+          stats,
+          isStreaming: Boolean(session?.isStreaming),
+        });
+      }
+      return;
+    }
 
     useStore.setState({
       session,

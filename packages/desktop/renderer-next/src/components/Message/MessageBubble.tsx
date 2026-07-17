@@ -8,6 +8,7 @@ import { CodeBlock } from "./CodeBlock";
 import { DiffView } from "../DiffView";
 import { buildFileChangeDisplayPlan, type FileChange } from "../MessageList/toolPairing";
 import { formatAgentLiveStatus } from "./agentLiveStatus";
+import { PathActions } from "./PathActions";
 import {
   createProcessExpandState,
   reduceProcessExpandState,
@@ -533,27 +534,30 @@ function FileChangeRow({ change, defaultOpen = false }: { change: FileChange; de
 
   return (
     <li className={`file-changes-item status-${change.phase}${open ? " is-open" : ""}`}>
-      <button
-        className="file-changes-item-main"
-        type="button"
-        disabled={!canExpand}
-        aria-expanded={canExpand ? open : undefined}
-        onClick={() => {
-          if (!canExpand) return;
-          setExpandState((state) => reduceProcessExpandState(state, { type: "user-toggle" }, "file-row"));
-        }}
-      >
-        <span className="file-changes-op" title={change.tool}>{fileChangeOpLabel(change.tool)}</span>
-        <span className="file-changes-path" title={change.path}>{formatDisplayPath(change.path)}</span>
-        {(change.phase === "error" || change.phase === "running") && (
-          <span className={`file-changes-item-status status-${change.phase}`}>
-            {toolPhaseLabel(change.phase, resolvedLanguage)}
-          </span>
-        )}
-        {canExpand && (
-          <span className="file-changes-item-chevron" aria-hidden="true">{open ? "▾" : "▸"}</span>
-        )}
-      </button>
+      <div className="file-changes-item-row">
+        <button
+          className="file-changes-item-main"
+          type="button"
+          disabled={!canExpand}
+          aria-expanded={canExpand ? open : undefined}
+          onClick={() => {
+            if (!canExpand) return;
+            setExpandState((state) => reduceProcessExpandState(state, { type: "user-toggle" }, "file-row"));
+          }}
+        >
+          <span className="file-changes-op" title={change.tool}>{fileChangeOpLabel(change.tool)}</span>
+          <span className="file-changes-path" title={change.path}>{formatDisplayPath(change.path)}</span>
+          {(change.phase === "error" || change.phase === "running") && (
+            <span className={`file-changes-item-status status-${change.phase}`}>
+              {toolPhaseLabel(change.phase, resolvedLanguage)}
+            </span>
+          )}
+          {canExpand && (
+            <span className="file-changes-item-chevron" aria-hidden="true">{open ? "▾" : "▸"}</span>
+          )}
+        </button>
+        <PathActions path={change.path} />
+      </div>
       {open && errorText && (
         <pre className="file-changes-result error">
           <code>{errorText}</code>

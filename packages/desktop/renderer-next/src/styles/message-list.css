@@ -4,6 +4,7 @@
   position: relative;
   display: flex;
   flex: 1;
+  flex-direction: column;
   min-height: 0;
 }
 
@@ -14,6 +15,16 @@
   padding: 32px 20px 24px;
   background: var(--main-bg);
   overscroll-behavior: contain;
+}
+
+.message-list-sticky-status {
+  flex: 0 0 auto;
+  display: flex;
+  justify-content: flex-end;
+  min-height: 32px;
+  padding: 6px 20px 8px;
+  border-top: 1px solid var(--border);
+  background: color-mix(in srgb, var(--main-bg) 92%, var(--surface));
 }
 
 .message-list-jump-latest {

@@ -7,6 +7,7 @@ import { fileURLToPath } from "node:url";
 import { createBackendMutationQueue } from "./backend-mutation-queue.js";
 import { sanitizeDiagnostics } from "./diagnostics.js";
 import { getGitWorkspaceStatus } from "./git-workspace-status.js";
+import { describeRevealTarget, resolveWorkspacePath } from "./path-reveal.js";
 import { resolveKnownSessionFile } from "./session-files.js";
 import { checkDesktopUpdate } from "./update.js";
 import { loadStoredWorkspace, saveStoredWorkspace } from "./workspace-state.js";
@@ -939,6 +940,16 @@ ipcMain.handle("workspace:reveal", async (_event, cwd) => {
 		throw new Error(error);
 	}
 	return { opened: true };
+});
+
+ipcMain.handle("workspace:reveal-path", async (_event, targetPath) => {
+	const absolutePath = resolveWorkspacePath(backendCwd, String(targetPath ?? ""));
+	if (!existsSync(absolutePath)) {
+		throw new Error(`Path not found: ${absolutePath}`);
+	}
+	const { insideWorkspace } = describeRevealTarget(backendCwd, absolutePath);
+	shell.showItemInFolder(absolutePath);
+	return { revealed: true, path: absolutePath, insideWorkspace };
 });
 
 const hasSingleInstanceLock = app.requestSingleInstanceLock();

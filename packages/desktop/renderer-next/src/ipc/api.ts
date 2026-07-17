@@ -34,6 +34,7 @@ export interface PiDesktopApi {
   getWorkspaceGitStatus(): Promise<WorkspaceGitStatus>;
   listWorkspaceFiles(query?: string): Promise<{ files: string[] }>;
   openWorkspaceLocation(cwd?: string): Promise<{ opened: boolean }>;
+  revealWorkspacePath(targetPath: string): Promise<{ revealed: boolean; path: string; insideWorkspace: boolean }>;
   revealSessionFile(sessionPath: string): Promise<{ revealed: boolean }>;
   trashSessionFile(sessionPath: string): Promise<{ trashed: boolean }>;
   openExternal(url: string): Promise<void>;
@@ -359,6 +360,12 @@ export async function listWorkspaceFiles(query?: string): Promise<string[]> {
 
 export async function openWorkspaceLocation(cwd?: string): Promise<void> {
   await requireApi().openWorkspaceLocation(cwd);
+}
+
+export async function revealWorkspacePath(
+  targetPath: string,
+): Promise<{ revealed: boolean; path: string; insideWorkspace: boolean }> {
+  return requireApi().revealWorkspacePath(targetPath);
 }
 
 export async function revealSessionFile(sessionPath: string): Promise<void> {

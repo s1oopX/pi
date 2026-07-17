@@ -155,6 +155,9 @@ describe("Codex-style process presentation", () => {
     // Single-file groups open by default so the preview is immediately scannable.
     expect(markup).toContain("file-changes-diff");
     expect(markup).toContain("diff-view");
+    expect(markup).toContain("path-actions");
+    expect(markup).toContain("Copy path");
+    expect(markup).toContain("Reveal in Explorer");
   });
 
   it("shows a running indicator without a done status label", () => {

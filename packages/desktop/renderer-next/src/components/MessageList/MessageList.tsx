@@ -11,6 +11,7 @@ import { computeToolPairing, type ToolPairing } from "./toolPairing";
 import { useStore, type ToolExecutionsByCallId } from "../../store";
 import type { RetryActivity } from "../../store/agentActivity";
 import type { Message } from "../../ipc/types";
+import { planConversationLayout } from "./conversationLayout";
 import { isMessageListNearBottom } from "./scrollState";
 import { shouldShowListStreamingDots } from "./streamingPresentation";
 
@@ -22,7 +23,7 @@ type QueuedConversationItem = { kind: "steer" | "follow-up"; message: string };
 type Row =
   | { kind: "message"; message: Message; originalIndex: number; suppressError: boolean }
   | { kind: "retry"; activity: RetryActivity }
-  | { kind: "status"; queued: QueuedConversationItem[]; extensionStatuses: Record<string, string> };
+  | { kind: "inline-status"; queued: QueuedConversationItem[]; extensionStatuses: Record<string, string> };
 
 const MemoizedBubble = memo(function MemoizedBubble({
   message,
@@ -83,6 +84,15 @@ export function MessageList() {
     [extensionStatuses],
   );
   const hasConversationStatus = hasStatusBarContent({ session, stats, isStreaming, compactionActivity });
+  const layout = useMemo(
+    () => planConversationLayout({
+      hasStatusContent: hasConversationStatus,
+      hasQueued: queued.length > 0,
+      hasExtensionStatuses: hasVisibleExtensionStatus,
+      isStreaming,
+    }),
+    [hasConversationStatus, queued.length, hasVisibleExtensionStatus, isStreaming],
+  );
 
   useEffect(() => {
     shouldAutoScroll.current = true;
@@ -105,8 +115,8 @@ export function MessageList() {
         !retryErrorDisplay.hiddenIndices.has(row.originalIndex)
       );
     const retryRows: Row[] = retryActivity ? [{ kind: "retry", activity: retryActivity }] : [];
-    const statusRows: Row[] = hasConversationStatus || queued.length > 0 || hasVisibleExtensionStatus
-      ? [{ kind: "status", queued, extensionStatuses }]
+    const statusRows: Row[] = layout.showInlineStatusRow
+      ? [{ kind: "inline-status", queued, extensionStatuses }]
       : [];
     return [...messageRows, ...retryRows, ...statusRows];
   }, [
@@ -114,9 +124,8 @@ export function MessageList() {
     hiddenToolResultIndices,
     retryErrorDisplay,
     retryActivity,
-    hasConversationStatus,
+    layout.showInlineStatusRow,
     queued,
-    hasVisibleExtensionStatus,
     extensionStatuses,
   ]);
 
@@ -128,7 +137,7 @@ export function MessageList() {
       const row = rows[index];
       if (row.kind === "message") return `message:${row.originalIndex}`;
       if (row.kind === "retry") return `retry:${row.activity.startedAt}`;
-      return "status";
+      return "inline-status";
     },
     overscan: 5,
   });
@@ -194,8 +203,8 @@ export function MessageList() {
                   transform: `translateY(${virtualRow.start}px)`,
                 }}
               >
-                {row.kind === "status" ? (
-                  <ConversationStatus queued={row.queued} extensionStatuses={row.extensionStatuses} />
+                {row.kind === "inline-status" ? (
+                  <ConversationInlineStatus queued={row.queued} extensionStatuses={row.extensionStatuses} />
                 ) : row.kind === "retry" ? (
                   <RetryNotice activity={row.activity} />
                 ) : row.originalIndex === streamingIndex ? (
@@ -230,6 +239,11 @@ export function MessageList() {
           </div>
         )}
       </div>
+      {layout.showStickyStatus && (
+        <div className="message-list-sticky-status">
+          <StatusBar />
+        </div>
+      )}
       {showJumpToLatest && (
         <button className="message-list-jump-latest" type="button" onClick={jumpToLatest}>
           <svg viewBox="0 0 18 18" aria-hidden="true">
@@ -242,7 +256,7 @@ export function MessageList() {
   );
 }
 
-function ConversationStatus({
+function ConversationInlineStatus({
   queued,
   extensionStatuses,
 }: {
@@ -253,7 +267,6 @@ function ConversationStatus({
 
   return (
     <div className="conversation-status-panel">
-      <StatusBar />
       {queued.length > 0 && (
         <div className="conversation-queue" aria-label={t("Queued messages", "已排队的消息")}>
           {queued.map((item, index) => (

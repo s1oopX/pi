@@ -31,6 +31,9 @@ contextBridge.exposeInMainWorld("piDesktop", {
 	openWorkspaceLocation(cwd) {
 		return ipcRenderer.invoke("workspace:reveal", cwd);
 	},
+	revealWorkspacePath(targetPath) {
+		return ipcRenderer.invoke("workspace:reveal-path", targetPath);
+	},
 	revealSessionFile(sessionPath) {
 		return ipcRenderer.invoke("session:reveal", sessionPath);
 	},
