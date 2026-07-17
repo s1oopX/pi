@@ -2,8 +2,9 @@ import type { Message } from "../../ipc/types";
 import type { ToolExecutionsByCallId } from "../../store";
 import { resolveToolPhase, type ToolPhase } from "../Message/toolPresentation";
 import { buildMutationPreviewPatch, looksLikeUnifiedDiff } from "./mutationPreview";
+import { extractPatchFromToolDetails } from "./toolResultDetails";
 
-type ToolResult = Extract<Message, { role: "toolResult" }>;
+type ToolResult = Extract<Message, { role: "toolResult" }> & { details?: unknown };
 
 // A toolResult message is the outcome of an earlier assistant toolCall block,
 // linked by toolCallId. The desktop chat renders them inline inside the tool
@@ -115,17 +116,18 @@ export function buildFileChangeDisplayPlan(
     }
     currentStart ??= index;
     const resultText = meaningfulMutationResult(block.name, result);
+    const detailsPatch = extractPatchFromToolDetails(result?.details);
     currentChanges.push({
       path,
       tool: block.name,
       callId: block.id,
       phase: resolveToolPhase(block.id, result, executionsByCallId, streaming),
       resultText,
-      // Prefer a real patch from the tool result when available; otherwise
-      // reconstruct a review preview from the call arguments.
-      previewPatch: resultText && looksLikeUnifiedDiff(resultText)
-        ? resultText
-        : buildMutationPreviewPatch(block.name, path, block.arguments),
+      // Prefer server-provided patch details, then content that looks like a
+      // unified diff, then a reconstructed preview from tool arguments.
+      previewPatch: detailsPatch
+        ?? (resultText && looksLikeUnifiedDiff(resultText) ? resultText : undefined)
+        ?? buildMutationPreviewPatch(block.name, path, block.arguments),
     });
     hiddenCallIds.add(block.id);
   });

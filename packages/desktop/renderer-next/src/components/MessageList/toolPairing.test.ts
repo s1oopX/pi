@@ -132,4 +132,28 @@ describe("buildFileChangeDisplayPlan", () => {
     expect(change?.previewPatch).toContain("-real");
     expect(change?.previewPatch).not.toContain("+b");
   });
+
+  it("prefers toolResult.details.patch over content and args previews", () => {
+    const message = assistant([
+      call("edit", "e1", {
+        path: "a.ts",
+        edits: [{ oldText: "a", newText: "b" }],
+      }),
+    ]);
+    const results = new Map([
+      ["e1", {
+        ...result("e1", { text: "Successfully replaced 1 block(s) in a.ts." }),
+        details: {
+          patch: "--- a/a.ts\n+++ b/a.ts\n@@ -1 +1 @@\n-from-details\n+to-details\n",
+          diff: "display",
+        },
+      }],
+    ]);
+    const change = buildFileChangeDisplayPlan(message, results, {}, false)
+      .groupsByStartIndex.get(0)?.changes[0];
+
+    expect(change?.previewPatch).toContain("+to-details");
+    expect(change?.previewPatch).toContain("-from-details");
+    expect(change?.previewPatch).not.toContain("+b");
+  });
 });

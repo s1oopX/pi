@@ -125,36 +125,15 @@ export function App() {
                 <path d="M7 3v12" fill="none" stroke="currentColor" strokeWidth="1.3" />
               </svg>
             </button>
-            <button
-              className="icon-button window-chrome-nav"
-              type="button"
-              aria-label={t("Back", "后退")}
-              onClick={() => window.history.back()}
-            >
-              <svg viewBox="0 0 18 18" aria-hidden="true">
-                <path d="M11 4 6 9l5 5" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
-              </svg>
-            </button>
-            <button
-              className="icon-button window-chrome-nav"
-              type="button"
-              aria-label={t("Forward", "前进")}
-              onClick={() => window.history.forward()}
-            >
-              <svg viewBox="0 0 18 18" aria-hidden="true">
-                <path d="m7 4 5 5-5 5" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
-              </svg>
-            </button>
             <nav className="window-chrome-menu" aria-label={t("Application menu", "应用菜单")}>
-              <span>{t("File", "文件")}</span>
               <button type="button" onClick={() => handleAppCommand("open-command-palette")}>
-                {t("Edit", "编辑")}
+                {t("Commands", "命令")}
               </button>
               <button type="button" onClick={toggleWorkbench}>
-                {t("View", "视图")}
+                {t("Workbench", "工作台")}
               </button>
               <button type="button" onClick={() => useStore.getState().openSettings("about")}>
-                {t("Help", "帮助")}
+                {t("About", "关于")}
               </button>
             </nav>
           </div>

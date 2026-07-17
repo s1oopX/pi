@@ -18,6 +18,7 @@ import { ModelSelector } from "../ModelSelector";
 import { ExtensionWidgets } from "../ExtensionWidgets";
 import { InlineApproval, isInteractiveExtensionUIRequest } from "../Message/InlineApproval";
 import { showToast } from "../Toast";
+import { approvalHistoryLabel } from "../../store/approvalHistory";
 import {
   MAX_ATTACHMENT_COUNT,
   MAX_ATTACHMENT_MEGABYTES,
@@ -61,7 +62,7 @@ function getActiveToken(text: string, caret: number): { trigger: "/" | "@"; quer
 }
 
 export function Composer() {
-  const { t } = useI18n();
+  const { resolvedLanguage, t } = useI18n();
   const suggestionsListboxId = useId();
   const workspaceCwd = useStore((state) => state.workspaceCwd);
   const sessionId = useStore((state) => state.session?.sessionId ?? null);
@@ -81,6 +82,7 @@ export function Composer() {
   const commands = useStore((s) => s.commands);
   const extensionWidgets = useStore((s) => s.extensionWidgets);
   const extensionUIRequests = useStore((s) => s.extensionUIRequests);
+  const approvalHistory = useStore((s) => s.approvalHistory);
   const modelSupportsImages = useStore((s) => s.session?.model?.input.includes("image") ?? true);
   const composerDraft = useStore((s) => s.composerDraft);
   const setComposerDraft = useStore((s) => s.setComposerDraft);
@@ -380,6 +382,15 @@ export function Composer() {
           ))}
         </div>
       )}
+      {approvalHistory.length > 0 && approvalRequests.length === 0 && (
+        <div className="composer-approval-history" aria-label={t("Recent approvals", "最近审批")}>
+          {approvalHistory.slice(-3).reverse().map((entry) => (
+            <div className={`approval-history-item decision-${entry.decision}`} key={entry.id} title={entry.method}>
+              {approvalHistoryLabel(entry, resolvedLanguage === "zh-CN" ? "zh-CN" : "en")}
+            </div>
+          ))}
+        </div>
+      )}
       <form
         className={`composer ${draggingFiles ? "drag-active" : ""}`}
         onSubmit={handleSubmit}
@@ -521,19 +532,7 @@ export function Composer() {
           </div>
           <div className="composer-footer-end">
             <ModelSelector />
-            <button
-              className="composer-mic-btn"
-              type="button"
-              aria-label={t("Voice input", "语音输入")}
-              title={t("Voice input is not available yet", "语音输入暂不可用")}
-              onClick={() => showToast(t("Voice input is not available yet", "语音输入暂不可用"), "info")}
-            >
-              <svg viewBox="0 0 24 24" aria-hidden="true">
-                <path d="M12 14a3 3 0 0 0 3-3V6a3 3 0 0 0-6 0v5a3 3 0 0 0 3 3Z" fill="none" stroke="currentColor" strokeWidth="1.7" />
-                <path d="M5 11a7 7 0 0 0 14 0M12 18v3" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" />
-              </svg>
-            </button>
-            <div className="composer-actions">
+                        <div className="composer-actions">
               {isStreaming && (
                 <>
                   <label className="composer-streaming-mode">

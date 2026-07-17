@@ -22,6 +22,12 @@ import {
   type RetryActivity,
 } from "./agentActivity";
 import { type MessageEventType, reduceMessageEvent } from "./messageCursor";
+import {
+  appendApprovalHistory,
+  decisionFromResponse,
+  summarizeApprovalRequest,
+  type ApprovalHistoryEntry,
+} from "./approvalHistory";
 import { shouldApplyMessageRefresh } from "./messageRefreshGuard";
 
 export type Theme = "light" | "dark" | "system";
@@ -98,6 +104,7 @@ export interface AppState {
   activeTool: string | null;
   toolExecutionsByCallId: ToolExecutionsByCallId;
   extensionUIRequests: ExtensionUIRequestEvent[];
+  approvalHistory: ApprovalHistoryEntry[];
   extensionStatuses: Record<string, string>;
   extensionWidgets: ExtensionWidgetState[];
   extensionTitle: string | null;
@@ -137,6 +144,7 @@ export interface AppState {
   clearToolExecutions: () => void;
   upsertMessage: (message: Message, eventType: MessageEventType) => void;
   addExtensionUIRequest: (request: ExtensionUIRequestEvent) => void;
+  recordApprovalDecision: (request: ExtensionUIRequestEvent, response: unknown) => void;
   removeExtensionUIRequest: (id: string) => void;
   setExtensionStatus: (key: string, text: string | undefined) => void;
   setExtensionWidget: (key: string, lines: string[] | undefined, placement: ExtensionWidgetPlacement) => void;
@@ -280,6 +288,7 @@ export const useStore = create<AppState>((set, get) => ({
   activeTool: null,
   toolExecutionsByCallId: {},
   extensionUIRequests: [],
+  approvalHistory: [],
   extensionStatuses: {},
   extensionWidgets: [],
   extensionTitle: null,
@@ -377,6 +386,25 @@ export const useStore = create<AppState>((set, get) => ({
   addExtensionUIRequest(request) {
     set((s) => ({
       extensionUIRequests: [...s.extensionUIRequests, request],
+    }));
+  },
+
+  recordApprovalDecision(request, response) {
+    const summary = summarizeApprovalRequest({
+      method: request.method,
+      params: {
+        title: typeof request.title === "string" ? request.title : undefined,
+        message: typeof request.message === "string" ? request.message : undefined,
+      },
+    });
+    set((s) => ({
+      approvalHistory: appendApprovalHistory(s.approvalHistory, {
+        id: `${request.id}:${Date.now()}`,
+        method: request.method,
+        summary,
+        decision: decisionFromResponse(request.method, response),
+        timestamp: Date.now(),
+      }),
     }));
   },
 

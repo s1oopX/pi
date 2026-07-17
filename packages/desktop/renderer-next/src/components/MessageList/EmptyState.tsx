@@ -117,24 +117,29 @@ export function EmptyState() {
 
   if (!backendStatus.ready) {
     const isStarting = backendStatus.starting || backendStatus.restarting;
+    const isStopping = backendStatus.restarting && !backendStatus.starting;
+    const title = isStopping
+      ? t("Stopping current agent…", "正在关闭当前智能体…")
+      : isStarting
+        ? t("Starting agent…", "正在启动智能体…")
+        : t("Agent offline", "智能体已离线");
+    const subtitle = isStopping
+      ? t("Closing the previous workspace agent before switching.", "切换前先关闭上一工作区的智能体。")
+      : isStarting
+        ? t("Starting agent in {workspace}.", "正在 {workspace} 中启动智能体。", {
+            workspace: workspaceName ?? t("the current workspace", "当前工作区"),
+          })
+        : backendStatus.error ?? t(
+            "The backend is unavailable. Your draft will be preserved.",
+            "后端当前不可用。你的草稿会保留。",
+          );
     return (
       <div className="empty-state" role="status">
         <div className="empty-state-icon empty-state-brand" aria-hidden="true">
           <BrandIcon className="empty-state-brand-icon" />
         </div>
-        <h2 className="empty-state-title">
-          {isStarting ? t("Preparing workspace...", "正在准备工作区……") : t("Agent offline", "智能体已离线")}
-        </h2>
-        <p className="empty-state-subtitle">
-          {isStarting
-            ? t("Preparing {workspace}.", "正在准备 {workspace}。", {
-                workspace: workspaceName ?? t("the current workspace", "当前工作区"),
-              })
-            : backendStatus.error ?? t(
-                "The backend is unavailable. Your draft will be preserved.",
-                "后端当前不可用。你的草稿会保留。",
-              )}
-        </p>
+        <h2 className="empty-state-title">{title}</h2>
+        <p className="empty-state-subtitle">{subtitle}</p>
         {!isStarting && (
           <button className="empty-state-cta" type="button" onClick={restartBackend}>
             {t("Retry agent startup", "重新启动智能体")}

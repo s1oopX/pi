@@ -107,13 +107,39 @@ export function Sidebar({ collapsed, onToggle }: SidebarProps) {
             })
           : t("Offline", "离线");
   const switchingWorkspaceName = switchingWorkspaceCwd ? getWorkspaceName(switchingWorkspaceCwd) : workspaceName;
-  const workspaceStatusText = switchingWorkspace
-    ? t("Opening {workspace}...", "正在打开 {workspace}...", { workspace: switchingWorkspaceName })
-    : backendStatusText;
+  // Phase narrative while workspace switch restarts the backend process.
+  const switchPhaseLabel = (() => {
+    if (!switchingWorkspaceCwd) return null;
+    if (backendStatus.restarting && !backendStatus.ready && !backendStatus.starting) {
+      return t("Stopping current agent…", "正在关闭当前智能体…");
+    }
+    if (backendStatus.starting || backendStatus.restarting) {
+      return t("Starting agent in {workspace}…", "正在启动 {workspace}…", {
+        workspace: switchingWorkspaceName,
+      });
+    }
+    if (
+      backendStatus.ready &&
+      (
+        !isSameWorkspace(workspaceCwd, switchingWorkspaceCwd) ||
+        !isSameWorkspace(backendStatus.cwd, switchingWorkspaceCwd)
+      )
+    ) {
+      return t("Restoring session in {workspace}…", "正在恢复 {workspace} 会话…", {
+        workspace: switchingWorkspaceName,
+      });
+    }
+    return t("Opening {workspace}…", "正在打开 {workspace}…", {
+      workspace: switchingWorkspaceName,
+    });
+  })();
+  const workspaceStatusText = switchingWorkspace ? switchPhaseLabel : backendStatusText;
   const sessionLoadingText = switchingWorkspace
-    ? t("Opening {workspace}...", "正在打开 {workspace}...", { workspace: switchingWorkspaceName })
+    ? switchPhaseLabel ?? t("Opening {workspace}…", "正在打开 {workspace}…", {
+        workspace: switchingWorkspaceName,
+      })
     : backendStatus.starting || backendStatus.restarting
-      ? t("Preparing workspace...", "正在准备工作区...")
+      ? t("Preparing workspace…", "正在准备工作区…")
       : normalizedSessionQuery
         ? t("Searching...", "正在搜索...")
         : t("Loading...", "正在加载...");

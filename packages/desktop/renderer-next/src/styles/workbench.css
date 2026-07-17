@@ -131,6 +131,13 @@
   max-height: none;
 }
 
+.workbench-capability-note {
+  margin: 0;
+  color: var(--muted);
+  font-size: calc(11px * var(--font-scale));
+  line-height: 1.4;
+}
+
 .workbench-terminal {
   min-height: 0;
   flex: 1;

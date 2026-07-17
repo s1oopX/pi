@@ -44,13 +44,13 @@ export function WorkbenchPanel({ activeView, keybindingLabels, onClose, onSelect
     },
     {
       view: "terminal",
-      label: t("Terminal", "终端"),
+      label: t("Shell", "Shell"),
       shortcut: keybindingLabels.terminal,
       icon: "terminal",
     },
     {
       view: "browser",
-      label: t("Browser", "浏览器"),
+      label: t("Open link", "打开链接"),
       shortcut: keybindingLabels.browser,
       icon: "browser",
     },
@@ -197,6 +197,9 @@ function WorkbenchTerminal() {
 
   return (
     <div className="workbench-terminal">
+      <p className="workbench-capability-note">
+        {t("Runs one command at a time (not an interactive shell).", "每次运行一条命令（非交互式终端）。")}
+      </p>
       <TerminalPanel ref={terminalRef} className="workbench-terminal-output" />
       <form className="workbench-command-row" onSubmit={runCommand}>
         <input
@@ -234,7 +237,14 @@ function WorkbenchBrowser() {
   }
 
   return (
-    <form className="workbench-form" onSubmit={openBrowser}>
+    <form
+      className="workbench-form"
+      onSubmit={openBrowser}
+      aria-label={t("Open URL in system browser", "在系统浏览器中打开 URL")}
+    >
+      <p className="workbench-capability-note">
+        {t("Opens in your system browser (no embedded preview).", "在系统浏览器中打开（无内嵌预览）。")}
+      </p>
       <label>
         <span>{t("URL", "URL")}</span>
         <input
@@ -376,8 +386,8 @@ function WorkbenchIcon({ icon }: { icon: WorkbenchEntry["icon"] }) {
 
 function getWorkbenchTitle(view: WorkbenchView, t: (en: string, zhCN: string, values?: Record<string, string | number>) => string): string {
   if (view === "review") return t("Review", "审阅");
-  if (view === "terminal") return t("Terminal", "终端");
-  if (view === "browser") return t("Browser", "浏览器");
+  if (view === "terminal") return t("Shell (one-shot)", "Shell（单次命令）");
+  if (view === "browser") return t("Open link", "打开链接");
   if (view === "files") return t("Files", "文件");
   if (view === "side-task") return t("Side task", "侧边任务");
   return t("Workbench", "工作台");

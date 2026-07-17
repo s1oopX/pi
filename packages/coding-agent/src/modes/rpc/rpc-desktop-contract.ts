@@ -135,6 +135,11 @@ export interface RpcToolResultMessageDTO {
 	content: RpcToolResultContentBlockDTO[];
 	isError: boolean;
 	timestamp: number;
+	/**
+	 * Structured tool details for desktop UI (e.g. edit/write `{ patch, diff }`).
+	 * Opaque on the wire; clients extract known fields when present.
+	 */
+	details?: unknown;
 }
 
 export interface RpcBashExecutionMessageDTO {

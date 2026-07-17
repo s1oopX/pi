@@ -28,6 +28,7 @@ export function createCancelledApprovalResponse(): ApprovalResponse {
 // stream. The backend remains suspended until extension_ui_response arrives.
 export function InlineApproval({ request }: { request: ExtensionUIRequestEvent }) {
   const removeRequest = useStore((s) => s.removeExtensionUIRequest);
+  const recordApprovalDecision = useStore((s) => s.recordApprovalDecision);
   const respondingRef = useRef(false);
   const [responding, setResponding] = useState(false);
   const [responseError, setResponseError] = useState<string | null>(null);
@@ -39,6 +40,7 @@ export function InlineApproval({ request }: { request: ExtensionUIRequestEvent }
     setResponseError(null);
     try {
       await api.sendExtensionUIResponse(request.id, response);
+      recordApprovalDecision(request, response);
       removeRequest(request.id);
     } catch (error) {
       respondingRef.current = false;
