@@ -399,6 +399,12 @@
   line-height: 1.4;
 }
 
+.tool-call-output-note {
+  margin-top: 4px;
+  color: var(--faint);
+  font-size: calc(11px * var(--font-scale));
+}
+
 :is(.thinking-header, .tool-call-header, .file-changes-header) {
   display: flex;
   align-items: center;

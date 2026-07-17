@@ -39,4 +39,32 @@ describe("mutationPreview", () => {
 		expect(buildMutationPreviewPatch("write", "a.ts", {})).toBeUndefined();
 		expect(buildMutationPreviewPatch("edit", "a.ts", { edits: [] })).toBeUndefined();
 	});
+
+	it("truncates huge write content with a visible note", () => {
+		const content = Array.from({ length: 500 }, (_, i) => `line ${i}`).join("\n");
+		const patch = buildWritePreviewPatch("big.ts", content);
+		expect(patch).toContain("preview truncated");
+		// Header lines + at most 200 content lines + truncation note.
+		expect(patch.split("\n").length).toBeLessThan(220);
+		expect(patch).not.toContain("line 499");
+	});
+
+	it("clips patch character budget", () => {
+		const patch = buildWritePreviewPatch("big.ts", "x".repeat(20_000));
+		expect(patch.length).toBeLessThanOrEqual(12_050);
+		expect(patch.endsWith("…") || patch.includes("\n…")).toBe(true);
+	});
+
+	it("skips invalid edit entries and still builds from valid ones", () => {
+		const patch = buildEditPreviewPatch("a.ts", {
+			edits: [
+				null,
+				{ oldText: "only-old" },
+				{ oldText: "a", newText: "b" },
+			],
+		});
+		expect(patch).toContain("-a");
+		expect(patch).toContain("+b");
+		expect(patch).not.toContain("only-old");
+	});
 });

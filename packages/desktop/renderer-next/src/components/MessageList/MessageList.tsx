@@ -12,6 +12,7 @@ import { useStore, type ToolExecutionsByCallId } from "../../store";
 import type { RetryActivity } from "../../store/agentActivity";
 import type { Message } from "../../ipc/types";
 import { isMessageListNearBottom } from "./scrollState";
+import { shouldShowListStreamingDots } from "./streamingPresentation";
 
 const ESTIMATED_MESSAGE_HEIGHT = 80;
 
@@ -217,7 +218,7 @@ export function MessageList() {
             );
           })}
         </div>
-        {isStreaming && (
+        {shouldShowListStreamingDots({ isStreaming, streamingIndex, messages }) && (
           <div
             className="streaming-indicator"
             aria-live="polite"

@@ -112,4 +112,24 @@ describe("buildFileChangeDisplayPlan", () => {
     expect(edit?.previewPatch).toContain("-old");
     expect(edit?.previewPatch).toContain("+new");
   });
+
+  it("prefers toolResult unified-diff over reconstructed args preview", () => {
+    const message = assistant([
+      call("edit", "e1", {
+        path: "a.ts",
+        edits: [{ oldText: "a", newText: "b" }],
+      }),
+    ]);
+    const results = new Map([
+      ["e1", result("e1", {
+        text: "--- a/a.ts\n+++ b/a.ts\n@@ -1 +1 @@\n-real\n+patch\n",
+      })],
+    ]);
+    const change = buildFileChangeDisplayPlan(message, results, {}, false)
+      .groupsByStartIndex.get(0)?.changes[0];
+
+    expect(change?.previewPatch).toContain("+patch");
+    expect(change?.previewPatch).toContain("-real");
+    expect(change?.previewPatch).not.toContain("+b");
+  });
 });

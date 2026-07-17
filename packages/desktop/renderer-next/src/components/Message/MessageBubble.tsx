@@ -6,12 +6,18 @@ import { CodeBlock } from "./CodeBlock";
 import { DiffView } from "../DiffView";
 import { buildFileChangeDisplayPlan, type FileChange } from "../MessageList/toolPairing";
 import {
+  createProcessExpandState,
+  reduceProcessExpandState,
+  resolveFileChangeDefaultOpen,
+} from "./processExpandState";
+import {
   describeToolCall,
   formatDisplayPath,
   resolveToolPhase,
   toolPhaseLabel,
   type ToolPhase,
 } from "./toolPresentation";
+import { shouldAutoExpandToolBody, summarizeToolOutput } from "./toolOutputPresentation";
 import * as ipcApi from "../../ipc/api";
 import type { Message, ToolCall } from "../../ipc/types";
 import type { ToolExecutionsByCallId } from "../../store";
@@ -187,17 +193,16 @@ function ThinkingPart({
   streaming?: boolean;
 }) {
   const { t } = useI18n();
-  const [expanded, setExpanded] = useState(Boolean(streaming));
-  // Auto-expand while thinking streams in, then auto-collapse once it finishes,
-  // unless the user has manually toggled it in the meantime.
-  const userToggled = useRef(false);
+  const [expandState, setExpandState] = useState(() => createProcessExpandState(Boolean(streaming)));
   const prevStreaming = useRef(Boolean(streaming));
   useEffect(() => {
     if (streaming === prevStreaming.current) return;
     prevStreaming.current = Boolean(streaming);
-    if (!userToggled.current) {
-      setExpanded(Boolean(streaming));
-    }
+    setExpandState((state) => reduceProcessExpandState(
+      state,
+      { type: streaming ? "stream-start" : "stream-end" },
+      "thinking",
+    ));
   }, [streaming]);
 
   const label = redacted
@@ -205,6 +210,7 @@ function ThinkingPart({
     : streaming
       ? t("Thinking…", "正在思考…")
       : t("Thought for a moment", "已思考片刻");
+  const expanded = expandState.open;
 
   return (
     <div className={`thinking-part ${streaming ? "streaming" : ""}`}>
@@ -212,8 +218,7 @@ function ThinkingPart({
         className="thinking-header"
         type="button"
         onClick={() => {
-          userToggled.current = true;
-          setExpanded((v) => !v);
+          setExpandState((state) => reduceProcessExpandState(state, { type: "user-toggle" }, "thinking"));
         }}
         aria-expanded={expanded}
       >
@@ -240,14 +245,14 @@ function ToolCallPart({
   phase: ToolPhase;
 }) {
   const { resolvedLanguage, t } = useI18n();
-  const [expanded, setExpanded] = useState(phase === "error");
-  const userToggled = useRef(false);
   const presentation = describeToolCall(call, phase, resolvedLanguage);
   const resultText = result ? contentToText(result.content) : "";
   const resultImages = result?.content.filter((block) => block.type === "image") ?? [];
   const hasInput = Boolean(presentation.inputText && presentation.inputText !== "{}");
   const hasOutput = Boolean(resultText || resultImages.length > 0);
   const hasBody = hasInput || hasOutput;
+  const outputSummary = resultText ? summarizeToolOutput(resultText) : null;
+  const displayOutput = outputSummary?.preview ?? "";
   // Full path stays in title when subject was shortened for the header row.
   const subjectTitle = typeof call.arguments.path === "string"
     ? call.arguments.path
@@ -255,10 +260,16 @@ function ToolCallPart({
       ? call.arguments.file_path
       : presentation.subject;
   const showStatusLabel = phase === "error" || phase === "unknown";
+  const [expandState, setExpandState] = useState(() =>
+    createProcessExpandState(shouldAutoExpandToolBody(phase, hasBody)),
+  );
 
   useEffect(() => {
-    if (phase === "error" && !userToggled.current) setExpanded(true);
+    if (phase === "error") {
+      setExpandState((state) => reduceProcessExpandState(state, { type: "phase-error" }, "tool"));
+    }
   }, [phase]);
+  const expanded = expandState.open;
 
   return (
     <div className={`tool-call-part status-${phase}`}>
@@ -267,8 +278,7 @@ function ToolCallPart({
         type="button"
         onClick={() => {
           if (!hasBody) return;
-          userToggled.current = true;
-          setExpanded((value) => !value);
+          setExpandState((state) => reduceProcessExpandState(state, { type: "user-toggle" }, "tool"));
         }}
         aria-expanded={expanded}
         disabled={!hasBody}
@@ -317,10 +327,19 @@ function ToolCallPart({
           {hasOutput && (
             <div className="tool-call-section">
               <div className="tool-call-section-label">{t("Output", "输出")}</div>
-              {resultText && (
+              {displayOutput && (
                 <pre className={`tool-call-result-output ${result?.isError ? "error" : ""}`}>
-                  <code>{resultText}</code>
+                  <code>{displayOutput}</code>
                 </pre>
+              )}
+              {outputSummary?.truncated && (
+                <div className="tool-call-output-note">
+                  {t(
+                    "Showing last lines of {count}-line output",
+                    "显示 {count} 行输出的末尾",
+                    { count: outputSummary.lineCount },
+                  )}
+                </div>
               )}
               {resultImages.length > 0 && (
                 <div className="tool-call-result-images">
@@ -478,12 +497,16 @@ function FileChangeRow({ change, defaultOpen = false }: { change: FileChange; de
   const hasPreview = Boolean(change.previewPatch);
   const errorText = change.phase === "error" ? change.resultText : undefined;
   const canExpand = hasPreview || Boolean(errorText);
-  const [open, setOpen] = useState(defaultOpen || change.phase === "error");
-  const userToggled = useRef(false);
+  const [expandState, setExpandState] = useState(() =>
+    createProcessExpandState(defaultOpen || change.phase === "error"),
+  );
 
   useEffect(() => {
-    if (change.phase === "error" && !userToggled.current) setOpen(true);
+    if (change.phase === "error") {
+      setExpandState((state) => reduceProcessExpandState(state, { type: "phase-error" }, "file-row"));
+    }
   }, [change.phase]);
+  const open = expandState.open;
 
   return (
     <li className={`file-changes-item status-${change.phase}${open ? " is-open" : ""}`}>
@@ -494,8 +517,7 @@ function FileChangeRow({ change, defaultOpen = false }: { change: FileChange; de
         aria-expanded={canExpand ? open : undefined}
         onClick={() => {
           if (!canExpand) return;
-          userToggled.current = true;
-          setOpen((value) => !value);
+          setExpandState((state) => reduceProcessExpandState(state, { type: "user-toggle" }, "file-row"));
         }}
       >
         <span className="file-changes-op" title={change.tool}>{fileChangeOpLabel(change.tool)}</span>
@@ -604,7 +626,7 @@ function FileChangesCard({ changes }: { changes: FileChange[] }) {
             <FileChangeRow
               key={c.callId}
               change={c}
-              defaultOpen={fileCount === 1 || c.phase === "error"}
+              defaultOpen={resolveFileChangeDefaultOpen({ fileCount, phase: c.phase })}
             />
           ))}
         </ul>

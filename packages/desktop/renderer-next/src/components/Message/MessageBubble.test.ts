@@ -153,4 +153,93 @@ describe("Codex-style process presentation", () => {
     expect(markup).toContain("file-changes-diff");
     expect(markup).toContain("diff-view");
   });
+
+  it("shows a running indicator without a done status label", () => {
+    const markup = renderToStaticMarkup(createElement(MessageBubble, {
+      message: assistantMessage([
+        {
+          type: "toolCall",
+          id: "bash-1",
+          name: "bash",
+          arguments: { command: "npm test" },
+        },
+      ]),
+      streaming: true,
+      toolExecutionsByCallId: {
+        "bash-1": { toolName: "bash", phase: "running" },
+      },
+    }));
+    expect(markup).toContain("tool-call-running-dot");
+    expect(markup).toContain("Running");
+    expect(markup).not.toContain("tool-call-status-running");
+    expect(markup).not.toContain("tool-call-status-done");
+  });
+
+  it("does not mark answer as after-process when there was no process", () => {
+    const markup = renderToStaticMarkup(createElement(MessageBubble, {
+      message: assistantMessage([{ type: "text", text: "Hello only." }]),
+      toolExecutionsByCallId: {},
+    }));
+    expect(markup).toContain("Hello only.");
+    expect(markup).toContain("message-answer");
+    expect(markup).not.toContain("after-process");
+  });
+
+  it("collapses long tool output by default and expands errors", () => {
+    const longOutput = Array.from({ length: 20 }, (_, i) => `line-${i}`).join("\n");
+    const doneMarkup = renderToStaticMarkup(createElement(MessageBubble, {
+      message: assistantMessage([
+        {
+          type: "toolCall",
+          id: "bash-1",
+          name: "bash",
+          arguments: { command: "npm test" },
+        },
+      ]),
+      toolExecutionsByCallId: {
+        "bash-1": { toolName: "bash", phase: "done" },
+      },
+      resultsByCallId: new Map([
+        ["bash-1", {
+          role: "toolResult" as const,
+          toolCallId: "bash-1",
+          toolName: "bash",
+          content: [{ type: "text" as const, text: longOutput }],
+          isError: false,
+          timestamp: 2,
+        }],
+      ]),
+    }));
+    // Collapsed: full body not present; header still scannable.
+    expect(doneMarkup).toContain("Ran");
+    expect(doneMarkup).not.toContain("line-0");
+    expect(doneMarkup).not.toContain("tool-call-body");
+
+    const errorMarkup = renderToStaticMarkup(createElement(MessageBubble, {
+      message: assistantMessage([
+        {
+          type: "toolCall",
+          id: "bash-2",
+          name: "bash",
+          arguments: { command: "npm test" },
+        },
+      ]),
+      toolExecutionsByCallId: {
+        "bash-2": { toolName: "bash", phase: "error" },
+      },
+      resultsByCallId: new Map([
+        ["bash-2", {
+          role: "toolResult" as const,
+          toolCallId: "bash-2",
+          toolName: "bash",
+          content: [{ type: "text" as const, text: longOutput }],
+          isError: true,
+          timestamp: 2,
+        }],
+      ]),
+    }));
+    expect(errorMarkup).toContain("tool-call-body");
+    expect(errorMarkup).toContain("line-19");
+    expect(errorMarkup).toContain("tool-call-status-error");
+  });
 });
