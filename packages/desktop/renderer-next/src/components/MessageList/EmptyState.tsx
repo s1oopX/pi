@@ -24,8 +24,8 @@ const ACTION_CARDS: ActionCard[] = [
     id: "explore-codebase",
     title: { english: "Explore the codebase", simplifiedChinese: "探索代码库" },
     description: {
-      english: "Understand the structure and how things fit together",
-      simplifiedChinese: "了解项目结构及各部分之间的关系",
+      english: "Map structure and module relationships",
+      simplifiedChinese: "梳理结构和模块关系",
     },
     prompt: {
       english: "Explore this codebase and give me an overview of its structure, main modules, and how they fit together.",
@@ -42,8 +42,8 @@ const ACTION_CARDS: ActionCard[] = [
     id: "build-feature",
     title: { english: "Build a new feature", simplifiedChinese: "开发新功能" },
     description: {
-      english: "Add functionality or a new tool to the project",
-      simplifiedChinese: "为项目添加功能或新工具",
+      english: "Add functionality or extend tools",
+      simplifiedChinese: "添加功能或扩展工具",
     },
     prompt: {
       english: "I want to build a new feature. Help me plan and implement it. Here is what I have in mind: ",
@@ -59,8 +59,8 @@ const ACTION_CARDS: ActionCard[] = [
     id: "review-changes",
     title: { english: "Review changes", simplifiedChinese: "审查更改" },
     description: {
-      english: "Get feedback and suggested improvements",
-      simplifiedChinese: "获取反馈与改进建议",
+      english: "Get feedback and improvements",
+      simplifiedChinese: "获取反馈和修改建议",
     },
     prompt: {
       english: "Review the recent changes in this repository and suggest improvements.",
@@ -76,7 +76,7 @@ const ACTION_CARDS: ActionCard[] = [
     id: "fix-problem",
     title: { english: "Fix a problem", simplifiedChinese: "修复问题" },
     description: {
-      english: "Diagnose an error or failing behavior",
+      english: "Diagnose errors or unexpected behavior",
       simplifiedChinese: "诊断错误或异常行为",
     },
     prompt: {

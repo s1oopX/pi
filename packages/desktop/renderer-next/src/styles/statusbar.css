@@ -80,7 +80,7 @@
 .status-summary-trigger:hover,
 .status-summary-trigger[aria-expanded="true"] {
   color: var(--text-soft);
-  background: var(--surface-hover);
+  background: var(--control-hover);
 }
 
 .status-summary-trigger.warn {
@@ -117,10 +117,10 @@
   overflow-y: auto;
   padding: 10px;
   border: 1px solid var(--border);
-  border-radius: var(--radius);
+  border-radius: var(--radius-3xl);
   background: var(--elevated);
   color: var(--text-soft);
-  box-shadow: var(--shadow-pop);
+  box-shadow: var(--shadow-dialog);
 }
 
 .status-popover:focus {

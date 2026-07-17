@@ -6,8 +6,8 @@
   margin: 5px 0 16px 39px;
   padding: 9px 10px 9px 12px;
   border: 1px solid var(--border);
-  border-radius: 10px;
-  background: var(--surface);
+  border-radius: var(--radius);
+  background: var(--control-bg);
   color: var(--text-soft);
 }
 
@@ -74,4 +74,3 @@
     margin-left: 0;
   }
 }
-

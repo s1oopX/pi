@@ -7,7 +7,7 @@
   overflow: hidden;
   padding: 0;
   border: 1px solid var(--border);
-  border-radius: var(--radius-lg);
+  border-radius: var(--radius-3xl);
   background: var(--elevated);
   color: var(--text);
   box-shadow: var(--shadow-dialog);
@@ -16,7 +16,6 @@
 
 .app-dialog::backdrop {
   background: var(--scrim);
-  backdrop-filter: blur(2px);
   animation: dialog-backdrop-in 140ms ease-out;
 }
 
@@ -29,11 +28,11 @@
 
 .dialog-header {
   display: flex;
-  min-height: 56px;
+  min-height: 52px;
   align-items: center;
   justify-content: space-between;
   gap: 16px;
-  padding: 16px 18px 14px 20px;
+  padding: 14px 16px 12px 18px;
   border-bottom: 1px solid var(--border);
 }
 
@@ -67,7 +66,7 @@
   min-height: 0;
   overflow-y: auto;
   overscroll-behavior: contain;
-  padding: 18px 20px 20px;
+  padding: 16px 18px 18px;
   font-size: calc(13px * var(--font-scale));
   line-height: 1.55;
   color: var(--text-soft);
@@ -80,7 +79,7 @@
   gap: 8px;
   padding: 13px 18px;
   border-top: 1px solid var(--border);
-  background: var(--surface);
+  background: var(--main-bg);
 }
 
 .dialog-btn {

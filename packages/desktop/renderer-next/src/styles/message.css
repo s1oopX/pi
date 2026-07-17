@@ -264,9 +264,9 @@
 .code-block {
   overflow: hidden;
   margin: 12px 0;
-  border: 0;
-  border-radius: var(--radius-lg);
-  background: var(--control-bg);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--main-bg);
   box-shadow: none;
   color: var(--text);
 }
@@ -277,8 +277,8 @@
   justify-content: space-between;
   min-height: 28px;
   padding: 4px 8px;
-  border-bottom: 0;
-  background: transparent;
+  border-bottom: 1px solid var(--border);
+  background: var(--control-bg);
 }
 
 .code-block-lang {
@@ -395,8 +395,8 @@
 
 .thinking-body {
   margin-left: 20px;
-  padding: 4px 0;
-  border-top: 0;
+  padding: 4px 0 4px 10px;
+  border-left: 1px solid var(--border);
   background: transparent;
   color: var(--muted);
   font-size: calc(13px * var(--font-scale));
@@ -536,6 +536,8 @@
 
 .tool-call-body {
   margin-left: 20px;
+  padding-left: 10px;
+  border-left: 1px solid var(--border);
   background: transparent;
 }
 
@@ -702,8 +704,8 @@
 
 .file-changes-list {
   margin: 2px 0 0 20px;
-  padding: 4px 0;
-  border-top: 0;
+  padding: 4px 0 4px 10px;
+  border-left: 1px solid var(--border);
   background: transparent;
   list-style: none;
 }

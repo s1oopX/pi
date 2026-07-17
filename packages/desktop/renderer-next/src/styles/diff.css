@@ -15,7 +15,7 @@
   gap: var(--space-4);
   padding: 5px 10px 5px 12px;
   border-bottom: 1px solid var(--border);
-  background: var(--surface);
+  background: var(--control-bg);
 }
 
 .diff-file-count {
@@ -99,7 +99,7 @@
   min-height: var(--control-height);
   padding: 5px 12px;
   border-color: var(--border);
-  background: var(--surface);
+  background: var(--control-bg);
   color: var(--text);
 }
 
@@ -148,7 +148,7 @@
 .diff-content .d2h-code-linenumber,
 .diff-content .d2h-code-side-linenumber {
   border-color: var(--border);
-  background: var(--app-bg);
+  background: var(--control-bg);
   color: var(--faint);
   font-family: var(--font-mono);
 }

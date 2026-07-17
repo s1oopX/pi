@@ -57,7 +57,7 @@
   padding: 4px;
   border: 1px solid var(--border);
   border-radius: var(--radius);
-  background: var(--main-bg);
+  background: var(--control-bg);
   list-style: none;
 }
 
@@ -73,7 +73,7 @@
 }
 
 .branch-tree-row:hover {
-  background: var(--surface);
+  background: var(--control-hover);
 }
 
 .branch-tree-row.current {
@@ -83,7 +83,7 @@
 .branch-tree-guide {
   align-self: stretch;
   border-radius: 999px;
-  background: var(--border-strong);
+  background: var(--border);
 }
 
 .branch-tree-row.current .branch-tree-guide {

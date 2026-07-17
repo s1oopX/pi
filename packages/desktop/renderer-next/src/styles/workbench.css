@@ -1,4 +1,5 @@
 .main-workspace {
+  position: relative;
   min-height: 0;
   flex: 1;
   display: grid;
@@ -23,7 +24,7 @@
   min-height: 0;
   display: flex;
   flex-direction: column;
-  border-left: 0.5px solid var(--border-strong);
+  border-left: 1px solid var(--border);
   background: var(--main-bg);
 }
 
@@ -35,7 +36,7 @@
   align-items: center;
   gap: var(--space-3);
   padding: 0 var(--space-5);
-  border-bottom: 0.5px solid var(--border-strong);
+  border-bottom: 1px solid var(--border);
 }
 
 .workbench-header h2 {
@@ -59,7 +60,7 @@
   flex: 1;
   display: flex;
   flex-direction: column;
-  padding: var(--space-8) clamp(24px, 5vw, 52px);
+  padding: var(--space-7) clamp(20px, 4vw, 44px);
   overflow: hidden;
 }
 
@@ -160,7 +161,7 @@
   border: 1px solid var(--border);
   border-radius: var(--radius-sm);
   outline: 0;
-  background: var(--elevated);
+  background: var(--control-bg);
   color: var(--text);
   font: inherit;
   font-size: var(--font-size-ui);
@@ -204,12 +205,12 @@
 
 .workbench-primary.secondary {
   border: 1px solid var(--border);
-  background: var(--surface);
+  background: var(--control-bg);
   color: var(--text-soft);
 }
 
 .workbench-primary.secondary:hover:not(:disabled) {
-  background: var(--surface-hover);
+  background: var(--control-hover);
   color: var(--text);
 }
 
@@ -286,7 +287,7 @@
     inset: 46px 0 0;
     z-index: 80;
     border-left: 0;
-    box-shadow: var(--shadow-pop);
+    box-shadow: var(--shadow-dialog);
   }
 }
 

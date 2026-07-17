@@ -455,7 +455,7 @@ html[data-window-controls-overlay="true"] .window-chrome {
   bottom: 3px;
   width: 7px;
   height: 7px;
-  border: 2px solid var(--app-bg);
+  border: 2px solid var(--main-bg);
   border-radius: 50%;
   background: var(--faint);
 }

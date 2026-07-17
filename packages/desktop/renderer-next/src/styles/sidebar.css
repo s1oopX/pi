@@ -387,9 +387,9 @@
   padding: 6px;
   overflow: hidden;
   border: 1px solid var(--border);
-  border-radius: var(--radius-lg);
+  border-radius: var(--radius-3xl);
   background: var(--elevated);
-  box-shadow: var(--shadow-pop);
+  box-shadow: var(--shadow-dialog);
 }
 
 .workspace-menu-current {
@@ -683,7 +683,7 @@
 .project-tree-toggle:hover,
 .project-tree-new:hover:not(:disabled) {
   color: var(--text);
-  background: var(--surface-hover);
+  background: var(--control-hover);
 }
 
 .project-tree-toggle svg,
