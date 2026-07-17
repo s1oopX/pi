@@ -4,17 +4,24 @@ import { existsSync, mkdirSync, readFileSync, readdirSync, statSync, writeFileSy
 import { readFile, writeFile } from "node:fs/promises";
 import { dirname, join, relative } from "node:path";
 import { fileURLToPath } from "node:url";
+import { createBackendMutationQueue } from "./backend-mutation-queue.js";
 import { sanitizeDiagnostics } from "./diagnostics.js";
+import { getGitWorkspaceStatus } from "./git-workspace-status.js";
+import { resolveKnownSessionFile } from "./session-files.js";
 import { checkDesktopUpdate } from "./update.js";
+import { loadStoredWorkspace, saveStoredWorkspace } from "./workspace-state.js";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const PRODUCT_NAME = "Pi Studio";
 const WINDOW_STATE_FILE = "window-state.json";
+const WORKSPACE_STATE_FILE = "workspace-state.json";
+const TASK_WORKSPACE_DIRECTORY = "tasks";
 
 let mainWindow;
 let windowCreationPromise;
 let backend;
 let backendBuffer = "";
+let backendBufferBytes = 0;
 let requestCounter = 0;
 const pendingRequests = new Map();
 let backendReady = false;
@@ -26,13 +33,60 @@ let backendStableTimer;
 let backendRestartAttempts = 0;
 let backendRetryAt = 0;
 let isQuitting = false;
+let workspaceStateInitialized = false;
+const sessionMutationQueue = createBackendMutationQueue();
 
-const MAX_BACKEND_BUFFER_BYTES = 1024 * 1024;
+// RPC messages include inline base64 image content. Keep a bounded but large
+// enough frame buffer for multi-image prompts and get_messages responses.
+const MAX_BACKEND_BUFFER_BYTES = 128 * 1024 * 1024;
 const MAX_BACKEND_STDERR_BYTES = 64 * 1024;
 const MAX_BACKEND_RESTART_ATTEMPTS = 3;
 
 function getWindowStatePath() {
 	return join(app.getPath("userData"), WINDOW_STATE_FILE);
+}
+
+function getWorkspaceStatePath() {
+	return join(app.getPath("userData"), WORKSPACE_STATE_FILE);
+}
+
+function getTaskWorkspacePath() {
+	const taskWorkspacePath = join(app.getPath("userData"), TASK_WORKSPACE_DIRECTORY);
+	mkdirSync(taskWorkspacePath, { recursive: true });
+	return taskWorkspacePath;
+}
+
+function initializeBackendCwd() {
+	if (workspaceStateInitialized) return;
+	workspaceStateInitialized = true;
+	if (process.env.PI_DESKTOP_CWD) return;
+	backendCwd = loadStoredWorkspace(getWorkspaceStatePath()) ?? backendCwd;
+}
+
+function persistBackendCwd() {
+	try {
+		saveStoredWorkspace(getWorkspaceStatePath(), backendCwd);
+	} catch (error) {
+		sendToRenderer("backend:log", {
+			level: "warn",
+			message: `Could not save workspace state: ${error instanceof Error ? error.message : String(error)}`,
+		});
+	}
+}
+
+function syncBackendCwd(cwd) {
+	if (typeof cwd !== "string" || !cwd.trim() || backendCwd === cwd) return;
+	backendCwd = cwd;
+	persistBackendCwd();
+	sendToRenderer("backend:status", {
+		ready: backendReady,
+		starting: backendStarting,
+		restarting: Boolean(backendRestartTimer),
+		retryInMs: backendRetryAt ? Math.max(0, backendRetryAt - Date.now()) : 0,
+		restartAttempts: backendRestartAttempts,
+		backendPath: getBackendPath(),
+		cwd: backendCwd,
+	});
 }
 
 function loadWindowState() {
@@ -322,8 +376,10 @@ function maybeNotify(payload) {
 
 function handleBackendStdout(chunk) {
 	backendBuffer += chunk.toString("utf8");
-	if (Buffer.byteLength(backendBuffer, "utf8") > MAX_BACKEND_BUFFER_BYTES && !backendBuffer.includes("\n")) {
+	backendBufferBytes += chunk.length;
+	if (backendBufferBytes > MAX_BACKEND_BUFFER_BYTES && !backendBuffer.includes("\n")) {
 		backendBuffer = "";
+		backendBufferBytes = 0;
 		sendToRenderer("backend:log", { level: "error", message: "Discarded an oversized backend output line" });
 		return;
 	}
@@ -331,6 +387,7 @@ function handleBackendStdout(chunk) {
 	while (newlineIndex !== -1) {
 		const line = backendBuffer.slice(0, newlineIndex);
 		backendBuffer = backendBuffer.slice(newlineIndex + 1);
+		backendBufferBytes = Buffer.byteLength(backendBuffer, "utf8");
 		parseBackendLine(line);
 		newlineIndex = backendBuffer.indexOf("\n");
 	}
@@ -399,6 +456,7 @@ function startBackend() {
 	}
 
 	backendBuffer = "";
+	backendBufferBytes = 0;
 	backendRetryAt = 0;
 	const child = spawn(backendPath, [], {
 		cwd: backendCwd,
@@ -410,13 +468,18 @@ function startBackend() {
 		windowsHide: true,
 	});
 	backend = child;
+	sessionMutationQueue.invalidate();
 	backendReady = false;
 	backendStarting = true;
 	backendStderr = "";
 	sendToRenderer("backend:status", { ready: false, starting: true, backendPath, cwd: backendCwd });
 
-	child.stdout.on("data", handleBackendStdout);
+	child.stdout.on("data", (chunk) => {
+		if (backend !== child) return;
+		handleBackendStdout(chunk);
+	});
 	child.stderr.on("data", (chunk) => {
+		if (backend !== child) return;
 		const message = chunk.toString("utf8").slice(-16 * 1024);
 		backendStderr = `${backendStderr}${message}`.slice(-MAX_BACKEND_STDERR_BYTES);
 		sendToRenderer("backend:log", { level: "error", message });
@@ -425,6 +488,7 @@ function startBackend() {
 		if (backend !== child) {
 			return;
 		}
+		sessionMutationQueue.invalidate();
 		backendReady = false;
 		backendStarting = false;
 		backend = undefined;
@@ -436,6 +500,7 @@ function startBackend() {
 		if (backend !== child) {
 			return;
 		}
+		sessionMutationQueue.invalidate();
 		backend = undefined;
 		backendReady = false;
 		backendStarting = false;
@@ -466,6 +531,7 @@ function startBackend() {
 function stopBackend() {
 	clearBackendRestartTimers();
 	backendRestartAttempts = 0;
+	sessionMutationQueue.invalidate();
 	if (!backend) {
 		return;
 	}
@@ -534,7 +600,16 @@ async function createWindow() {
 		title: PRODUCT_NAME,
 		icon: getWindowIconPath(),
 		show: false,
-		titleBarStyle: process.platform === "darwin" ? "hidden" : "hiddenInset",
+		titleBarStyle: process.platform === "win32" || process.platform === "darwin" ? "hidden" : "hiddenInset",
+		...(process.platform === "win32"
+			? {
+					titleBarOverlay: {
+						color: "#00000000",
+						symbolColor: "#85857f",
+						height: 36,
+					},
+				}
+			: {}),
 		backgroundMaterial: "mica",
 		vibrancy: "sidebar",
 		backgroundColor: isDark ? "#1e1e1d" : "#f2f2f1",
@@ -582,6 +657,7 @@ async function createWindow() {
 }
 
 function ensureWindow() {
+	initializeBackendCwd();
 	if (mainWindow && !mainWindow.isDestroyed()) return Promise.resolve(mainWindow);
 	if (windowCreationPromise) return windowCreationPromise;
 	windowCreationPromise = createWindow().finally(() => {
@@ -602,18 +678,91 @@ function focusMainWindow() {
 // can spuriously time out on slow endpoints. Give them a longer budget.
 const LONG_REQUEST_COMMAND_TIMEOUT_MS = 60000;
 const LONG_REQUEST_COMMAND_TYPES = new Set(["test_model", "test_custom_model"]);
+const PROMPT_REQUEST_TIMEOUT_MS = 5 * 60 * 1000;
+const SESSION_MUTATION_COMMAND_TYPES = new Set([
+	"clone",
+	"fork",
+	"new_session",
+	"prompt",
+	"set_session_name",
+	"switch_session",
+]);
 
 function getRequestTimeoutMs(command) {
+	if (command?.type === "prompt") return PROMPT_REQUEST_TIMEOUT_MS;
 	return LONG_REQUEST_COMMAND_TYPES.has(command?.type) ? LONG_REQUEST_COMMAND_TIMEOUT_MS : undefined;
 }
 
-ipcMain.handle("backend:request", async (_event, command) => {
-	const timeoutMs = getRequestTimeoutMs(command);
-	const response = await requestBackend(command, timeoutMs === undefined ? {} : { timeoutMs });
-	if (!response.success) {
-		throw new Error(response.error || `Command failed: ${response.command}`);
+function serializeSessionMutation(operation) {
+	return sessionMutationQueue.serialize(operation);
+}
+
+async function getKnownSessionFile(sessionPath) {
+	const [firstPageResponse, stateResponse] = await Promise.all([
+		requestBackend({ type: "get_sessions", all: true, offset: 0, limit: 200 }),
+		requestBackend({ type: "get_state" }),
+	]);
+	if (!firstPageResponse.success) {
+		throw new Error(firstPageResponse.error || "Could not list sessions");
 	}
-	return response.data ?? null;
+	if (!stateResponse.success) {
+		throw new Error(stateResponse.error || "Could not read the active session");
+	}
+
+	const sessions = [...(firstPageResponse.data?.sessions ?? [])];
+	let page = firstPageResponse.data;
+	let previousOffset = 0;
+	while (page?.hasMore) {
+		if (
+			page.nextOffset === null ||
+			!Number.isSafeInteger(page.nextOffset) ||
+			page.nextOffset <= previousOffset
+		) {
+			throw new Error("Could not paginate sessions safely");
+		}
+		previousOffset = page.nextOffset;
+		const nextPageResponse = await requestBackend({
+			type: "get_sessions",
+			all: true,
+			offset: page.nextOffset,
+			limit: 200,
+		});
+		if (!nextPageResponse.success) {
+			throw new Error(nextPageResponse.error || "Could not list sessions");
+		}
+		const nextPage = nextPageResponse.data;
+		if (!nextPage || nextPage.sessions.length === 0) {
+			throw new Error("Could not paginate sessions safely");
+		}
+		sessions.push(...nextPage.sessions);
+		page = nextPage;
+	}
+	return resolveKnownSessionFile(
+		sessionPath,
+		sessions,
+		stateResponse.data?.sessionFile,
+	);
+}
+
+ipcMain.handle("backend:request", async (_event, command) => {
+	const execute = async () => {
+		const timeoutMs = getRequestTimeoutMs(command);
+		const response = await requestBackend(command, timeoutMs === undefined ? {} : { timeoutMs });
+		if (!response.success) {
+			throw new Error(response.error || `Command failed: ${response.command}`);
+		}
+		const data = response.data ?? null;
+		if (
+			(command?.type === "new_session" || command?.type === "switch_session") &&
+			data &&
+			typeof data === "object" &&
+			typeof data.cwd === "string"
+		) {
+			syncBackendCwd(data.cwd);
+		}
+		return data;
+	};
+	return SESSION_MUTATION_COMMAND_TYPES.has(command?.type) ? serializeSessionMutation(execute) : execute();
 });
 
 ipcMain.handle("backend:send", async (_event, command) => {
@@ -632,6 +781,23 @@ ipcMain.handle("backend:get-status", () => ({
 
 ipcMain.handle("backend:open-external", async (_event, url) => {
 	await openExternalSafely(url);
+});
+
+ipcMain.handle("session:reveal", async (_event, sessionPath) => {
+	const session = await getKnownSessionFile(sessionPath);
+	shell.showItemInFolder(session.path);
+	return { revealed: true };
+});
+
+ipcMain.handle("session:trash", async (_event, sessionPath) => {
+	return serializeSessionMutation(async () => {
+		const session = await getKnownSessionFile(sessionPath);
+		if (session.isActive) {
+			throw new Error("Switch away from the active session before deleting it");
+		}
+		await shell.trashItem(session.path);
+		return { trashed: true };
+	});
 });
 
 ipcMain.handle("provider:fetch-models", async (_event, params) => {
@@ -746,16 +912,34 @@ ipcMain.handle("workspace:open", async (_event, cwd) => {
 		throw new Error(`Workspace not found: ${nextCwd}`);
 	}
 	backendCwd = nextCwd;
+	persistBackendCwd();
 	stopBackend();
 	startBackend();
 	return { cwd: backendCwd, changed: true };
 });
 
-ipcMain.handle("workspace:get", async () => ({ cwd: backendCwd }));
+ipcMain.handle("workspace:get", async () => ({ cwd: backendCwd, taskCwd: getTaskWorkspacePath() }));
+
+ipcMain.handle("workspace:get-git-status", async () => {
+	const cwd = backendCwd;
+	return { cwd, ...(await getGitWorkspaceStatus(cwd)) };
+});
 
 ipcMain.handle("workspace:list-files", async (_event, query) => ({
 	files: listWorkspaceFiles(backendCwd, String(query ?? "")),
 }));
+
+ipcMain.handle("workspace:reveal", async (_event, cwd) => {
+	const targetCwd = typeof cwd === "string" && cwd.length > 0 ? cwd : backendCwd;
+	if (!targetCwd || !existsSync(targetCwd) || !statSync(targetCwd).isDirectory()) {
+		throw new Error(`Workspace not found: ${targetCwd}`);
+	}
+	const error = await shell.openPath(targetCwd);
+	if (error) {
+		throw new Error(error);
+	}
+	return { opened: true };
+});
 
 const hasSingleInstanceLock = app.requestSingleInstanceLock();
 if (!hasSingleInstanceLock) {

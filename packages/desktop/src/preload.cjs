@@ -22,8 +22,20 @@ contextBridge.exposeInMainWorld("piDesktop", {
 	getWorkspace() {
 		return ipcRenderer.invoke("workspace:get");
 	},
+	getWorkspaceGitStatus() {
+		return ipcRenderer.invoke("workspace:get-git-status");
+	},
 	listWorkspaceFiles(query) {
 		return ipcRenderer.invoke("workspace:list-files", query);
+	},
+	openWorkspaceLocation(cwd) {
+		return ipcRenderer.invoke("workspace:reveal", cwd);
+	},
+	revealSessionFile(sessionPath) {
+		return ipcRenderer.invoke("session:reveal", sessionPath);
+	},
+	trashSessionFile(sessionPath) {
+		return ipcRenderer.invoke("session:trash", sessionPath);
 	},
 	openExternal(url) {
 		return ipcRenderer.invoke("backend:open-external", url);
