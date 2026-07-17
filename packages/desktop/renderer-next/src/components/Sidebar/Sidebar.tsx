@@ -901,6 +901,22 @@ export function Sidebar({ collapsed, onToggle }: SidebarProps) {
                   <span className="agent-list-count" aria-label={t("{count} tasks", "{count} 个任务", { count: taskSessions.length })}>
                     {taskSessions.length}
                   </span>
+                  <button
+                    className="workspace-navigation-add"
+                    type="button"
+                    aria-label={t("New task", "新建任务")}
+                    title={isStreaming
+                      ? t("Finish or stop the current run before creating a new task", "请先完成或停止当前运行，再新建任务")
+                      : !backendStatus.ready
+                        ? t("The agent backend is not ready", "智能体后端尚未就绪")
+                        : t("New task", "新建任务")}
+                    disabled={!backendStatus.ready || switchingWorkspace || isStreaming}
+                    onClick={handleNewTask}
+                  >
+                    <svg viewBox="0 0 18 18" aria-hidden="true">
+                      <path d="M9 3v12M3 9h12" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
+                    </svg>
+                  </button>
                 </div>
                 <div className="task-tree-list" role="list">
                   {taskSessions.map((candidate) => renderSessionRow(candidate, false))}
