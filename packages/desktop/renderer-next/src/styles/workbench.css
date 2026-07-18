@@ -8,7 +8,7 @@
 }
 
 .main-workspace.with-workbench {
-  grid-template-columns: minmax(360px, 1fr) minmax(360px, min(42vw, 620px));
+  grid-template-columns: minmax(360px, 1fr) var(--workbench-width, minmax(360px, min(42vw, 620px)));
 }
 
 .conversation-pane {
@@ -66,7 +66,7 @@
 
 .workbench-launcher {
   width: min(100%, 560px);
-  margin: auto;
+  margin: 0 auto auto;
   display: flex;
   flex-direction: column;
   gap: var(--space-5);
@@ -129,13 +129,6 @@
 
 .workbench-scroll .branch-tree {
   max-height: none;
-}
-
-.workbench-capability-note {
-  margin: 0;
-  color: var(--muted);
-  font-size: calc(11px * var(--font-scale));
-  line-height: 1.4;
 }
 
 .workbench-terminal {
@@ -227,7 +220,7 @@
 
 .workbench-form {
   width: min(100%, 520px);
-  margin: auto;
+  margin: 0 auto auto;
   display: flex;
   flex-direction: column;
   gap: var(--space-6);
@@ -291,10 +284,14 @@
 
   .workbench-panel {
     position: absolute;
-    inset: 46px 0 0;
+    inset: 0;
     z-index: 80;
     border-left: 0;
     box-shadow: var(--shadow-dialog);
+  }
+
+  .panel-resize-handle.workbench-resize {
+    display: none;
   }
 }
 

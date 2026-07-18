@@ -15,6 +15,7 @@ import { useStore } from "../../store";
 import * as api from "../../ipc/api";
 import { PermissionSelector } from "../PermissionSelector";
 import { ModelSelector } from "../ModelSelector";
+import { ContextMeter } from "../ContextMeter";
 import { ExtensionWidgets } from "../ExtensionWidgets";
 import { InlineApproval, isInteractiveExtensionUIRequest } from "../Message/InlineApproval";
 import { showToast } from "../Toast";
@@ -79,6 +80,7 @@ export function Composer() {
   const [fileMatches, setFileMatches] = useState<string[]>([]);
   const isStreaming = useStore((s) => s.isStreaming);
   const backendStatus = useStore((s) => s.backendStatus);
+  const workspaceLoading = useStore((s) => s.workspaceLoading);
   const commands = useStore((s) => s.commands);
   const extensionWidgets = useStore((s) => s.extensionWidgets);
   const extensionUIRequests = useStore((s) => s.extensionUIRequests);
@@ -531,8 +533,11 @@ export function Composer() {
             <PermissionSelector />
           </div>
           <div className="composer-footer-end">
-            <ModelSelector />
-                        <div className="composer-actions">
+            {!workspaceLoading && <ContextMeter />}
+            <div className={`composer-model-slot ${workspaceLoading ? "loading" : ""}`} inert={workspaceLoading}>
+              <ModelSelector />
+            </div>
+            <div className="composer-actions">
               {isStreaming && (
                 <>
                   <label className="composer-streaming-mode">

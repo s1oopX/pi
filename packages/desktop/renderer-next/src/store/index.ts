@@ -98,6 +98,11 @@ export interface AppState {
   workspaceFiles: string[];
   workspaceGitStatus: WorkspaceGitStatus | null;
   workspaceGitStatusLoading: boolean;
+  // True from the moment a workspace switch/reset begins until the first full
+  // refresh of the new workspace lands. Set synchronously so the UI never
+  // flashes the empty-state home cards in the gap before the backend status
+  // event reports the restart.
+  workspaceLoading: boolean;
 
   // UI state
   isStreaming: boolean;
@@ -283,6 +288,7 @@ export const useStore = create<AppState>((set, get) => ({
   workspaceFiles: [],
   workspaceGitStatus: null,
   workspaceGitStatusLoading: false,
+  workspaceLoading: false,
 
   isStreaming: false,
   activeTool: null,
@@ -312,6 +318,10 @@ export const useStore = create<AppState>((set, get) => ({
     } else {
       nextExtensionWidgetOrder = 0;
       if (typeof document !== "undefined") document.title = get().appInfo?.name ?? "Pi Studio";
+      // Release the silent-loading hold once the backend settles into a terminal
+      // offline state (not starting/restarting/retrying) so the empty state can
+      // surface its retry affordance instead of spinning forever.
+      const settledOffline = !status.starting && !status.restarting && status.retryInMs <= 0;
       set({
         backendStatus: status,
         retryActivity: null,
@@ -320,6 +330,7 @@ export const useStore = create<AppState>((set, get) => ({
         extensionStatuses: {},
         extensionWidgets: [],
         extensionTitle: null,
+        ...(settledOffline ? { workspaceLoading: false } : {}),
       });
     }
     // The backend flag resets to its default whenever the backend (re)starts,
@@ -484,6 +495,7 @@ export const useStore = create<AppState>((set, get) => ({
     if (typeof document !== "undefined") document.title = get().appInfo?.name ?? "Pi Studio";
     set({
       workspaceCwd: cwd,
+      workspaceLoading: true,
       workspaceFiles: [],
       workspaceGitStatus: null,
       workspaceGitStatusLoading: false,
@@ -577,11 +589,14 @@ async function refreshState(): Promise<void> {
     activeTool: null,
     messageRefreshGeneration: state.messageRefreshGeneration + 1,
   }));
-  const apiRef = api.getApi();
-  if (!apiRef) return;
-
   const generation = useStore.getState().messageRefreshGeneration;
   const workspaceCwd = useStore.getState().workspaceCwd;
+  const apiRef = api.getApi();
+  if (!apiRef) {
+    releaseWorkspaceLoadingAfterFailedRefresh(workspaceCwd, generation);
+    return;
+  }
+
   void loadSessionPage(useStore.getState().sessionsQuery, 0, false);
 
   try {
@@ -610,9 +625,11 @@ async function refreshState(): Promise<void> {
       },
     );
 
+    const workspaceMatches = normalizeWorkspaceKey(current.workspaceCwd) === normalizeWorkspaceKey(workspaceCwd);
+
     if (!decision.apply) {
       // Still refresh non-message catalog state when the workspace matches.
-      if (normalizeWorkspaceKey(current.workspaceCwd) === normalizeWorkspaceKey(workspaceCwd)) {
+      if (workspaceMatches) {
         useStore.setState({
           session,
           models,
@@ -621,6 +638,7 @@ async function refreshState(): Promise<void> {
           commands,
           authStatuses,
           isStreaming: Boolean(session?.isStreaming),
+          workspaceLoading: false,
         });
       }
       void refreshWorkspaceGitStatus();
@@ -636,11 +654,21 @@ async function refreshState(): Promise<void> {
       commands,
       authStatuses,
       isStreaming: Boolean(session?.isStreaming),
+      workspaceLoading: false,
     });
     void refreshWorkspaceGitStatus();
   } catch {
     // Backend may have disconnected; status events will handle reconnect
+    releaseWorkspaceLoadingAfterFailedRefresh(workspaceCwd, generation);
   }
+}
+
+function releaseWorkspaceLoadingAfterFailedRefresh(workspaceCwd: string, generation: number): void {
+  const state = useStore.getState();
+  if (!state.workspaceLoading || !state.backendStatus.ready) return;
+  if (state.messageRefreshGeneration !== generation) return;
+  if (normalizeWorkspaceKey(state.workspaceCwd) !== normalizeWorkspaceKey(workspaceCwd)) return;
+  useStore.setState({ workspaceLoading: false });
 }
 
 function normalizeWorkspaceKey(cwd: string): string {

@@ -59,6 +59,7 @@ export function CommandPalette({ entries, keybindings, platform, onClose, onRun 
   useEffect(() => {
     const previouslyFocused = document.activeElement instanceof HTMLElement ? document.activeElement : null;
     const inertTargets = [
+      document.querySelector<HTMLElement>(".window-chrome"),
       document.querySelector<HTMLElement>(".app-shell"),
       document.querySelector<HTMLElement>(".settings-overlay"),
     ].filter((element): element is HTMLElement => element !== null);

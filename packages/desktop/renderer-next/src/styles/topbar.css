@@ -124,9 +124,10 @@
 }
 
 .top-bar-open-location-main {
-  max-width: 152px;
-  gap: 7px;
-  padding: 0 9px;
+  width: var(--control-height);
+  max-width: var(--control-height);
+  justify-content: center;
+  padding: 0;
   border-radius: var(--radius-sm) 0 0 var(--radius-sm);
 }
 
@@ -163,9 +164,7 @@
 }
 
 .top-bar-open-location-label {
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
+  display: none;
 }
 
 .top-bar-open-location-chevron {

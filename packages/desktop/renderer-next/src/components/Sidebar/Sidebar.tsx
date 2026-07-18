@@ -1251,11 +1251,6 @@ export function Sidebar({ collapsed, onToggle }: SidebarProps) {
               <span>{t("Clear other workspaces", "清除其他工作区")}</span>
             </button>
           )}
-          <p className={`workspace-menu-note ${isStreaming ? "warning" : ""}`}>
-            {isStreaming
-              ? t("Finish or stop the current run before switching workspaces.", "请先完成或停止当前运行，再切换工作区。")
-              : t("Switching workspaces opens that project's context.", "切换工作区会打开该项目的上下文。")}
-          </p>
         </div>,
         document.body,
       )}

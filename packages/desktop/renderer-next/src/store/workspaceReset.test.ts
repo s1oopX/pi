@@ -83,7 +83,38 @@ describe("workspace reset", () => {
       toolExecutionsByCallId: {},
       retryActivity: null,
       compactionActivity: null,
+      workspaceLoading: true,
     });
+  });
+
+  it("holds workspaceLoading until a terminal offline status arrives", () => {
+    useStore.getState().resetForWorkspace("D:\\next");
+    expect(useStore.getState().workspaceLoading).toBe(true);
+
+    // Still starting: keep the loading surface up.
+    useStore.getState().updateBackendStatus({
+      ready: false,
+      starting: true,
+      restarting: false,
+      retryInMs: 0,
+      restartAttempts: 0,
+      backendPath: "",
+      cwd: "",
+    });
+    expect(useStore.getState().workspaceLoading).toBe(true);
+
+    // Terminal offline (no starting/restarting/retry): release the surface so
+    // the empty state can offer a retry action.
+    useStore.getState().updateBackendStatus({
+      ready: false,
+      starting: false,
+      restarting: false,
+      retryInMs: 0,
+      restartAttempts: 3,
+      backendPath: "",
+      cwd: "",
+    });
+    expect(useStore.getState().workspaceLoading).toBe(false);
   });
 
   it("clears Git loading when the latest response belongs to another workspace", async () => {
@@ -135,6 +166,60 @@ describe("workspace reset", () => {
     await vi.waitFor(() => {
       expect(getSessions).toHaveBeenCalledWith({ all: true, offset: 0, limit: 200, query: "" });
     });
+  });
+
+  it("keeps workspaceLoading when refresh cannot run while the backend is still starting", async () => {
+    vi.spyOn(api, "getApi").mockReturnValue(undefined);
+    useStore.setState({
+      workspaceCwd: "D:\\next",
+      workspaceLoading: true,
+      backendStatus: {
+        ready: false,
+        starting: true,
+        restarting: false,
+        retryInMs: 0,
+        restartAttempts: 0,
+        backendPath: "",
+        cwd: "D:\\next",
+      },
+    });
+
+    await useStore.getState().refreshAsync();
+
+    expect(useStore.getState().workspaceLoading).toBe(true);
+  });
+
+  it("releases workspaceLoading when a ready backend refresh fails for the current workspace", async () => {
+    vi.spyOn(api, "getApi").mockReturnValue({} as ReturnType<typeof api.getApi>);
+    vi.spyOn(api, "getSessions").mockResolvedValue({
+      sessions: [],
+      total: 0,
+      hasMore: false,
+      nextOffset: null,
+    });
+    vi.spyOn(api, "getState").mockRejectedValue(new Error("refresh failed"));
+    vi.spyOn(api, "getMessages").mockResolvedValue([]);
+    vi.spyOn(api, "getAvailableModels").mockResolvedValue([]);
+    vi.spyOn(api, "getCustomModels").mockResolvedValue(null);
+    vi.spyOn(api, "getSessionStats").mockResolvedValue(undefined);
+    vi.spyOn(api, "getCommands").mockResolvedValue([]);
+    useStore.setState({
+      workspaceCwd: "D:\\next",
+      workspaceLoading: true,
+      backendStatus: {
+        ready: true,
+        starting: false,
+        restarting: false,
+        retryInMs: 0,
+        restartAttempts: 0,
+        backendPath: "C:\\pi-backend.exe",
+        cwd: "D:\\next",
+      },
+    });
+
+    await useStore.getState().refreshAsync();
+
+    expect(useStore.getState().workspaceLoading).toBe(false);
   });
 
   it("waits for the workspace before the first ready-state session refresh", async () => {

@@ -1117,11 +1117,6 @@
   color: var(--text);
 }
 
-.status-elapsed {
-  opacity: 0.8;
-  font-variant-numeric: tabular-nums;
-}
-
 @media (hover: none) {
   .message-copy-btn {
     opacity: 0.72;

@@ -47,6 +47,10 @@
   transform: translateX(-50%);
 }
 
+.message-list-container.has-sticky-status .message-list-jump-latest {
+  bottom: calc(32px + 14px);
+}
+
 .message-list-jump-latest:hover {
   background: var(--surface-hover);
   color: var(--text);
@@ -175,6 +179,48 @@
   35% {
     opacity: 0.8;
     transform: scale(1);
+  }
+}
+
+/* Workspace-switch loading: a quiet centered spinner that holds the surface
+   stable while the backend restarts, instead of flashing the action cards. */
+
+.message-list-loading {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 32px;
+  animation: message-list-loading-fade var(--duration-dialog) var(--ease-standard);
+}
+
+@keyframes message-list-loading-fade {
+  from {
+    opacity: 0;
+  }
+
+  to {
+    opacity: 1;
+  }
+}
+
+.message-list-loading-spinner {
+  width: 22px;
+  height: 22px;
+  border: 2px solid var(--border-strong);
+  border-top-color: var(--muted);
+  border-radius: 50%;
+  animation: message-list-spin 0.7s linear infinite;
+}
+
+@keyframes message-list-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .message-list-loading-spinner {
+    animation-duration: 1.4s;
   }
 }
 

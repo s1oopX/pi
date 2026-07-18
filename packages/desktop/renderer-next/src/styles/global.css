@@ -40,9 +40,10 @@
   --control-height: 32px;
   --control-height-comfortable: 36px;
 
-  --app-bg: light-dark(#f9f9f9, #000000);
-  --main-bg: light-dark(#ffffff, #181818);
-  --surface: light-dark(#f3f3f3, #212121);
+  --app-bg: light-dark(#f4f4f2, #0f0f0f);
+  --main-bg: light-dark(#ffffff, #1c1c1c);
+  --sidebar-bg: light-dark(#f7f7f5, #161616);
+  --surface: light-dark(#f3f3f3, #262626);
   --surface-hover: light-dark(rgb(26 28 31 / 5%), rgb(255 255 255 / 8%));
   --elevated: light-dark(#ffffff, #282828);
   --text: light-dark(#1a1c1f, #ffffff);
@@ -208,7 +209,7 @@ button:disabled {
   align-items: center;
   gap: var(--space-4);
   padding: 0 10px;
-  background: var(--app-bg);
+  background: var(--sidebar-bg);
   -webkit-app-region: drag;
 }
 
@@ -224,8 +225,7 @@ html[data-window-controls-overlay="true"] .window-chrome {
   -webkit-app-region: no-drag;
 }
 
-.window-chrome-sidebar-toggle,
-.window-chrome-nav {
+.window-chrome-sidebar-toggle {
   width: 28px;
   height: 28px;
 }
@@ -261,6 +261,7 @@ html[data-window-controls-overlay="true"] .window-chrome {
 }
 
 .app-shell {
+  position: relative;
   display: grid;
   grid-template-columns: var(--sidebar-width) minmax(0, 1fr);
   min-height: 0;
@@ -269,8 +270,79 @@ html[data-window-controls-overlay="true"] .window-chrome {
   transition: grid-template-columns var(--duration-popover) var(--ease-standard);
 }
 
+/* Suppress the width transition mid-drag so the panel tracks the pointer 1:1. */
+.app-shell.resizing {
+  transition: none;
+}
+
 .app-shell.sidebar-collapsed {
   grid-template-columns: var(--sidebar-collapsed-width) minmax(0, 1fr);
+}
+
+/* Panel resize handles: a thin invisible grabber straddling a panel edge that
+   widens on hover and flashes an accent line while dragging. Dragging past the
+   collapse threshold turns the accent to a danger tone as a "release to close"
+   cue. */
+
+.panel-resize-handle {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  z-index: 40;
+  width: 10px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  cursor: col-resize;
+  touch-action: none;
+  -webkit-app-region: no-drag;
+}
+
+.panel-resize-handle::before {
+  content: "";
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 50%;
+  width: 2px;
+  background: transparent;
+  transform: translateX(-50%);
+  transition: background-color var(--transition);
+}
+
+.panel-resize-handle:hover::before {
+  background: var(--border-strong);
+}
+
+.panel-resize-handle:focus-visible {
+  outline: none;
+}
+
+.panel-resize-handle:focus-visible::before {
+  background: var(--focus-ring);
+  box-shadow: var(--focus-shadow);
+}
+
+.panel-resize-handle.will-collapse::before,
+.app-shell.resizing .panel-resize-handle.will-collapse::before,
+.main-workspace.resizing .panel-resize-handle.will-collapse::before {
+  background: var(--danger);
+}
+
+.app-shell.resizing .sidebar-resize::before,
+.main-workspace.resizing .workbench-resize::before {
+  background: var(--accent);
+}
+
+/* Sidebar handle rides the seam between sidebar and main panel. */
+.panel-resize-handle.sidebar-resize {
+  left: calc(var(--sidebar-width) - 5px);
+}
+
+/* Workbench handle rides the workbench's left border (its right column). When
+   no explicit width is set it falls back to the CSS grid's default track. */
+.panel-resize-handle.workbench-resize {
+  right: calc(var(--workbench-width, min(42vw, 620px)) - 5px);
 }
 
 .main-panel {
@@ -292,7 +364,7 @@ html[data-window-controls-overlay="true"] .window-chrome {
   gap: var(--space-3);
   padding: 0 10px 10px;
   border-right: 0.5px solid var(--border-strong);
-  background: var(--main-bg);
+  background: var(--sidebar-bg);
   overflow: hidden;
 }
 
@@ -455,7 +527,7 @@ html[data-window-controls-overlay="true"] .window-chrome {
   bottom: 3px;
   width: 7px;
   height: 7px;
-  border: 2px solid var(--main-bg);
+  border: 2px solid var(--sidebar-bg);
   border-radius: 50%;
   background: var(--faint);
 }
@@ -476,43 +548,12 @@ html[data-window-controls-overlay="true"] .window-chrome {
   padding-top: var(--space-3);
 }
 
-.agent-list-header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  padding: var(--space-2) 8px;
-  color: var(--muted);
-  font-size: var(--font-size-meta);
-  font-weight: 600;
-  line-height: var(--line-height-meta);
-  letter-spacing: 0;
-}
-
 .agent-list {
   min-height: 0;
   flex: 1;
   display: flex;
   flex-direction: column;
   overflow-y: auto;
-}
-
-.agent-group {
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-1);
-}
-
-.agent-group + .agent-group {
-  margin-top: var(--space-4);
-}
-
-.agent-group-label {
-  padding: var(--space-3) 8px var(--space-1);
-  color: var(--faint);
-  font-size: var(--font-size-badge);
-  font-weight: 600;
-  line-height: var(--line-height-badge);
-  letter-spacing: 0;
 }
 
 .agent-row {
@@ -709,7 +750,7 @@ html[data-window-controls-overlay="true"] .window-chrome {
   border: 1px solid var(--focus-ring);
   border-radius: var(--radius-sm);
   outline: none;
-  background: var(--main-bg);
+  background: var(--elevated);
   color: var(--text);
   font-size: var(--font-size-ui);
   box-shadow: var(--focus-shadow);
@@ -752,24 +793,6 @@ html[data-window-controls-overlay="true"] .window-chrome {
   flex: 0 0 auto;
 }
 
-.workspace-mini {
-  min-width: 0;
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: var(--space-4);
-}
-
-.workspace-cwd {
-  min-width: 0;
-  overflow: hidden;
-  color: var(--muted);
-  font-size: var(--font-size-compact);
-  line-height: var(--line-height-compact);
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
 .status-row {
   display: flex;
   align-items: center;
@@ -789,19 +812,6 @@ html[data-window-controls-overlay="true"] .window-chrome {
 
 .backend-dot.ready {
   background: var(--success);
-}
-
-.message-area {
-  flex: 1;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  padding: var(--space-8);
-}
-
-.placeholder-text {
-  color: var(--muted);
-  font-size: var(--font-size-section);
 }
 
 /* Scrollbars */
@@ -843,10 +853,6 @@ html[data-window-controls-overlay="true"] .window-chrome {
 
   .brand-tagline {
     display: none;
-  }
-
-  .message-area {
-    padding: var(--space-6);
   }
 }
 

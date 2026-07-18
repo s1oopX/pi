@@ -54,10 +54,10 @@
   width: min(100%, calc(var(--thread-width) + 22px));
   margin: 0 auto;
   padding: 6px;
-  border: 1px solid var(--border);
+  border: 1px solid var(--border-strong);
   border-radius: var(--radius-3xl);
   background: var(--elevated);
-  box-shadow: none;
+  box-shadow: var(--shadow-md);
   transition:
     border-color var(--transition),
     box-shadow var(--transition);
@@ -65,6 +65,7 @@
 
 .composer:focus-within {
   border-color: var(--border-strong);
+  box-shadow: var(--shadow-pop);
 }
 
 .composer.drag-active {
@@ -265,30 +266,6 @@
   gap: 6px;
 }
 
-.composer-mic-btn {
-  display: inline-flex;
-  width: 28px;
-  height: 28px;
-  flex: 0 0 28px;
-  align-items: center;
-  justify-content: center;
-  border-radius: 50%;
-  color: var(--text-soft);
-  transition:
-    background var(--transition-fast),
-    color var(--transition-fast);
-}
-
-.composer-mic-btn:hover {
-  background: var(--surface-hover);
-  color: var(--text);
-}
-
-.composer-mic-btn svg {
-  width: 17px;
-  height: 17px;
-}
-
 .composer-streaming-mode {
   position: relative;
   display: inline-flex;
@@ -332,6 +309,192 @@
   flex: 1;
   justify-content: flex-end;
   gap: 6px;
+}
+
+/* Model picker fades out while a workspace switch loads, keeping its layout
+   slot reserved so the send button never shifts. Revealed again once the new
+   workspace's models are ready. */
+.composer-model-slot {
+  display: inline-flex;
+  transition: opacity var(--transition);
+}
+
+.composer-model-slot.loading {
+  opacity: 0;
+  pointer-events: none;
+}
+
+/* Context meter: a quiet gauge in the composer footer beside the model picker.
+   Shows a progress ring of context-window usage, swaps to a spinner + label
+   while the agent runs, and reveals a usage card on hover / focus. */
+.context-meter {
+  position: relative;
+  display: inline-flex;
+  flex-shrink: 0;
+}
+
+.context-meter-trigger {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  min-height: 28px;
+  padding: 0 8px;
+  border-radius: 999px;
+  color: var(--muted);
+  font-size: calc(11px * var(--font-scale));
+  font-weight: 550;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+  transition:
+    background var(--transition-fast),
+    color var(--transition-fast);
+}
+
+.context-meter-trigger:hover,
+.context-meter-trigger[aria-expanded="true"] {
+  background: var(--control-hover);
+  color: var(--text-soft);
+}
+
+.context-meter-trigger.warn {
+  color: var(--warning);
+}
+
+.context-meter-trigger.critical {
+  color: var(--danger);
+}
+
+.context-meter-ring {
+  width: 14px;
+  height: 14px;
+  flex-shrink: 0;
+}
+
+.context-meter-ring-track {
+  stroke: var(--control-active);
+}
+
+.context-meter-ring-fill {
+  stroke: var(--text-soft);
+  transition: stroke-dashoffset 300ms var(--ease-standard), stroke var(--transition);
+}
+
+.context-meter-trigger.warn .context-meter-ring-fill {
+  stroke: var(--warning);
+}
+
+.context-meter-trigger.critical .context-meter-ring-fill {
+  stroke: var(--danger);
+}
+
+.context-meter-spinner {
+  width: 12px;
+  height: 12px;
+  flex-shrink: 0;
+  border: 1.5px solid var(--control-active);
+  border-top-color: var(--accent);
+  border-radius: 50%;
+  animation: context-meter-spin 0.7s linear infinite;
+}
+
+.context-meter-run-label {
+  max-width: 108px;
+  overflow: hidden;
+  color: var(--accent);
+  text-overflow: ellipsis;
+}
+
+.context-meter-elapsed {
+  color: var(--muted);
+  font-weight: 400;
+}
+
+@keyframes context-meter-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.context-meter-popover {
+  position: absolute;
+  right: 0;
+  bottom: calc(100% + 8px);
+  z-index: 60;
+  width: min(260px, calc(100cqw - 24px));
+  padding: 10px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-2xl);
+  background: var(--elevated);
+  color: var(--text-soft);
+  box-shadow: var(--shadow-dialog);
+}
+
+.context-meter-popover-title {
+  padding: 1px 2px 8px;
+  color: var(--text);
+  font-size: calc(12px * var(--font-scale));
+  font-weight: 600;
+}
+
+.context-meter-popover-section {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  padding-bottom: 5px;
+}
+
+.context-meter-popover-row {
+  min-height: 26px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-5);
+  padding: 4px 2px;
+  font-size: calc(12px * var(--font-scale));
+  line-height: var(--line-height-compact);
+}
+
+.context-meter-popover-row + .context-meter-popover-row {
+  border-top: 1px solid var(--border);
+}
+
+.context-meter-popover-row > :last-child {
+  color: var(--text);
+  text-align: right;
+}
+
+.context-usage-track {
+  width: 100%;
+  height: 4px;
+  overflow: hidden;
+  border-radius: var(--radius-pill);
+  background: var(--control-active);
+}
+
+.context-usage-fill {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: var(--text-soft);
+  transition: width 300ms var(--ease-standard), background-color var(--transition);
+}
+
+.context-usage-track.warn .context-usage-fill {
+  background: var(--warning);
+}
+
+.context-usage-track.critical .context-usage-fill {
+  background: var(--danger);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .context-meter-spinner {
+    animation-duration: 1.4s;
+  }
+
+  .context-meter-ring-fill {
+    transition: none;
+  }
 }
 
 .composer-send-btn {
@@ -787,6 +950,10 @@
   .model-picker-thinking {
     display: none;
   }
+
+  .context-meter-run-label {
+    max-width: 84px;
+  }
 }
 
 @container main-panel (max-width: 520px) {
@@ -816,6 +983,28 @@
     margin-left: auto;
   }
 
+  .context-meter-trigger {
+    padding-inline: 6px;
+  }
+
+  .context-meter-run-label {
+    max-width: 68px;
+  }
+
+  .context-meter-elapsed {
+    display: none;
+  }
+
+  .composer-abort-btn {
+    width: 30px;
+    justify-content: center;
+    padding: 0;
+  }
+
+  .composer-abort-btn span:not(.composer-abort-icon) {
+    display: none;
+  }
+
   .permission-trigger-label {
     display: none;
   }
@@ -834,6 +1023,28 @@
 @container main-panel (max-width: 420px) {
   .composer {
     border-radius: var(--radius);
+  }
+
+  .composer-footer-end {
+    flex-wrap: wrap;
+  }
+
+  .context-meter-value,
+  .context-meter-run-label {
+    display: none;
+  }
+
+  .model-picker-trigger {
+    max-width: 132px;
+    padding-inline: 7px;
+  }
+
+  .model-picker-name {
+    max-width: 58px;
+  }
+
+  .composer-streaming-mode select {
+    width: 110px;
   }
 
   .permission-popover {

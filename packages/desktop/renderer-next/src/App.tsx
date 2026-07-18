@@ -1,4 +1,6 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { type CSSProperties, useCallback, useEffect, useMemo, useState } from "react";
+import { usePanelResize } from "./hooks/usePanelResize";
+import { getSidebarBoundsForViewport, getWorkbenchBoundsForViewport } from "./lib/panelSizing";
 import { Layout } from "./components/Layout";
 import {
   CommandPalette,
@@ -22,11 +24,44 @@ import { useAppKeybindings } from "./keybindings/useAppKeybindings";
 import { useAppShortcuts } from "./keybindings/useAppShortcuts";
 import { useStore } from "./store";
 
+const DEFAULT_VIEWPORT_WIDTH = 1200;
+const SIDEBAR_COLLAPSED_WIDTH = 52;
+
 export function App() {
   const { t } = useI18n();
   const [commandPaletteOpen, setCommandPaletteOpen] = useState(false);
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [workbenchView, setWorkbenchView] = useState<WorkbenchView | "closed">("closed");
+  const [viewportWidth, setViewportWidth] = useState(() =>
+    typeof window === "undefined" ? DEFAULT_VIEWPORT_WIDTH : window.innerWidth
+  );
+
+  const collapseSidebar = useCallback(() => setSidebarCollapsed(true), []);
+  const closeWorkbench = useCallback(() => setWorkbenchView("closed"), []);
+  const sidebarBounds = useMemo(() => getSidebarBoundsForViewport(viewportWidth), [viewportWidth]);
+  const sidebarResize = usePanelResize({
+    storageKey: "sidebar",
+    defaultWidth: 275,
+    bounds: sidebarBounds,
+    collapseAt: 180,
+    edge: "right",
+    collapsed: sidebarCollapsed,
+    onCollapse: collapseSidebar,
+  });
+  const workbenchBounds = useMemo(() =>
+    getWorkbenchBoundsForViewport(
+      viewportWidth,
+      sidebarCollapsed ? SIDEBAR_COLLAPSED_WIDTH : sidebarResize.width ?? sidebarBounds.min,
+    ), [sidebarBounds.min, sidebarCollapsed, sidebarResize.width, viewportWidth]);
+  const workbenchResize = usePanelResize({
+    storageKey: "workbench",
+    defaultWidth: 460,
+    bounds: workbenchBounds,
+    collapseAt: 300,
+    edge: "left",
+    collapsed: workbenchView === "closed",
+    onCollapse: closeWorkbench,
+  });
   const initialize = useStore((state) => state.initialize);
   const settingsRoute = useStore((state) => state.settingsRoute);
   const workspaceCwd = useStore((state) => state.workspaceCwd);
@@ -108,6 +143,13 @@ export function App() {
     initialize();
   }, [initialize]);
 
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const handleResize = () => setViewportWidth(window.innerWidth);
+    window.addEventListener("resize", handleResize);
+    return () => window.removeEventListener("resize", handleResize);
+  }, []);
+
   return (
     <>
       <div className="app-frame">
@@ -141,6 +183,12 @@ export function App() {
         </div>
         <Layout
           sidebarCollapsed={sidebarCollapsed}
+          sidebarWidth={sidebarResize.width}
+          sidebarBounds={sidebarBounds}
+          sidebarResizing={sidebarResize.dragging}
+          sidebarWillCollapse={sidebarResize.willCollapse}
+          onSidebarResizePointerDown={sidebarResize.onHandlePointerDown}
+          onSidebarResizeKeyDown={sidebarResize.onHandleKeyDown}
           onToggleSidebar={() => setSidebarCollapsed((collapsed) => !collapsed)}
         >
           <TopBar
@@ -151,18 +199,39 @@ export function App() {
             onOpenWorkbench={openWorkbench}
             onToggleWorkbench={toggleWorkbench}
           />
-          <div className={`main-workspace ${workbenchView !== "closed" ? "with-workbench" : ""}`}>
+          <div
+            className={`main-workspace ${workbenchView !== "closed" ? "with-workbench" : ""} ${workbenchResize.dragging ? "resizing" : ""}`}
+            style={
+              workbenchView !== "closed" && workbenchResize.width !== null
+                ? ({ "--workbench-width": `${workbenchResize.width}px` } as CSSProperties)
+                : undefined
+            }
+          >
             <section className="conversation-pane" aria-label="Conversation">
               <MessageList />
               <Composer key={`${workspaceCwd || "no-workspace"}:${sessionId}`} />
             </section>
             {workbenchView !== "closed" && (
-              <WorkbenchPanel
-                activeView={workbenchView}
-                keybindingLabels={workbenchKeybindingLabels}
-                onClose={() => setWorkbenchView("closed")}
-                onSelectView={openWorkbench}
-              />
+              <>
+                <div
+                  className={`panel-resize-handle workbench-resize ${workbenchResize.willCollapse ? "will-collapse" : ""}`}
+                  role="separator"
+                  tabIndex={0}
+                  aria-label={t("Resize workbench", "调整工作台宽度")}
+                  aria-orientation="vertical"
+                  aria-valuemin={workbenchBounds.min}
+                  aria-valuemax={workbenchBounds.max}
+                  aria-valuenow={workbenchResize.width ?? undefined}
+                  onPointerDown={workbenchResize.onHandlePointerDown}
+                  onKeyDown={workbenchResize.onHandleKeyDown}
+                />
+                <WorkbenchPanel
+                  activeView={workbenchView}
+                  keybindingLabels={workbenchKeybindingLabels}
+                  onClose={() => setWorkbenchView("closed")}
+                  onSelectView={openWorkbench}
+                />
+              </>
             )}
           </div>
         </Layout>

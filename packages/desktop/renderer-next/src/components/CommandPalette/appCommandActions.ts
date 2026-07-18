@@ -72,14 +72,19 @@ function focusThreadSearch(): void {
 
 function openWorkspaceSwitcher(): void {
   afterSettingsClose(() => {
-    const trigger = document.querySelector<HTMLButtonElement>(
-      ".workspace-switcher:not(:disabled), .sidebar-rail-workspace:not(:disabled)",
-    );
-    if (!trigger) {
-      showToast(t("Workspace switching is not available", "工作区切换不可用"), "error");
+    const trigger = document.querySelector<HTMLButtonElement>(".sidebar-rail-workspace:not(:disabled)");
+    if (trigger) {
+      trigger.click();
       return;
     }
-    trigger.click();
+    const visibleWorkspaceTarget = document.querySelector<HTMLButtonElement>(
+      ".project-tree-main:not(:disabled), .workspace-navigation-empty:not(:disabled), .workspace-navigation-add:not(:disabled)",
+    );
+    if (visibleWorkspaceTarget) {
+      visibleWorkspaceTarget.focus();
+      return;
+    }
+    showToast(t("Workspace switching is not available", "工作区切换不可用"), "error");
   });
 }
 
