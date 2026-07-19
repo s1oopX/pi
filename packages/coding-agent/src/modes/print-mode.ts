@@ -70,6 +70,12 @@ export async function runPrintMode(runtimeHost: AgentSessionRuntime, options: Pr
 
 	const rebindSession = async (): Promise<void> => {
 		session = runtimeHost.session;
+		unsubscribe?.();
+		unsubscribe = session.subscribe((event) => {
+			if (mode === "json") {
+				writeRawStdout(`${JSON.stringify(event)}\n`);
+			}
+		});
 		await session.bindExtensions({
 			mode: mode === "json" ? "json" : "print",
 			commandContextActions: {
@@ -98,13 +104,6 @@ export async function runPrintMode(runtimeHost: AgentSessionRuntime, options: Pr
 			onError: (err) => {
 				console.error(`Extension error (${err.extensionPath}): ${err.error}`);
 			},
-		});
-
-		unsubscribe?.();
-		unsubscribe = session.subscribe((event) => {
-			if (mode === "json") {
-				writeRawStdout(`${JSON.stringify(event)}\n`);
-			}
 		});
 	};
 

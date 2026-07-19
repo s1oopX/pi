@@ -25,6 +25,10 @@ export interface CreateAgentSessionRuntimeResult extends CreateAgentSessionResul
 	diagnostics: AgentSessionRuntimeDiagnostic[];
 }
 
+type SessionRebindOptions = {
+	hasWithSession: boolean;
+};
+
 /**
  * Creates a full runtime for a target cwd and session manager.
  *
@@ -72,7 +76,7 @@ function extractUserMessageText(content: string | Array<{ type: string; text?: s
  * caller. The caller is responsible for user-facing error handling.
  */
 export class AgentSessionRuntime {
-	private rebindSession?: (session: AgentSession) => Promise<void>;
+	private rebindSession?: (session: AgentSession, options: SessionRebindOptions) => Promise<void>;
 	private beforeSessionInvalidate?: () => void;
 	private _session: AgentSession;
 	private _services: AgentSessionServices;
@@ -114,7 +118,7 @@ export class AgentSessionRuntime {
 		return this._modelFallbackMessage;
 	}
 
-	setRebindSession(rebindSession?: (session: AgentSession) => Promise<void>): void {
+	setRebindSession(rebindSession?: (session: AgentSession, options: SessionRebindOptions) => Promise<void>): void {
 		this.rebindSession = rebindSession;
 	}
 
@@ -183,7 +187,7 @@ export class AgentSessionRuntime {
 
 	private async finishSessionReplacement(withSession?: (ctx: ReplacedSessionContext) => Promise<void>): Promise<void> {
 		if (this.rebindSession) {
-			await this.rebindSession(this.session);
+			await this.rebindSession(this.session, { hasWithSession: withSession !== undefined });
 		}
 		if (withSession) {
 			await withSession(this.session.createReplacedSessionContext());

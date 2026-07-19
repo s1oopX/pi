@@ -533,19 +533,10 @@ export async function runRpcMode(runtimeHost: AgentSessionRuntime): Promise<neve
 	const output = (obj: RpcResponse | RpcExtensionUIRequest | RpcExtensionUIRequestClosed | object) => {
 		writeRawStdout(serializeJsonLine(obj));
 	};
-	const withSessionChangedNotification = (
+	const ensureWithSessionCallback = (
 		withSession?: (context: ReplacedSessionContext) => Promise<void>,
 	): ((context: ReplacedSessionContext) => Promise<void>) => {
-		return async (context) => {
-			output({
-				type: "session_changed",
-				cwd: session.sessionManager.getCwd(),
-				sessionId: session.sessionId,
-				...(session.sessionFile ? { sessionFile: session.sessionFile } : {}),
-				reason: "extension_command",
-			} satisfies RpcSessionChangedEventDTO);
-			await withSession?.(context);
-		};
+		return async (context) => withSession?.(context);
 	};
 
 	const success = <T extends RpcCommand["type"]>(
@@ -802,12 +793,29 @@ export async function runRpcMode(runtimeHost: AgentSessionRuntime): Promise<neve
 		},
 	});
 
-	runtimeHost.setRebindSession(async () => {
-		await rebindSession();
+	runtimeHost.setRebindSession(async (_replacementSession, options) => {
+		await rebindSession(options?.hasWithSession === true);
 	});
 
-	const rebindSession = async (): Promise<void> => {
+	const rebindSession = async (notifySessionChanged = false): Promise<void> => {
 		session = runtimeHost.session;
+		unsubscribe?.();
+		unsubscribeBackpressure?.();
+		unsubscribe = session.subscribe((event) => {
+			output(event);
+		});
+		unsubscribeBackpressure = session.agent.subscribe(async () => {
+			await waitForRawStdoutBackpressure();
+		});
+		if (notifySessionChanged) {
+			output({
+				type: "session_changed",
+				cwd: session.sessionManager.getCwd(),
+				sessionId: session.sessionId,
+				...(session.sessionFile ? { sessionFile: session.sessionFile } : {}),
+				reason: "extension_command",
+			} satisfies RpcSessionChangedEventDTO);
+		}
 		await session.bindExtensions({
 			uiContext: createExtensionUIContext(),
 			mode: "rpc",
@@ -816,12 +824,12 @@ export async function runRpcMode(runtimeHost: AgentSessionRuntime): Promise<neve
 				newSession: (options) =>
 					runtimeHost.newSession({
 						...options,
-						withSession: withSessionChangedNotification(options?.withSession),
+						withSession: ensureWithSessionCallback(options?.withSession),
 					}),
 				fork: async (entryId, forkOptions) => {
 					const result = await runtimeHost.fork(entryId, {
 						...forkOptions,
-						withSession: withSessionChangedNotification(forkOptions?.withSession),
+						withSession: ensureWithSessionCallback(forkOptions?.withSession),
 					});
 					return { cancelled: result.cancelled };
 				},
@@ -837,7 +845,7 @@ export async function runRpcMode(runtimeHost: AgentSessionRuntime): Promise<neve
 				switchSession: (sessionPath, options) =>
 					runtimeHost.switchSession(sessionPath, {
 						...options,
-						withSession: withSessionChangedNotification(options?.withSession),
+						withSession: ensureWithSessionCallback(options?.withSession),
 					}),
 				reload: async () => {
 					await session.reload();
@@ -849,15 +857,6 @@ export async function runRpcMode(runtimeHost: AgentSessionRuntime): Promise<neve
 			onError: (err) => {
 				output({ type: "extension_error", extensionPath: err.extensionPath, event: err.event, error: err.error });
 			},
-		});
-
-		unsubscribe?.();
-		unsubscribeBackpressure?.();
-		unsubscribe = session.subscribe((event) => {
-			output(event);
-		});
-		unsubscribeBackpressure = session.agent.subscribe(async () => {
-			await waitForRawStdoutBackpressure();
 		});
 	};
 
@@ -961,9 +960,6 @@ export async function runRpcMode(runtimeHost: AgentSessionRuntime): Promise<neve
 							}
 						: undefined;
 				const result = await runtimeHost.newSession(options);
-				if (!result.cancelled) {
-					await rebindSession();
-				}
 				return success(id, "new_session", result);
 			}
 
@@ -1473,9 +1469,6 @@ export async function runRpcMode(runtimeHost: AgentSessionRuntime): Promise<neve
 
 			case "switch_session": {
 				const result = await runtimeHost.switchSession(command.sessionPath);
-				if (!result.cancelled) {
-					await rebindSession();
-				}
 				return success(id, "switch_session", result);
 			}
 
@@ -1488,7 +1481,6 @@ export async function runRpcMode(runtimeHost: AgentSessionRuntime): Promise<neve
 				if (result.cancelled) {
 					return success(id, "fork", { cancelled: true } satisfies RpcForkResultDTO);
 				}
-				await rebindSession();
 				return success(id, "fork", {
 					text: result.selectedText ?? "",
 					cancelled: false,
@@ -1505,9 +1497,6 @@ export async function runRpcMode(runtimeHost: AgentSessionRuntime): Promise<neve
 					return error(id, "clone", "Cannot clone session: no current entry selected");
 				}
 				const result = await runtimeHost.fork(leafId, { position: "at" });
-				if (!result.cancelled) {
-					await rebindSession();
-				}
 				return success(id, "clone", { cancelled: result.cancelled });
 			}
 

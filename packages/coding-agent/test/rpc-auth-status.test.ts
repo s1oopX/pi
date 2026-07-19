@@ -234,14 +234,17 @@ describe("RPC provider auth status", () => {
 			[1, 2, 3].map(() => createHarness({ extensionFactories: [extensionFactory] })),
 		);
 		let currentIndex = 0;
-		let rebindSession: (() => Promise<void>) | undefined;
+		type RebindSession = NonNullable<Parameters<AgentSessionRuntime["setRebindSession"]>[0]>;
+		let rebindSession: RebindSession | undefined;
 		const runtimeHost = {
 			get session() {
 				return harnesses[currentIndex].session;
 			},
 			newSession: vi.fn(async (options?: Parameters<AgentSessionRuntime["newSession"]>[0]) => {
 				currentIndex += 1;
-				await rebindSession?.();
+				await rebindSession?.(harnesses[currentIndex].session, {
+					hasWithSession: options?.withSession !== undefined,
+				});
 				await options?.withSession?.(harnesses[currentIndex].session.createReplacedSessionContext());
 				return { cancelled: false, cwd: harnesses[currentIndex].session.sessionManager.getCwd() };
 			}),
@@ -251,7 +254,7 @@ describe("RPC provider auth status", () => {
 			})),
 			fork: vi.fn(async () => ({ cancelled: true, selectedText: "" })),
 			dispose: vi.fn(async () => {}),
-			setRebindSession: vi.fn((callback: () => Promise<void>) => {
+			setRebindSession: vi.fn((callback: RebindSession) => {
 				rebindSession = callback;
 			}),
 		} as unknown as AgentSessionRuntime;
