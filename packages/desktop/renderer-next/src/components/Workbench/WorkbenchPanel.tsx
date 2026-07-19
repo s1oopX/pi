@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState, type FormEvent } from "react";
 import { BranchNavigatorContent } from "../BranchNavigator";
+import { appendFileReference } from "../Composer/workspaceDrafts";
 import { TerminalPanel, type TerminalPanelHandle } from "../Terminal";
 import { showToast } from "../Toast";
 import { useI18n } from "../../i18n";
@@ -34,6 +35,8 @@ interface BashResult {
 
 export function WorkbenchPanel({ activeView, keybindingLabels, onClose, onSelectView }: WorkbenchPanelProps) {
   const { t } = useI18n();
+  const backButtonRef = useRef<HTMLButtonElement>(null);
+  const previousActiveViewRef = useRef(activeView);
   const title = getWorkbenchTitle(activeView, t);
   const entries = useMemo<WorkbenchEntry[]>(() => [
     {
@@ -68,12 +71,32 @@ export function WorkbenchPanel({ activeView, keybindingLabels, onClose, onSelect
     },
   ], [keybindingLabels, t]);
 
+  useEffect(() => {
+    const previousActiveView = previousActiveViewRef.current;
+    previousActiveViewRef.current = activeView;
+    if (activeView !== "review" || previousActiveView === "review") return;
+    const focusFrame = requestAnimationFrame(() => {
+      if (document.activeElement === document.body) backButtonRef.current?.focus();
+    });
+    return () => cancelAnimationFrame(focusFrame);
+  }, [activeView]);
+
   return (
-    <aside className="workbench-panel" aria-label={t("Workbench", "工作台")}>
+    <aside
+      className="workbench-panel"
+      aria-label={t("Workbench", "工作台")}
+      onKeyDown={(event) => {
+        if (event.key !== "Escape") return;
+        event.preventDefault();
+        onClose();
+      }}
+    >
       <div className="workbench-header">
         <button
+          ref={backButtonRef}
           className="icon-button workbench-back"
           type="button"
+          autoFocus={activeView !== "launcher"}
           disabled={activeView === "launcher"}
           onClick={() => onSelectView("launcher")}
           aria-label={t("Back to workbench", "返回工作台")}
@@ -125,8 +148,14 @@ function WorkbenchLauncher({
 }) {
   return (
     <div className="workbench-launcher">
-      {entries.map((entry) => (
-        <button className="workbench-launcher-item" type="button" key={entry.view} onClick={() => onSelectView(entry.view)}>
+      {entries.map((entry, index) => (
+        <button
+          className="workbench-launcher-item"
+          type="button"
+          key={entry.view}
+          autoFocus={index === 0}
+          onClick={() => onSelectView(entry.view)}
+        >
           <WorkbenchIcon icon={entry.icon} />
           <span>{entry.label}</span>
           {entry.shortcut && <kbd>{entry.shortcut}</kbd>}
@@ -204,6 +233,7 @@ function WorkbenchTerminal() {
           onChange={(event) => setCommand(event.target.value)}
           placeholder={t("Command", "命令")}
           disabled={running}
+          autoFocus
         />
         {running ? (
           <button className="workbench-primary secondary" type="button" onClick={abortCommand}>
@@ -248,6 +278,7 @@ function WorkbenchBrowser() {
           autoCapitalize="none"
           autoCorrect="off"
           spellCheck={false}
+          autoFocus
         />
       </label>
       <button className="workbench-primary" type="submit">{t("Open", "打开")}</button>
@@ -290,6 +321,7 @@ function WorkbenchFiles() {
         value={query}
         onChange={(event) => setQuery(event.target.value)}
         placeholder={t("Search files", "搜索文件")}
+        autoFocus
       />
       {loading && <div className="workbench-state" role="status">{t("Loading...", "正在加载...")}</div>}
       {!loading && error && <div className="workbench-state error" role="alert">{error}</div>}
@@ -303,7 +335,7 @@ function WorkbenchFiles() {
             type="button"
             key={file}
             title={file}
-            onClick={() => setComposerDraft(`@${file} `)}
+            onClick={() => setComposerDraft((input) => appendFileReference(input, file))}
           >
             <WorkbenchIcon icon="files" />
             <span>{file}</span>
@@ -318,7 +350,6 @@ function WorkbenchSideTask() {
   const { t } = useI18n();
   const taskCwd = useStore((state) => state.taskCwd);
   const isStreaming = useStore((state) => state.isStreaming);
-  const refreshAsync = useStore((state) => state.refreshAsync);
   const setComposerDraft = useStore((state) => state.setComposerDraft);
   const [prompt, setPrompt] = useState("");
   const [creating, setCreating] = useState(false);
@@ -330,7 +361,7 @@ function WorkbenchSideTask() {
     try {
       const result = await api.newSession(taskCwd || undefined);
       if (result.cancelled) return;
-      await refreshAsync();
+      await useStore.getState().resetForWorkspace(result.cwd);
       setComposerDraft(prompt.trim());
       setPrompt("");
       showToast(t("Created side task", "已创建侧边任务"), "success");
@@ -352,6 +383,7 @@ function WorkbenchSideTask() {
           onChange={(event) => setPrompt(event.target.value)}
           placeholder={t("Ask Pi to do a side task", "让 Pi 执行一个侧边任务")}
           rows={6}
+          autoFocus
         />
       </label>
       <button className="workbench-primary" type="submit" disabled={creating || isStreaming}>

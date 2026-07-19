@@ -1,8 +1,8 @@
 import { useEffect } from "react";
-import { onEvent, onLog, onStatus } from "./api";
+import { getPendingExtensionUIRequests, onEvent, onLog, onStatus } from "./api";
 import { isInteractiveExtensionUIRequest, parseExtensionUIEffect } from "./extensionUIEffects";
 import { createExtensionUIRequestTimeoutManager } from "./extensionUIRequestTimeouts";
-import type { BackendEvent, ExtensionUIRequestClosedEvent, LogEntry } from "./types";
+import type { BackendEvent, ExtensionUIRequestClosedEvent, ExtensionUIRequestEvent, LogEntry } from "./types";
 import { useStore } from "../store";
 import { showToast } from "../components/Toast";
 import { isSameWorkspace } from "../components/Sidebar/sidebarState";
@@ -16,23 +16,182 @@ export function isBackendEventCurrent(backendCwd: string, workspaceCwd: string):
   return isSameWorkspace(backendCwd, workspaceCwd);
 }
 
+export function getExtensionUIHydrationGeneration(
+  backendReady: boolean,
+  backendCwd: string,
+  workspaceCwd: string,
+  connectionGeneration: number,
+): number | null {
+  return backendReady && isBackendEventCurrent(backendCwd, workspaceCwd)
+    ? connectionGeneration
+    : null;
+}
+
+export function shouldAdvanceBackendConnectionGeneration(
+  backendReady: boolean,
+  previousBackendCwd: string,
+  nextBackendCwd: string,
+): boolean {
+  return !backendReady || (
+    previousBackendCwd.length > 0 &&
+    nextBackendCwd.length > 0 &&
+    !isSameWorkspace(previousBackendCwd, nextBackendCwd)
+  );
+}
+
+export type SessionChangedWorkspaceAction = { type: "refresh" } | { type: "reset"; cwd: string };
+
+export function resolveSessionChangedWorkspaceAction(
+  currentWorkspaceCwd: string,
+  nextCwd: string,
+): SessionChangedWorkspaceAction | null {
+  const cwd = nextCwd.trim();
+  if (!cwd) return null;
+  return isSameWorkspace(cwd, currentWorkspaceCwd) ? { type: "refresh" } : { type: "reset", cwd };
+}
+
+export function filterUnchangedPendingExtensionUIRequests(
+  requests: readonly ExtensionUIRequestEvent[],
+  baselineVersions: ReadonlyMap<string, number>,
+  currentVersions: ReadonlyMap<string, number>,
+): ExtensionUIRequestEvent[] {
+  return requests.filter(({ id }) => baselineVersions.get(id) === currentVersions.get(id));
+}
+
 /**
  * Subscribes to all backend events and dispatches to the Zustand store.
  * Mount once at the app root.
  */
 export function useBackendEvents(): void {
   useEffect(() => {
+    let disposed = false;
+    let backendConnectionGeneration = 0;
+    let hydratedConnectionGeneration: number | null = null;
+    let hydratingConnectionGeneration: number | null = null;
+    let hydrationRetryTimer: ReturnType<typeof setTimeout> | undefined;
+    let hydrationRetryGeneration: number | null = null;
+    let requestMutationCounter = 0;
+    const requestMutationVersions = new Map<string, number>();
+    const markRequestMutation = (requestId: string) => {
+      if (hydratingConnectionGeneration === null) return;
+      requestMutationVersions.set(requestId, ++requestMutationCounter);
+    };
     const extensionUIRequestTimeouts = createExtensionUIRequestTimeoutManager((requestId) => {
       useStore.getState().removeExtensionUIRequest(requestId);
     });
+    const addPendingExtensionUIRequest = (request: ExtensionUIRequestEvent) => {
+      useStore.getState().addExtensionUIRequest(request);
+      extensionUIRequestTimeouts.schedule(request);
+    };
+    const hydratePendingExtensionUIRequests = async (generation: number): Promise<boolean> => {
+      requestMutationVersions.clear();
+      const baselineVersions = new Map(requestMutationVersions);
+      const requests = await getPendingExtensionUIRequests();
+      const current = useStore.getState();
+      const currentGeneration = getExtensionUIHydrationGeneration(
+        current.backendStatus.ready,
+        current.backendStatus.cwd,
+        current.workspaceCwd,
+        backendConnectionGeneration,
+      );
+      if (disposed || currentGeneration !== generation) return false;
+      for (const request of filterUnchangedPendingExtensionUIRequests(
+        requests,
+        baselineVersions,
+        requestMutationVersions,
+      )) {
+        if (isInteractiveExtensionUIRequest(request)) addPendingExtensionUIRequest(request);
+      }
+      return true;
+    };
+
+    const scheduleHydrationRetry = (generation: number) => {
+      if (disposed) return;
+      if (hydrationRetryTimer !== undefined) {
+        if (hydrationRetryGeneration === generation) return;
+        clearTimeout(hydrationRetryTimer);
+      }
+      hydrationRetryGeneration = generation;
+      hydrationRetryTimer = setTimeout(() => {
+        hydrationRetryTimer = undefined;
+        hydrationRetryGeneration = null;
+        const state = useStore.getState();
+        const currentGeneration = getExtensionUIHydrationGeneration(
+          state.backendStatus.ready,
+          state.backendStatus.cwd,
+          state.workspaceCwd,
+          backendConnectionGeneration,
+        );
+        if (currentGeneration !== generation) return;
+        hydratePendingExtensionUIRequestsWhenReady();
+      }, 500);
+    };
+
+    function hydratePendingExtensionUIRequestsWhenReady(): void {
+      const state = useStore.getState();
+      const generation = getExtensionUIHydrationGeneration(
+        state.backendStatus.ready,
+        state.backendStatus.cwd,
+        state.workspaceCwd,
+        backendConnectionGeneration,
+      );
+      if (
+        generation === null ||
+        generation === hydratedConnectionGeneration ||
+        hydratingConnectionGeneration !== null
+      ) return;
+      hydratingConnectionGeneration = generation;
+      void hydratePendingExtensionUIRequests(generation)
+        .then((applied) => {
+          if (applied && !disposed) hydratedConnectionGeneration = generation;
+        })
+        .catch(() => {
+          const current = useStore.getState();
+          const currentGeneration = getExtensionUIHydrationGeneration(
+            current.backendStatus.ready,
+            current.backendStatus.cwd,
+            current.workspaceCwd,
+            backendConnectionGeneration,
+          );
+          if (currentGeneration === generation) scheduleHydrationRetry(generation);
+        })
+        .finally(() => {
+          requestMutationVersions.clear();
+          if (hydratingConnectionGeneration === generation) hydratingConnectionGeneration = null;
+          const current = useStore.getState();
+          const currentGeneration = getExtensionUIHydrationGeneration(
+            current.backendStatus.ready,
+            current.backendStatus.cwd,
+            current.workspaceCwd,
+            backendConnectionGeneration,
+          );
+          if (!disposed && currentGeneration !== null && currentGeneration !== generation) {
+            hydratePendingExtensionUIRequestsWhenReady();
+          }
+        });
+    }
     const unsubExtensionUIRequests = useStore.subscribe((state, previousState) => {
       if (state.extensionUIRequests === previousState.extensionUIRequests) return;
+      const currentIds = new Set(state.extensionUIRequests.map(({ id }) => id));
+      for (const { id } of previousState.extensionUIRequests) {
+        if (!currentIds.has(id)) markRequestMutation(id);
+      }
       extensionUIRequestTimeouts.syncPendingRequests(state.extensionUIRequests);
     });
 
     const unsubEvent = onEvent((raw) => {
       const event = raw as BackendEvent;
       const store = useStore.getState();
+      if (event.type === "session_changed") {
+        const action = resolveSessionChangedWorkspaceAction(store.workspaceCwd, event.cwd);
+        if (!store.backendStatus.ready || !action) return;
+        if (action.type === "refresh") {
+          void store.refreshAsync();
+        } else {
+          void store.resetForWorkspace(action.cwd);
+        }
+        return;
+      }
       if (!isBackendEventCurrent(store.backendStatus.cwd, store.workspaceCwd)) return;
 
       switch (event.type) {
@@ -59,7 +218,9 @@ export function useBackendEvents(): void {
           store.setStreaming(true);
           break;
         case "agent_end":
-          store.setStreaming(false);
+          // A retryable agent_end is an intermediate recovery boundary. Keep
+          // global run guards active until the retry lifecycle reports its end.
+          store.setStreaming(event.willRetry);
           // Full refresh at run end: models/commands/sessions may have changed.
           store.refresh();
           break;
@@ -79,6 +240,14 @@ export function useBackendEvents(): void {
         case "compaction_end":
         case "auto_retry_start":
         case "auto_retry_end":
+          if (event.type === "compaction_start" || event.type === "auto_retry_start") {
+            store.setStreaming(true);
+          } else if (
+            (event.type === "compaction_end" && !event.willRetry) ||
+            (event.type === "auto_retry_end" && !event.success)
+          ) {
+            store.setStreaming(false);
+          }
           store.updateAgentActivity(event);
           store.refreshSession();
           break;
@@ -95,26 +264,33 @@ export function useBackendEvents(): void {
           } else if (effect?.kind === "editorText") {
             store.setComposerDraft(effect.text);
           } else if (isInteractiveExtensionUIRequest(event)) {
-            store.addExtensionUIRequest(event);
-            extensionUIRequestTimeouts.schedule(event);
+            markRequestMutation(event.id);
+            addPendingExtensionUIRequest(event);
           }
           break;
         }
         case "extension_ui_request_closed":
+          markRequestMutation(event.id);
           handleExtensionUIRequestClosed(event);
           break;
       }
     });
 
     const unsubStatus = onStatus((payload) => {
-      useStore.getState().updateBackendStatus({
-        ready: Boolean(payload.ready),
+      const store = useStore.getState();
+      const ready = Boolean(payload.ready);
+      const cwd = String(payload.cwd ?? "");
+      if (shouldAdvanceBackendConnectionGeneration(ready, store.backendStatus.cwd, cwd)) {
+        backendConnectionGeneration += 1;
+      }
+      store.updateBackendStatus({
+        ready,
         starting: Boolean(payload.starting),
         restarting: Boolean(payload.restarting),
         retryInMs: Number(payload.retryInMs ?? 0),
         restartAttempts: Number(payload.restartAttempts ?? 0),
         backendPath: String(payload.backendPath ?? ""),
-        cwd: String(payload.cwd ?? ""),
+        cwd,
         error: payload.error ? String(payload.error) : undefined,
       });
     });
@@ -122,11 +298,18 @@ export function useBackendEvents(): void {
     const unsubLog = onLog((entry: LogEntry) => {
       useStore.getState().addLog(entry);
     });
+    const unsubHydration = useStore.subscribe(hydratePendingExtensionUIRequestsWhenReady);
+    hydratePendingExtensionUIRequestsWhenReady();
 
     return () => {
+      disposed = true;
+      if (hydrationRetryTimer !== undefined) clearTimeout(hydrationRetryTimer);
+      hydrationRetryTimer = undefined;
+      hydrationRetryGeneration = null;
       unsubEvent();
       unsubStatus();
       unsubLog();
+      unsubHydration();
       unsubExtensionUIRequests();
       extensionUIRequestTimeouts.dispose();
     };

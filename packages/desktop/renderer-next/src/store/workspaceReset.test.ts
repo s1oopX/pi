@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import * as api from "../ipc/api";
-import type { SessionInfo } from "../ipc/types";
+import type { Message, Model, SessionInfo, SessionState, SessionStats } from "../ipc/types";
 import { useStore } from ".";
 
 const GLOBAL_SESSION: SessionInfo = {
@@ -13,6 +13,59 @@ const GLOBAL_SESSION: SessionInfo = {
   firstMessage: "Global session",
   allMessagesText: "Global session",
 };
+
+function sessionState(sessionId: string): SessionState {
+  return {
+    thinkingLevel: "off",
+    isStreaming: false,
+    isCompacting: false,
+    steeringMode: "one-at-a-time",
+    followUpMode: "one-at-a-time",
+    cwd: "C:\\initial",
+    sessionFile: `C:\\sessions\\${sessionId}.jsonl`,
+    sessionId,
+    autoCompactionEnabled: true,
+    autoRetryEnabled: true,
+    isRetrying: false,
+    retryAttempt: 0,
+    messageCount: 0,
+    pendingMessageCount: 0,
+  };
+}
+
+function sessionStats(sessionId: string): SessionStats {
+  return {
+    sessionFile: `C:\\sessions\\${sessionId}.jsonl`,
+    sessionId,
+    userMessages: 0,
+    assistantMessages: 0,
+    toolCalls: 0,
+    toolResults: 0,
+    totalMessages: 0,
+    tokens: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 },
+    cost: 0,
+  };
+}
+
+function assistantMessage(text: string): Message {
+  return {
+    role: "assistant",
+    content: [{ type: "text", text }],
+    api: "anthropic-messages",
+    provider: "anthropic",
+    model: "claude",
+    usage: {
+      input: 0,
+      output: 0,
+      cacheRead: 0,
+      cacheWrite: 0,
+      totalTokens: 0,
+      cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 },
+    },
+    stopReason: "stop",
+    timestamp: 1,
+  };
+}
 
 describe("workspace reset", () => {
   beforeEach(() => {
@@ -117,6 +170,22 @@ describe("workspace reset", () => {
     expect(useStore.getState().workspaceLoading).toBe(false);
   });
 
+  it("clears the active run when the backend disconnects", () => {
+    useStore.setState({ isStreaming: true, activeMessageIndex: 2 });
+
+    useStore.getState().updateBackendStatus({
+      ready: false,
+      starting: true,
+      restarting: true,
+      retryInMs: 1000,
+      restartAttempts: 1,
+      backendPath: "C:\\pi-backend.exe",
+      cwd: "C:\\initial",
+    });
+
+    expect(useStore.getState()).toMatchObject({ isStreaming: false, activeMessageIndex: null });
+  });
+
   it("clears Git loading when the latest response belongs to another workspace", async () => {
     vi.spyOn(api, "getWorkspaceGitStatus").mockResolvedValueOnce({
       cwd: "C:\\stale",
@@ -200,7 +269,7 @@ describe("workspace reset", () => {
     vi.spyOn(api, "getState").mockRejectedValue(new Error("refresh failed"));
     vi.spyOn(api, "getMessages").mockResolvedValue([]);
     vi.spyOn(api, "getAvailableModels").mockResolvedValue([]);
-    vi.spyOn(api, "getCustomModels").mockResolvedValue(null);
+    vi.spyOn(api, "getCustomModels").mockRejectedValue(new Error("unavailable"));
     vi.spyOn(api, "getSessionStats").mockResolvedValue(undefined);
     vi.spyOn(api, "getCommands").mockResolvedValue([]);
     useStore.setState({
@@ -278,5 +347,333 @@ describe("workspace reset", () => {
         sessionsLoading: false,
       });
     });
+  });
+
+  it("does not let an older full refresh overwrite a newer session refresh", async () => {
+    let resolveOldModels: ((models: Model[]) => void) | undefined;
+    const oldModels = new Promise<Model[]>((resolve) => {
+      resolveOldModels = resolve;
+    });
+    const catalogModels: Model[] = [{
+      id: "catalog-model",
+      name: "Catalog model",
+      api: "openai-completions",
+      provider: "test",
+      baseUrl: "https://example.test",
+      reasoning: false,
+      input: ["text"],
+      cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
+      contextWindow: 1024,
+      maxTokens: 256,
+    }];
+    const oldSession = sessionState("old-session");
+    const newSession = sessionState("new-session");
+    const newStats = sessionStats("new-session");
+
+    vi.spyOn(api, "getApi").mockReturnValue({} as ReturnType<typeof api.getApi>);
+    vi.spyOn(api, "getSessions").mockResolvedValue({
+      sessions: [],
+      total: 0,
+      hasMore: false,
+      nextOffset: null,
+    });
+    vi.spyOn(api, "getState").mockResolvedValueOnce(oldSession).mockResolvedValueOnce(newSession);
+    vi.spyOn(api, "getMessages").mockResolvedValue([]);
+    vi.spyOn(api, "getAvailableModels").mockReturnValueOnce(oldModels);
+    vi.spyOn(api, "getCustomModels").mockResolvedValue({ path: "", providers: {} });
+    vi.spyOn(api, "getSessionStats")
+      .mockResolvedValueOnce(sessionStats("old-session"))
+      .mockResolvedValueOnce(newStats);
+    vi.spyOn(api, "getCommands").mockResolvedValue([]);
+    vi.spyOn(api, "getAuthStatus").mockResolvedValue({});
+    vi.spyOn(api, "getWorkspaceGitStatus").mockResolvedValue({
+      cwd: "C:\\initial",
+      kind: "not-repository",
+      branch: null,
+      detached: false,
+      dirty: false,
+    });
+    useStore.setState({
+      workspaceCwd: "C:\\initial",
+      workspaceLoading: true,
+      session: null,
+      stats: undefined,
+      backendStatus: {
+        ready: true,
+        starting: false,
+        restarting: false,
+        retryInMs: 0,
+        restartAttempts: 0,
+        backendPath: "C:\\pi-backend.exe",
+        cwd: "C:\\initial",
+      },
+    });
+
+    const fullRefresh = useStore.getState().refreshAsync();
+    useStore.getState().refreshSession();
+
+    await vi.waitFor(() => {
+      expect(useStore.getState().session?.sessionId).toBe("new-session");
+    });
+    expect(useStore.getState().workspaceLoading).toBe(true);
+    resolveOldModels?.(catalogModels);
+    await fullRefresh;
+
+    expect(useStore.getState().session?.sessionId).toBe("new-session");
+    expect(useStore.getState().stats).toEqual(newStats);
+    expect(useStore.getState().models).toEqual(catalogModels);
+    expect(useStore.getState().workspaceLoading).toBe(false);
+  });
+
+  it("does not apply an in-flight refresh after the backend disconnects", async () => {
+    let resolveModels: ((models: Model[]) => void) | undefined;
+    const modelsPromise = new Promise<Model[]>((resolve) => {
+      resolveModels = resolve;
+    });
+    const staleSession = sessionState("stale-session");
+
+    vi.spyOn(api, "getApi").mockReturnValue({} as ReturnType<typeof api.getApi>);
+    vi.spyOn(api, "getSessions").mockResolvedValue({
+      sessions: [],
+      total: 0,
+      hasMore: false,
+      nextOffset: null,
+    });
+    vi.spyOn(api, "getState").mockResolvedValue(staleSession);
+    vi.spyOn(api, "getMessages").mockResolvedValue([]);
+    vi.spyOn(api, "getAvailableModels").mockReturnValue(modelsPromise);
+    vi.spyOn(api, "getCustomModels").mockResolvedValue({ path: "", providers: {} });
+    vi.spyOn(api, "getSessionStats").mockResolvedValue(sessionStats("stale-session"));
+    vi.spyOn(api, "getCommands").mockResolvedValue([]);
+    vi.spyOn(api, "getAuthStatus").mockResolvedValue({});
+    vi.spyOn(api, "getWorkspaceGitStatus").mockResolvedValue({
+      cwd: "C:\\initial",
+      kind: "not-repository",
+      branch: null,
+      detached: false,
+      dirty: false,
+    });
+    useStore.setState({
+      workspaceCwd: "C:\\initial",
+      workspaceLoading: true,
+      session: null,
+      stats: undefined,
+      backendStatus: {
+        ready: true,
+        starting: false,
+        restarting: false,
+        retryInMs: 0,
+        restartAttempts: 0,
+        backendPath: "C:\\pi-backend.exe",
+        cwd: "C:\\initial",
+      },
+    });
+
+    const refresh = useStore.getState().refreshAsync();
+    useStore.getState().updateBackendStatus({
+      ready: false,
+      starting: false,
+      restarting: false,
+      retryInMs: 0,
+      restartAttempts: 1,
+      backendPath: "C:\\pi-backend.exe",
+      cwd: "C:\\initial",
+    });
+    resolveModels?.([]);
+    await refresh;
+
+    expect(useStore.getState().session).toBeNull();
+    expect(useStore.getState().stats).toBeUndefined();
+    expect(useStore.getState().isStreaming).toBe(false);
+    expect(useStore.getState().workspaceLoading).toBe(false);
+  });
+
+  it("falls back to an older full refresh when a newer full refresh fails", async () => {
+    let resolveOldModels: ((models: Model[]) => void) | undefined;
+    const oldModels = new Promise<Model[]>((resolve) => {
+      resolveOldModels = resolve;
+    });
+    const oldSession = sessionState("old-full-session");
+    let stateCalls = 0;
+
+    vi.spyOn(api, "getApi").mockReturnValue({} as ReturnType<typeof api.getApi>);
+    vi.spyOn(api, "getSessions").mockResolvedValue({
+      sessions: [],
+      total: 0,
+      hasMore: false,
+      nextOffset: null,
+    });
+    vi.spyOn(api, "getState").mockImplementation(() => {
+      stateCalls += 1;
+      return stateCalls === 1 ? Promise.resolve(oldSession) : Promise.reject(new Error("new refresh failed"));
+    });
+    vi.spyOn(api, "getMessages").mockResolvedValue([]);
+    vi.spyOn(api, "getAvailableModels").mockReturnValueOnce(oldModels).mockResolvedValue([]);
+    vi.spyOn(api, "getCustomModels").mockResolvedValue({ path: "", providers: {} });
+    vi.spyOn(api, "getSessionStats").mockResolvedValue(sessionStats("old-full-session"));
+    vi.spyOn(api, "getCommands").mockResolvedValue([]);
+    vi.spyOn(api, "getAuthStatus").mockResolvedValue({});
+    vi.spyOn(api, "getWorkspaceGitStatus").mockResolvedValue({
+      cwd: "C:\\initial",
+      kind: "not-repository",
+      branch: null,
+      detached: false,
+      dirty: false,
+    });
+    useStore.setState({
+      workspaceCwd: "C:\\initial",
+      workspaceLoading: true,
+      session: null,
+      stats: undefined,
+      backendStatus: {
+        ready: true,
+        starting: false,
+        restarting: false,
+        retryInMs: 0,
+        restartAttempts: 0,
+        backendPath: "C:\\pi-backend.exe",
+        cwd: "C:\\initial",
+      },
+    });
+
+    const oldRefresh = useStore.getState().refreshAsync();
+    const newRefresh = useStore.getState().refreshAsync();
+    await newRefresh;
+    expect(useStore.getState().workspaceLoading).toBe(true);
+
+    resolveOldModels?.([]);
+    await oldRefresh;
+
+    expect(useStore.getState().session?.sessionId).toBe("old-full-session");
+    expect(useStore.getState().workspaceLoading).toBe(false);
+  });
+
+  it("does not let an older full refresh cross a session reset", async () => {
+    let resolveOldModels: ((models: Model[]) => void) | undefined;
+    const oldModels = new Promise<Model[]>((resolve) => {
+      resolveOldModels = resolve;
+    });
+    const oldSession = sessionState("old-session");
+    let stateCalls = 0;
+
+    vi.spyOn(api, "getApi").mockReturnValue({} as ReturnType<typeof api.getApi>);
+    vi.spyOn(api, "getSessions").mockResolvedValue({
+      sessions: [],
+      total: 0,
+      hasMore: false,
+      nextOffset: null,
+    });
+    vi.spyOn(api, "getState").mockImplementation(() => {
+      stateCalls += 1;
+      return stateCalls === 1 ? Promise.resolve(oldSession) : Promise.reject(new Error("new refresh failed"));
+    });
+    vi.spyOn(api, "getMessages").mockResolvedValue([]);
+    vi.spyOn(api, "getAvailableModels").mockReturnValueOnce(oldModels).mockResolvedValue([]);
+    vi.spyOn(api, "getCustomModels").mockResolvedValue({ path: "", providers: {} });
+    vi.spyOn(api, "getSessionStats").mockResolvedValue(sessionStats("old-session"));
+    vi.spyOn(api, "getCommands").mockResolvedValue([]);
+    vi.spyOn(api, "getAuthStatus").mockResolvedValue({});
+    vi.spyOn(api, "getWorkspaceGitStatus").mockResolvedValue({
+      cwd: "C:\\initial",
+      kind: "not-repository",
+      branch: null,
+      detached: false,
+      dirty: false,
+    });
+    useStore.setState({
+      workspaceCwd: "C:\\initial",
+      workspaceLoading: true,
+      session: null,
+      messages: [],
+      stats: undefined,
+      backendStatus: {
+        ready: true,
+        starting: false,
+        restarting: false,
+        retryInMs: 0,
+        restartAttempts: 0,
+        backendPath: "C:\\pi-backend.exe",
+        cwd: "C:\\initial",
+      },
+    });
+
+    const oldRefresh = useStore.getState().refreshAsync();
+    useStore.getState().resetForWorkspace("C:\\initial");
+
+    await vi.waitFor(() => {
+      expect(useStore.getState().workspaceLoading).toBe(false);
+    });
+    resolveOldModels?.([]);
+    await oldRefresh;
+
+    expect(useStore.getState().session).toBeNull();
+    expect(useStore.getState().messages).toEqual([]);
+    expect(useStore.getState().stats).toBeUndefined();
+  });
+
+  it("does not let an older full refresh replace a finalized message after a light refresh fails", async () => {
+    let resolveModels: ((models: Model[]) => void) | undefined;
+    const modelsPromise = new Promise<Model[]>((resolve) => {
+      resolveModels = resolve;
+    });
+    const partial = assistantMessage("partial");
+    const finalized = assistantMessage("finalized");
+    const currentSession = sessionState("current-session");
+
+    vi.spyOn(api, "getApi").mockReturnValue({} as ReturnType<typeof api.getApi>);
+    vi.spyOn(api, "getSessions").mockResolvedValue({
+      sessions: [],
+      total: 0,
+      hasMore: false,
+      nextOffset: null,
+    });
+    vi.spyOn(api, "getState").mockResolvedValue(currentSession);
+    const getMessages = vi.spyOn(api, "getMessages")
+      .mockResolvedValueOnce([partial])
+      .mockRejectedValueOnce(new Error("light refresh failed"));
+    vi.spyOn(api, "getAvailableModels").mockReturnValue(modelsPromise);
+    vi.spyOn(api, "getCustomModels").mockResolvedValue({ path: "", providers: {} });
+    vi.spyOn(api, "getSessionStats").mockResolvedValue(sessionStats("current-session"));
+    vi.spyOn(api, "getCommands").mockResolvedValue([]);
+    vi.spyOn(api, "getAuthStatus").mockResolvedValue({});
+    vi.spyOn(api, "getWorkspaceGitStatus").mockResolvedValue({
+      cwd: "C:\\initial",
+      kind: "not-repository",
+      branch: null,
+      detached: false,
+      dirty: false,
+    });
+    useStore.setState({
+      workspaceCwd: "C:\\initial",
+      workspaceLoading: false,
+      session: currentSession,
+      messages: [],
+      stats: sessionStats("current-session"),
+      isStreaming: true,
+      activeMessageIndex: null,
+      backendStatus: {
+        ready: true,
+        starting: false,
+        restarting: false,
+        retryInMs: 0,
+        restartAttempts: 0,
+        backendPath: "C:\\pi-backend.exe",
+        cwd: "C:\\initial",
+      },
+    });
+
+    const fullRefresh = useStore.getState().refreshAsync();
+    useStore.getState().upsertMessage(partial, "message_start");
+    useStore.getState().upsertMessage(finalized, "message_end");
+    useStore.getState().refreshSession();
+
+    await vi.waitFor(() => {
+      expect(getMessages).toHaveBeenCalledTimes(2);
+    });
+    resolveModels?.([]);
+    await fullRefresh;
+
+    expect(useStore.getState().messages).toEqual([finalized]);
+    expect(useStore.getState().activeMessageIndex).toBeNull();
   });
 });

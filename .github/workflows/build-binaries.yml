@@ -103,9 +103,74 @@ jobs:
           if-no-files-found: error
           retention-days: 14
 
+  build-desktop:
+    runs-on: windows-latest
+    permissions:
+      contents: read
+    env:
+      RELEASE_TAG: ${{ github.event.inputs.tag || github.ref_name }}
+      SOURCE_REF: ${{ github.event.inputs.source_ref || github.event.inputs.tag || github.ref_name }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          ref: ${{ env.SOURCE_REF }}
+          persist-credentials: false
+
+      - name: Setup Bun
+        uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
+        with:
+          bun-version: 1.3.10
+
+      - name: Setup Node.js
+        uses: actions/setup-node@39370e3970a6d050c480ffad4ff0ed4d3fdee5af # v4.1.0
+        with:
+          node-version: '22'
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci --ignore-scripts
+
+      - name: Download Electron runtime
+        run: node node_modules/electron/install.js
+
+      - name: Build desktop package
+        shell: pwsh
+        run: |
+          $tagVersion = $env:RELEASE_TAG.TrimStart('v')
+          $desktopVersion = node -p "require('./packages/desktop/package.json').version"
+          $rendererVersion = node -p "require('./packages/desktop/renderer-next/package.json').version"
+          $codingAgentVersion = node -p "require('./packages/coding-agent/package.json').version"
+          if ($tagVersion -ne $desktopVersion -or $tagVersion -ne $rendererVersion -or $tagVersion -ne $codingAgentVersion) {
+            throw "Release tag $($env:RELEASE_TAG) does not match desktop version $desktopVersion, renderer version $rendererVersion, or coding-agent version $codingAgentVersion"
+          }
+          npm --prefix packages/desktop run build:renderer
+          npm --prefix packages/desktop run build:backend
+          npm --prefix packages/desktop test
+          Push-Location packages/desktop
+          npx --no-install electron-builder --win portable --x64 --config.electronDist=../../node_modules/electron/dist
+          Pop-Location
+
+      - name: Prepare desktop release payload
+        shell: pwsh
+        run: |
+          $version = node -p "require('./packages/desktop/package.json').version"
+          New-Item -ItemType Directory -Force release-assets | Out-Null
+          Copy-Item "packages/desktop/release/PiStudio-$version.exe" "release-assets/PiStudio-$version.exe"
+
+      - name: Upload desktop release payload
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: desktop-release-assets-${{ env.RELEASE_TAG }}
+          path: release-assets/*
+          if-no-files-found: error
+          retention-days: 14
+
   stage-github-release:
     runs-on: ubuntu-latest
-    needs: build
+    needs:
+      - build
+      - build-desktop
     permissions:
       actions: read
       contents: write
@@ -119,12 +184,20 @@ jobs:
           name: release-assets-${{ env.RELEASE_TAG }}
           path: release-assets
 
+      - name: Download desktop release payload
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          name: desktop-release-assets-${{ env.RELEASE_TAG }}
+          path: release-assets
+
       - name: Validate GitHub release payload
         run: |
           set -euo pipefail
 
           cd release-assets
 
+          version="${RELEASE_TAG#v}"
+          desktop_asset="PiStudio-${version}.exe"
           expected_assets=(
             pi-darwin-arm64.tar.gz
             pi-darwin-x64.tar.gz
@@ -132,6 +205,7 @@ jobs:
             pi-linux-arm64.tar.gz
             pi-windows-x64.zip
             pi-windows-arm64.zip
+            "${desktop_asset}"
             pi-coding-agent-install-package.json
             pi-coding-agent-install-package-lock.json
             SHA256SUMS
@@ -144,6 +218,19 @@ jobs:
 
           sha256sum -c SHA256SUMS
 
+          checksum_assets=(
+            pi-darwin-arm64.tar.gz
+            pi-darwin-x64.tar.gz
+            pi-linux-x64.tar.gz
+            pi-linux-arm64.tar.gz
+            pi-windows-x64.zip
+            pi-windows-arm64.zip
+            "${desktop_asset}"
+            pi-coding-agent-install-package.json
+            pi-coding-agent-install-package-lock.json
+          )
+          sha256sum "${checksum_assets[@]}" > SHA256SUMS
+
       - name: Create draft GitHub Release and upload binaries
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -152,6 +239,8 @@ jobs:
 
           cd release-assets
 
+          version="${RELEASE_TAG#v}"
+          desktop_asset="PiStudio-${version}.exe"
           release_assets=(
             pi-darwin-arm64.tar.gz
             pi-darwin-x64.tar.gz
@@ -159,6 +248,7 @@ jobs:
             pi-linux-arm64.tar.gz
             pi-windows-x64.zip
             pi-windows-arm64.zip
+            "${desktop_asset}"
             pi-coding-agent-install-package.json
             pi-coding-agent-install-package-lock.json
             SHA256SUMS

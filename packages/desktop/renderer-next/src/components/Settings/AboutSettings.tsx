@@ -1,3 +1,4 @@
+import { useState } from "react";
 import { useStore } from "../../store";
 import * as api from "../../ipc/api";
 import { useI18n } from "../../i18n";
@@ -10,21 +11,50 @@ export function AboutSettings() {
   const logs = useStore((s) => s.logs);
   const session = useStore((s) => s.session);
   const { t } = useI18n();
+  const [updateUrl, setUpdateUrl] = useState<string | null>(null);
 
   async function handleCheckUpdates() {
+    setUpdateUrl(null);
     try {
       const result = await api.checkForUpdates();
+      if (result && typeof result === "object" && "published" in result && result.published === false) {
+        showToast(t("No published release was found.", "尚未找到已发布的版本。"), "info");
+        return;
+      }
       if (result && typeof result === "object" && "available" in result && result.available === true) {
         const latestVersion = "latestVersion" in result && typeof result.latestVersion === "string"
           ? ` v${result.latestVersion}`
           : "";
-        showToast(t("Update{version} available", "有可用更新{version}", { version: latestVersion }), "info");
+        const downloadUrl = "downloadUrl" in result && typeof result.downloadUrl === "string"
+          ? result.downloadUrl
+          : null;
+        setUpdateUrl(downloadUrl);
+        showToast(
+          downloadUrl
+            ? t("Update{version} available", "有可用更新{version}", { version: latestVersion })
+            : t(
+                "Update{version} is available, but its Windows download is missing.",
+                "更新{version}可用，但缺少 Windows 下载文件。",
+                { version: latestVersion },
+              ),
+          downloadUrl ? "info" : "warning",
+        );
       } else {
         showToast(t("You're on the latest version.", "当前已是最新版本。"), "success");
       }
     } catch (e) {
       const message = e instanceof Error ? e.message : String(e);
       showToast(t("Update check failed: {message}", "检查更新失败：{message}", { message }), "error");
+    }
+  }
+
+  async function handleDownloadUpdate() {
+    if (!updateUrl) return;
+    try {
+      await api.openExternal(updateUrl);
+    } catch (e) {
+      const message = e instanceof Error ? e.message : String(e);
+      showToast(t("Could not open the update download: {message}", "无法打开更新下载：{message}", { message }), "error");
     }
   }
 
@@ -92,6 +122,11 @@ export function AboutSettings() {
         <button className="settings-btn" type="button" onClick={handleCheckUpdates}>
           {t("Check for Updates", "检查更新")}
         </button>
+        {updateUrl && (
+          <button className="settings-btn settings-btn-primary" type="button" onClick={handleDownloadUpdate}>
+            {t("Download update", "下载更新")}
+          </button>
+        )}
         <button className="settings-btn" type="button" onClick={handleExportDiagnostics}>
           {t("Export Diagnostics", "导出诊断信息")}
         </button>

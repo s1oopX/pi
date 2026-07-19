@@ -87,4 +87,22 @@ describe("session lineage rows", () => {
   it("returns an empty list when the current session is not in the loaded page", () => {
     expect(buildSessionLineageRows([session({ id: "other", path: "other.jsonl" })], "missing", "Untitled")).toEqual([]);
   });
+
+  it("keeps lineage rows when a branch lives in another workspace", () => {
+    const rows = buildSessionLineageRows([
+      session({ id: "root", path: "root.jsonl", cwd: "C:\\source", name: "Source" }),
+      session({
+        id: "child",
+        path: "child.jsonl",
+        cwd: "D:\\target",
+        parentSessionPath: "root.jsonl",
+        name: "Target",
+      }),
+    ], "child", "Untitled");
+
+    expect(rows.map(({ path, detail, current }) => ({ path, detail, current }))).toEqual([
+      { path: "root.jsonl", detail: "C:\\source", current: false },
+      { path: "child.jsonl", detail: "D:\\target", current: true },
+    ]);
+  });
 });

@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it } from "vitest";
 import type { ComposerAttachment } from "./attachments";
 import {
+  appendFileReference,
   clearComposerWorkspaceDraft,
   getComposerWorkspaceDraft,
   setComposerWorkspaceDraft,
@@ -21,6 +22,12 @@ afterEach(() => {
 });
 
 describe("workspace composer drafts", () => {
+  it("appends file references without replacing the existing prompt", () => {
+    expect(appendFileReference("", "src/app.ts")).toBe("@src/app.ts ");
+    expect(appendFileReference("Review the auth flow", "src/app.ts")).toBe("Review the auth flow @src/app.ts ");
+    expect(appendFileReference("Review the auth flow ", "src/app.ts")).toBe("Review the auth flow @src/app.ts ");
+  });
+
   it("keeps text and attachments isolated by workspace", () => {
     setComposerWorkspaceDraft("C:\\workspace-a", "session-a", "Continue A", [image]);
     setComposerWorkspaceDraft("C:\\workspace-b", "session-a", "Continue B", []);

@@ -39,3 +39,7 @@ export function setComposerWorkspaceDraft(
 export function clearComposerWorkspaceDraft(cwd: string, sessionId?: string | null): void {
   drafts.delete(workspaceKey(cwd, sessionId));
 }
+
+export function appendFileReference(input: string, file: string): string {
+  return `${input}${input && !/\s$/.test(input) ? " " : ""}@${file} `;
+}

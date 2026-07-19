@@ -370,6 +370,10 @@ export function ModelSelector() {
           className="model-picker-popover"
           role="menu"
           onKeyDown={handlePopoverKeyDown}
+          onBlur={(event) => {
+            if (event.relatedTarget instanceof Node && event.currentTarget.contains(event.relatedTarget)) return;
+            closeMenu();
+          }}
         >
           {submenu === null && (
             <>
@@ -377,6 +381,7 @@ export function ModelSelector() {
                 type="button"
                 className="model-picker-row"
                 role="menuitem"
+                tabIndex={-1}
                 onClick={() => setSubmenu("model")}
               >
                 <span className="model-picker-row-label">{t("Model", "模型")}</span>
@@ -388,6 +393,7 @@ export function ModelSelector() {
                   type="button"
                   className="model-picker-row"
                   role="menuitem"
+                  tabIndex={-1}
                   onClick={() => setSubmenu("thinking")}
                 >
                   <span className="model-picker-row-label">{t("Reasoning effort", "推理强度")}</span>
@@ -399,6 +405,7 @@ export function ModelSelector() {
                 type="button"
                 className="model-picker-row"
                 role="menuitem"
+                tabIndex={-1}
                 onClick={() => setSubmenu("speed")}
               >
                 <span className="model-picker-row-label">{t("Speed", "速度")}</span>
@@ -410,6 +417,7 @@ export function ModelSelector() {
                 type="button"
                 className="model-picker-row model-picker-reset"
                 role="menuitem"
+                tabIndex={-1}
                 onClick={handleResetDefaults}
               >
                 <span className="model-picker-row-label">{t("Reset to defaults", "重置为默认设置")}</span>
@@ -429,6 +437,7 @@ export function ModelSelector() {
                 className="model-picker-back"
                 onClick={() => setSubmenu(null)}
                 role="menuitem"
+                tabIndex={-1}
               >
                 <span aria-hidden="true">&#8249;</span>
                 <span>{t("Model", "模型")}</span>
@@ -448,6 +457,7 @@ export function ModelSelector() {
                       type="button"
                       className={`model-picker-suboption ${active ? "active" : ""}`}
                       role="menuitemradio"
+                      tabIndex={-1}
                       aria-checked={active}
                       onClick={() => handleSelectModel(option)}
                     >
@@ -490,6 +500,7 @@ export function ModelSelector() {
                 className="model-picker-back"
                 onClick={() => setSubmenu(null)}
                 role="menuitem"
+                tabIndex={-1}
               >
                 <span aria-hidden="true">&#8249;</span>
                 <span>{t("Reasoning effort", "推理强度")}</span>
@@ -503,6 +514,7 @@ export function ModelSelector() {
                       type="button"
                       className={`model-picker-suboption ${active ? "active" : ""}`}
                       role="menuitemradio"
+                      tabIndex={-1}
                       aria-checked={active}
                       onClick={() => handleSelectThinking(level)}
                     >
@@ -535,6 +547,7 @@ export function ModelSelector() {
                 className="model-picker-back"
                 onClick={() => setSubmenu(null)}
                 role="menuitem"
+                tabIndex={-1}
               >
                 <span aria-hidden="true">&#8249;</span>
                 <span>{t("Speed", "速度")}</span>
@@ -544,6 +557,7 @@ export function ModelSelector() {
                   type="button"
                   className="model-picker-suboption active"
                   role="menuitemradio"
+                  tabIndex={-1}
                   aria-checked="true"
                   title={t("Speed is currently determined by the selected provider and model.", "当前速度由所选提供商和模型决定。")}
                   onClick={() => closeMenu(true)}

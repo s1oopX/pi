@@ -120,6 +120,10 @@ export function PermissionSelector() {
           role="listbox"
           aria-label={t("Permission mode", "权限模式")}
           onKeyDown={handlePopoverKeyDown}
+          onBlur={(event) => {
+            if (event.relatedTarget instanceof Node && event.currentTarget.contains(event.relatedTarget)) return;
+            closeMenu();
+          }}
         >
           <div className="permission-popover-title">{t("Tool permissions", "工具权限")}</div>
           {PERMISSION_MODE_OPTIONS.map((option) => (
@@ -127,6 +131,7 @@ export function PermissionSelector() {
               key={option.mode}
               type="button"
               role="option"
+              tabIndex={-1}
               aria-selected={option.mode === permissionMode}
               className={`permission-option ${option.mode === permissionMode ? "active" : ""}`}
               onClick={() => {

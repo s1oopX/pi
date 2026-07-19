@@ -21,7 +21,7 @@ import {
   type CompactionActivity,
   type RetryActivity,
 } from "./agentActivity";
-import { type MessageEventType, reduceMessageEvent } from "./messageCursor";
+import { reconcileMessageSnapshot, type MessageEventType, reduceMessageEvent } from "./messageCursor";
 import {
   appendApprovalHistory,
   decisionFromResponse,
@@ -48,6 +48,8 @@ export interface ExtensionWidgetState {
   placement: ExtensionWidgetPlacement;
   order: number;
 }
+
+export type ComposerDraft = string | ((current: string) => string);
 
 export type SettingsRoute =
   | null
@@ -120,7 +122,7 @@ export interface AppState {
 
   // Draft text pushed into the Composer from elsewhere (e.g. empty-state cards).
   // The Composer consumes it, prefills its local input, then clears it.
-  composerDraft: string | null;
+  composerDraft: ComposerDraft | null;
 
   // Streaming cursor: index of the message opened by the current message_start,
   // or null when no message is actively streaming. Message events carry no
@@ -159,8 +161,8 @@ export interface AppState {
   setPermissionMode: (mode: PermissionMode) => void;
   openSettings: (route: SettingsRoute) => void;
   closeSettings: () => void;
-  setComposerDraft: (text: string | null) => void;
-  resetForWorkspace: (cwd: string) => void;
+  setComposerDraft: (text: ComposerDraft | null) => void;
+  resetForWorkspace: (cwd: string) => Promise<void>;
   refreshWorkspaceGitStatus: () => void;
   setSessionsQuery: (query: string) => Promise<void>;
   refreshSessions: () => Promise<void>;
@@ -227,6 +229,22 @@ let systemThemeListenerInitialized = false;
 let nextExtensionWidgetOrder = 0;
 let gitStatusRequestId = 0;
 let sessionListRequestId = 0;
+let stateRefreshRequestId = 0;
+let fullStateRefreshRequestId = 0;
+let latestAppliedStateRefreshRequestId = 0;
+let fullStateRefreshGeneration = 0;
+let latestAppliedFullStateRefreshRequestId = 0;
+const activeFullStateRefreshes = new Set<number>();
+
+function invalidateStateRefreshScope(): void {
+  // A session/workspace mutation changes the meaning of every in-flight
+  // snapshot. Keep request ids monotonic while advancing the scope epoch so
+  // an older full refresh cannot take the same-scope fallback path.
+  stateRefreshRequestId += 1;
+  fullStateRefreshRequestId += 1;
+  fullStateRefreshGeneration += 1;
+  activeFullStateRefreshes.clear();
+}
 
 function ensureSystemThemeListener(): void {
   if (systemThemeListenerInitialized || typeof window === "undefined" || typeof window.matchMedia !== "function") {
@@ -316,6 +334,9 @@ export const useStore = create<AppState>((set, get) => ({
     if (status.ready) {
       set({ backendStatus: status });
     } else {
+      // Invalidate in-flight snapshots when the backend disconnects. Their
+      // responses may still arrive after a restart and belong to the old run.
+      invalidateStateRefreshScope();
       nextExtensionWidgetOrder = 0;
       if (typeof document !== "undefined") document.title = get().appInfo?.name ?? "Pi Studio";
       // Release the silent-loading hold once the backend settles into a terminal
@@ -324,6 +345,9 @@ export const useStore = create<AppState>((set, get) => ({
       const settledOffline = !status.starting && !status.restarting && status.retryInMs <= 0;
       set({
         backendStatus: status,
+        messageRefreshGeneration: get().messageRefreshGeneration + 1,
+        isStreaming: false,
+        activeMessageIndex: null,
         retryActivity: null,
         compactionActivity: null,
         extensionUIRequests: [],
@@ -395,9 +419,15 @@ export const useStore = create<AppState>((set, get) => ({
   },
 
   addExtensionUIRequest(request) {
-    set((s) => ({
-      extensionUIRequests: [...s.extensionUIRequests, request],
-    }));
+    set((state) => {
+      const existingIndex = state.extensionUIRequests.findIndex(({ id }) => id === request.id);
+      if (existingIndex === -1) {
+        return { extensionUIRequests: [...state.extensionUIRequests, request] };
+      }
+      const extensionUIRequests = [...state.extensionUIRequests];
+      extensionUIRequests[existingIndex] = request;
+      return { extensionUIRequests };
+    });
   },
 
   recordApprovalDecision(request, response) {
@@ -491,6 +521,7 @@ export const useStore = create<AppState>((set, get) => ({
   },
 
   resetForWorkspace(cwd) {
+    invalidateStateRefreshScope();
     nextExtensionWidgetOrder = 0;
     if (typeof document !== "undefined") document.title = get().appInfo?.name ?? "Pi Studio";
     set({
@@ -522,7 +553,7 @@ export const useStore = create<AppState>((set, get) => ({
       activeMessageIndex: null,
     });
     void refreshWorkspaceGitStatus();
-    if (get().backendStatus.ready) get().refresh();
+    return get().backendStatus.ready ? get().refreshAsync() : Promise.resolve();
   },
 
   refreshWorkspaceGitStatus() {
@@ -584,6 +615,11 @@ export const useStore = create<AppState>((set, get) => ({
 }));
 
 async function refreshState(): Promise<void> {
+  const requestId = ++stateRefreshRequestId;
+  const fullRequestId = ++fullStateRefreshRequestId;
+  const fullGeneration = fullStateRefreshGeneration;
+  activeFullStateRefreshes.add(fullRequestId);
+  let refreshFailed = false;
   useStore.setState((state) => ({
     toolExecutionsByCallId: {},
     activeTool: null,
@@ -591,15 +627,15 @@ async function refreshState(): Promise<void> {
   }));
   const generation = useStore.getState().messageRefreshGeneration;
   const workspaceCwd = useStore.getState().workspaceCwd;
-  const apiRef = api.getApi();
-  if (!apiRef) {
-    releaseWorkspaceLoadingAfterFailedRefresh(workspaceCwd, generation);
-    return;
-  }
-
-  void loadSessionPage(useStore.getState().sessionsQuery, 0, false);
 
   try {
+    if (!api.getApi()) {
+      refreshFailed = true;
+      return;
+    }
+
+    void loadSessionPage(useStore.getState().sessionsQuery, 0, false);
+
     const [session, messages, models, customModels, stats, commands] = await Promise.all([
       api.getState(),
       api.getMessages(),
@@ -609,13 +645,24 @@ async function refreshState(): Promise<void> {
       api.getCommands().catch(() => [] as SlashCommand[]),
     ]);
 
+    if (
+      fullGeneration !== fullStateRefreshGeneration ||
+      fullRequestId < latestAppliedFullStateRefreshRequestId
+    ) return;
     const authStatuses = await api.getAuthStatus().catch(() => ({}) as Record<string, AuthStatus>);
+    if (
+      fullGeneration !== fullStateRefreshGeneration ||
+      fullRequestId < latestAppliedFullStateRefreshRequestId
+    ) return;
     const current = useStore.getState();
+    const snapshotIsCurrent = requestId === stateRefreshRequestId;
+    const newerSnapshotApplied = latestAppliedStateRefreshRequestId > requestId;
     const decision = shouldApplyMessageRefresh(
       {
         workspaceCwd: current.workspaceCwd,
         generation: current.messageRefreshGeneration,
         isStreaming: current.isStreaming,
+        messageCount: current.messages.length,
         activeMessageIndex: current.activeMessageIndex,
       },
       {
@@ -627,39 +674,79 @@ async function refreshState(): Promise<void> {
 
     const workspaceMatches = normalizeWorkspaceKey(current.workspaceCwd) === normalizeWorkspaceKey(workspaceCwd);
 
-    if (!decision.apply) {
-      // Still refresh non-message catalog state when the workspace matches.
-      if (workspaceMatches) {
-        useStore.setState({
-          session,
-          models,
-          customModelsConfig: customModels,
-          stats,
-          commands,
-          authStatuses,
-          isStreaming: Boolean(session?.isStreaming),
-          workspaceLoading: false,
-        });
-      }
+    const initialFullFallback =
+      !decision.apply &&
+      decision.reason === "stale-generation" &&
+      !newerSnapshotApplied &&
+      workspaceMatches &&
+      current.backendStatus.ready &&
+      current.session === null &&
+      current.messages.length === 0;
+
+    if (!snapshotIsCurrent && !initialFullFallback) {
+      // A newer request owns the session/message snapshot even when it fails:
+      // an older same-length partial must not overwrite finalized events. The
+      // full refresh may still supply catalog data and release initial loading.
+      if (!workspaceMatches || !current.backendStatus.ready) return;
+      latestAppliedFullStateRefreshRequestId = fullRequestId;
+      useStore.setState({
+        models,
+        customModelsConfig: customModels,
+        commands,
+        authStatuses,
+        workspaceLoading: false,
+      });
       void refreshWorkspaceGitStatus();
       return;
     }
 
+    if (!decision.apply) {
+      // Only an empty initial load may fall back to an older full snapshot.
+      // Once a session or event state exists, keeping it is safer than
+      // restoring an older snapshot after a newer request failed.
+      if ((decision.reason !== "streaming-shrink" || !workspaceMatches) && !initialFullFallback) return;
+      latestAppliedFullStateRefreshRequestId = fullRequestId;
+      latestAppliedStateRefreshRequestId = requestId;
+      useStore.setState({
+        session,
+        models,
+        customModelsConfig: customModels,
+        stats,
+        commands,
+        authStatuses,
+        isStreaming: current.isStreaming || Boolean(session?.isStreaming),
+        workspaceLoading: false,
+      });
+      void refreshWorkspaceGitStatus();
+      return;
+    }
+
+    const messageState = reconcileMessageSnapshot(
+      { messages: current.messages, activeMessageIndex: current.activeMessageIndex },
+      messages,
+      current.isStreaming || Boolean(session?.isStreaming),
+    );
+    latestAppliedFullStateRefreshRequestId = fullRequestId;
+    latestAppliedStateRefreshRequestId = requestId;
     useStore.setState({
       session,
-      messages,
+      ...messageState,
       models,
       customModelsConfig: customModels,
       stats,
       commands,
       authStatuses,
-      isStreaming: Boolean(session?.isStreaming),
+      isStreaming: current.isStreaming || Boolean(session?.isStreaming),
       workspaceLoading: false,
     });
     void refreshWorkspaceGitStatus();
   } catch {
-    // Backend may have disconnected; status events will handle reconnect
-    releaseWorkspaceLoadingAfterFailedRefresh(workspaceCwd, generation);
+    refreshFailed = true;
+  } finally {
+    activeFullStateRefreshes.delete(fullRequestId);
+    if (refreshFailed && activeFullStateRefreshes.size === 0) {
+      releaseWorkspaceLoadingAfterFailedRefresh(workspaceCwd, generation);
+    }
   }
 }
 
@@ -745,6 +832,7 @@ async function refreshWorkspaceGitStatus(): Promise<void> {
 // Low-frequency data (models, custom models, commands, sessions) is refreshed
 // separately on agent_end or explicit user actions.
 async function refreshSessionState(): Promise<void> {
+  const requestId = ++stateRefreshRequestId;
   const apiRef = api.getApi();
   if (!apiRef) return;
 
@@ -758,12 +846,14 @@ async function refreshSessionState(): Promise<void> {
       api.getSessionStats().catch(() => undefined),
     ]);
 
+    if (requestId !== stateRefreshRequestId) return;
     const current = useStore.getState();
     const decision = shouldApplyMessageRefresh(
       {
         workspaceCwd: current.workspaceCwd,
         generation: current.messageRefreshGeneration,
         isStreaming: current.isStreaming,
+        messageCount: current.messages.length,
         activeMessageIndex: current.activeMessageIndex,
       },
       {
@@ -774,23 +864,33 @@ async function refreshSessionState(): Promise<void> {
     );
 
     if (!decision.apply) {
-      if (normalizeWorkspaceKey(current.workspaceCwd) === normalizeWorkspaceKey(workspaceCwd)) {
-        useStore.setState({
-          session,
-          stats,
-          isStreaming: Boolean(session?.isStreaming),
-        });
-      }
+      if (
+        decision.reason !== "streaming-shrink" ||
+        normalizeWorkspaceKey(current.workspaceCwd) !== normalizeWorkspaceKey(workspaceCwd)
+      ) return;
+      useStore.setState({
+        session,
+        stats,
+        isStreaming: current.isStreaming || Boolean(session?.isStreaming),
+      });
+      latestAppliedStateRefreshRequestId = requestId;
       return;
     }
 
+    const messageState = reconcileMessageSnapshot(
+      { messages: current.messages, activeMessageIndex: current.activeMessageIndex },
+      messages,
+      current.isStreaming || Boolean(session?.isStreaming),
+    );
+    latestAppliedStateRefreshRequestId = requestId;
     useStore.setState({
       session,
-      messages,
+      ...messageState,
       stats,
-      isStreaming: Boolean(session?.isStreaming),
+      isStreaming: current.isStreaming || Boolean(session?.isStreaming),
     });
   } catch {
-    // Backend may have disconnected; status events will handle reconnect
+    // A lightweight refresh must not release the full-refresh loading hold.
+    // The next full refresh or backend status transition owns that boundary.
   }
 }

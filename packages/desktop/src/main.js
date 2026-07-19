@@ -8,6 +8,7 @@ import { createBackendMutationQueue } from "./backend-mutation-queue.js";
 import { sanitizeDiagnostics } from "./diagnostics.js";
 import { getGitWorkspaceStatus } from "./git-workspace-status.js";
 import { describeRevealTarget, resolveWorkspacePath } from "./path-reveal.js";
+import { createPendingExtensionUIRequestStore } from "./pending-extension-ui-requests.js";
 import { resolveKnownSessionFile } from "./session-files.js";
 import { checkDesktopUpdate } from "./update.js";
 import { loadStoredWorkspace, saveStoredWorkspace } from "./workspace-state.js";
@@ -25,6 +26,7 @@ let backendBuffer = "";
 let backendBufferBytes = 0;
 let requestCounter = 0;
 const pendingRequests = new Map();
+const pendingExtensionUIRequests = createPendingExtensionUIRequestStore();
 let backendReady = false;
 let backendStarting = false;
 let backendStderr = "";
@@ -343,6 +345,10 @@ function parseBackendLine(line) {
 		return;
 	}
 
+	if (payload.type === "session_changed" && typeof payload.cwd === "string") {
+		syncBackendCwd(payload.cwd);
+	}
+	pendingExtensionUIRequests.track(payload);
 	maybeNotify(payload);
 	sendToRenderer("backend:event", payload);
 }
@@ -445,6 +451,7 @@ function startBackend() {
 	if (backend) {
 		return;
 	}
+	pendingExtensionUIRequests.clear();
 
 	const backendPath = getBackendPath();
 	if (!existsSync(backendPath)) {
@@ -490,6 +497,7 @@ function startBackend() {
 			return;
 		}
 		sessionMutationQueue.invalidate();
+		pendingExtensionUIRequests.clear();
 		backendReady = false;
 		backendStarting = false;
 		backend = undefined;
@@ -502,6 +510,7 @@ function startBackend() {
 			return;
 		}
 		sessionMutationQueue.invalidate();
+		pendingExtensionUIRequests.clear();
 		backend = undefined;
 		backendReady = false;
 		backendStarting = false;
@@ -533,6 +542,7 @@ function stopBackend() {
 	clearBackendRestartTimers();
 	backendRestartAttempts = 0;
 	sessionMutationQueue.invalidate();
+	pendingExtensionUIRequests.clear();
 	if (!backend) {
 		return;
 	}
@@ -768,7 +778,10 @@ ipcMain.handle("backend:request", async (_event, command) => {
 
 ipcMain.handle("backend:send", async (_event, command) => {
 	await sendBackend(command);
+	if (command?.type === "extension_ui_response") pendingExtensionUIRequests.remove(command.id);
 });
+
+ipcMain.handle("backend:get-pending-extension-ui-requests", () => pendingExtensionUIRequests.list());
 
 ipcMain.handle("backend:get-status", () => ({
 	ready: backendReady,

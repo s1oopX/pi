@@ -5,7 +5,7 @@ import type { ForkMessage, SessionInfo, SessionTreeData } from "../../ipc/types"
 import { useStore } from "../../store";
 import { Dialog } from "../Dialog";
 import { showToast } from "../Toast";
-import { isBranchLoadCurrent } from "./branchLoadGuard";
+import { isBranchLoadCurrent, resolveBranchSessionChange } from "./branchLoadGuard";
 import { buildBranchTreeRows } from "./branchTree";
 import { buildSessionLineageRows, type SessionLineageRow } from "./sessionLineage";
 import "./BranchNavigator.css";
@@ -115,6 +115,7 @@ export function BranchNavigatorContent({ onClose, onSessionChanged }: BranchNavi
     try {
       const result = await api.forkSession(entryId);
       if (result.cancelled) return;
+      useStore.getState().resetForWorkspace(useStore.getState().workspaceCwd);
       await onSessionChanged();
       useStore.getState().setComposerDraft(result.text);
       onClose?.();
@@ -146,7 +147,13 @@ export function BranchNavigatorContent({ onClose, onSessionChanged }: BranchNavi
     try {
       const result = await api.switchSession(row.path);
       if (result.cancelled) return;
-      await onSessionChanged();
+      const sessionChange = resolveBranchSessionChange(
+        useStore.getState().workspaceCwd,
+        result.cwd,
+      );
+      useStore.getState().resetForWorkspace(
+        sessionChange.type === "reset" ? sessionChange.cwd : useStore.getState().workspaceCwd,
+      );
       onClose?.();
       showToast(t("Opened branch", "已打开分支"), "success");
     } catch (switchError) {

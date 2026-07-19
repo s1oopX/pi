@@ -12,6 +12,7 @@ const packagesDir = join(process.cwd(), 'packages');
 const packageDirs = readdirSync(packagesDir, { withFileTypes: true })
 	.filter(dirent => dirent.isDirectory())
 	.map(dirent => dirent.name);
+packageDirs.push('desktop/renderer-next');
 
 // Read all package.json files and build version map
 const packages = {};

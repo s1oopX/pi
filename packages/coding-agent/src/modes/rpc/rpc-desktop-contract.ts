@@ -488,6 +488,15 @@ export interface RpcExtensionUIRequestClosedEventDTO {
 	reason: "aborted" | "timeout";
 }
 
+/** Emitted when an extension command replaces the active session. */
+export interface RpcSessionChangedEventDTO {
+	type: "session_changed";
+	cwd: string;
+	sessionId: string;
+	sessionFile?: string;
+	reason: "extension_command";
+}
+
 export type RpcBackendEventDTO =
 	| RpcMessageEventDTO
 	| RpcAgentStartEventDTO
@@ -500,4 +509,5 @@ export type RpcBackendEventDTO =
 	| RpcAutoRetryStartEventDTO
 	| RpcAutoRetryEndEventDTO
 	| RpcExtensionUIRequestEventDTO
-	| RpcExtensionUIRequestClosedEventDTO;
+	| RpcExtensionUIRequestClosedEventDTO
+	| RpcSessionChangedEventDTO;

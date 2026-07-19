@@ -22,6 +22,7 @@ import type {
 	ExtensionUIContext,
 	ExtensionUIDialogOptions,
 	ExtensionWidgetOptions,
+	ReplacedSessionContext,
 	WorkingIndicatorOptions,
 } from "../../core/extensions/index.ts";
 import {
@@ -44,6 +45,7 @@ import type {
 	RpcGetCustomModelsDataDTO,
 	RpcGetMessagesDataDTO,
 	RpcGetSessionsDataDTO,
+	RpcSessionChangedEventDTO,
 	RpcSessionStateDTO,
 	RpcSessionStatsDTO,
 	RpcSessionTreeNodeDTO,
@@ -531,6 +533,20 @@ export async function runRpcMode(runtimeHost: AgentSessionRuntime): Promise<neve
 	const output = (obj: RpcResponse | RpcExtensionUIRequest | RpcExtensionUIRequestClosed | object) => {
 		writeRawStdout(serializeJsonLine(obj));
 	};
+	const withSessionChangedNotification = (
+		withSession?: (context: ReplacedSessionContext) => Promise<void>,
+	): ((context: ReplacedSessionContext) => Promise<void>) => {
+		return async (context) => {
+			output({
+				type: "session_changed",
+				cwd: session.sessionManager.getCwd(),
+				sessionId: session.sessionId,
+				...(session.sessionFile ? { sessionFile: session.sessionFile } : {}),
+				reason: "extension_command",
+			} satisfies RpcSessionChangedEventDTO);
+			await withSession?.(context);
+		};
+	};
 
 	const success = <T extends RpcCommand["type"]>(
 		id: string | undefined,
@@ -797,9 +813,16 @@ export async function runRpcMode(runtimeHost: AgentSessionRuntime): Promise<neve
 			mode: "rpc",
 			commandContextActions: {
 				waitForIdle: () => session.agent.waitForIdle(),
-				newSession: async (options) => runtimeHost.newSession(options),
+				newSession: (options) =>
+					runtimeHost.newSession({
+						...options,
+						withSession: withSessionChangedNotification(options?.withSession),
+					}),
 				fork: async (entryId, forkOptions) => {
-					const result = await runtimeHost.fork(entryId, forkOptions);
+					const result = await runtimeHost.fork(entryId, {
+						...forkOptions,
+						withSession: withSessionChangedNotification(forkOptions?.withSession),
+					});
 					return { cancelled: result.cancelled };
 				},
 				navigateTree: async (targetId, options) => {
@@ -811,9 +834,11 @@ export async function runRpcMode(runtimeHost: AgentSessionRuntime): Promise<neve
 					});
 					return { cancelled: result.cancelled };
 				},
-				switchSession: async (sessionPath, options) => {
-					return runtimeHost.switchSession(sessionPath, options);
-				},
+				switchSession: (sessionPath, options) =>
+					runtimeHost.switchSession(sessionPath, {
+						...options,
+						withSession: withSessionChangedNotification(options?.withSession),
+					}),
 				reload: async () => {
 					await session.reload();
 				},

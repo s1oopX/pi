@@ -5,6 +5,7 @@ const base = {
   workspaceCwd: "C:\\proj",
   generation: 3,
   isStreaming: false,
+  messageCount: 4,
   activeMessageIndex: null as number | null,
 };
 
@@ -37,6 +38,7 @@ describe("shouldApplyMessageRefresh", () => {
     expect(shouldApplyMessageRefresh({
       ...base,
       isStreaming: true,
+      messageCount: 6,
       activeMessageIndex: 5,
     }, {
       workspaceCwd: "C:\\proj",
@@ -49,11 +51,24 @@ describe("shouldApplyMessageRefresh", () => {
     expect(shouldApplyMessageRefresh({
       ...base,
       isStreaming: true,
+      messageCount: 3,
       activeMessageIndex: 2,
     }, {
       workspaceCwd: "C:\\proj",
       generation: 3,
       messageCount: 3,
     })).toEqual({ apply: true });
+  });
+
+  it("rejects a streaming shrink between messages when no cursor is open", () => {
+    expect(shouldApplyMessageRefresh({
+      ...base,
+      isStreaming: true,
+      activeMessageIndex: null,
+    }, {
+      workspaceCwd: "C:\\proj",
+      generation: 3,
+      messageCount: 3,
+    })).toEqual({ apply: false, reason: "streaming-shrink" });
   });
 });

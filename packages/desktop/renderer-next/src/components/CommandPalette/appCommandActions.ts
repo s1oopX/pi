@@ -38,7 +38,8 @@ async function createNewThread(): Promise<void> {
   try {
     const result = await api.newSession();
     if (result.cancelled) return;
-    await useStore.getState().refreshAsync();
+    await useStore.getState().resetForWorkspace(result.cwd);
+    focusElement(".composer-input", t("Message input is not available", "消息输入框不可用"));
   } catch (error) {
     showToast(t("Failed to create thread: {error}", "创建会话失败：{error}", {
       error: error instanceof Error ? error.message : String(error),

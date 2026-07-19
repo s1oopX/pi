@@ -1,6 +1,6 @@
 {
   "name": "@s1oopx/pi-studio-renderer",
-  "version": "0.1.0",
+  "version": "0.80.3",
   "private": true,
   "type": "module",
   "scripts": {

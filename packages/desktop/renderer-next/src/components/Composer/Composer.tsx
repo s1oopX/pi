@@ -32,7 +32,9 @@ import {
   type ComposerAttachment,
 } from "./attachments";
 import {
+  isPromptSubmissionBlocked,
   resolvePromptStreamingBehavior,
+  shouldSubmitComposerEnter,
   type StreamingSubmitMode,
 } from "./submission";
 import {
@@ -79,6 +81,8 @@ export function Composer() {
   const [activeIndex, setActiveIndex] = useState(0);
   const [fileMatches, setFileMatches] = useState<string[]>([]);
   const isStreaming = useStore((s) => s.isStreaming);
+  const retrying = useStore((s) => s.retryActivity !== null || Boolean(s.session?.isRetrying));
+  const compacting = useStore((s) => s.compactionActivity !== null || Boolean(s.session?.isCompacting));
   const backendStatus = useStore((s) => s.backendStatus);
   const workspaceLoading = useStore((s) => s.workspaceLoading);
   const commands = useStore((s) => s.commands);
@@ -103,11 +107,20 @@ export function Composer() {
     setComposerWorkspaceDraft(workspaceCwd, sessionId, input, attachments);
   }, [attachments, input, sessionId, workspaceCwd]);
 
+  useEffect(() => {
+    const focusFrame = requestAnimationFrame(() => {
+      if (document.activeElement !== document.body) return;
+      if (document.querySelector('dialog[open], [aria-modal="true"]')) return;
+      textareaRef.current?.focus();
+    });
+    return () => cancelAnimationFrame(focusFrame);
+  }, []);
+
   // Consume a draft pushed from elsewhere (e.g. empty-state action cards):
   // prefill the input, focus, size to fit, then clear the shared draft.
   useEffect(() => {
     if (composerDraft == null) return;
-    setInput(composerDraft);
+    setInput((current) => typeof composerDraft === "function" ? composerDraft(current) : composerDraft);
     setComposerDraft(null);
     requestAnimationFrame(() => {
       const el = textareaRef.current;
@@ -296,6 +309,16 @@ export function Composer() {
       );
       return;
     }
+    const current = useStore.getState();
+    const retryBlocked = current.retryActivity !== null || Boolean(current.session?.isRetrying);
+    const compactionBlocked = current.compactionActivity !== null || Boolean(current.session?.isCompacting);
+    if (isPromptSubmissionBlocked(retryBlocked, compactionBlocked)) {
+      showToast(
+        t("Wait for retry or compaction to finish.", "请等待重试或压缩完成。"),
+        "warning",
+      );
+      return;
+    }
     const message = input.trim();
     if ((!message && attachments.length === 0) || submitting || readingAttachments) return;
     if (attachments.length > 0 && !modelSupportsImages) {
@@ -346,7 +369,7 @@ export function Composer() {
         return;
       }
     }
-    if (e.key === "Enter" && !e.shiftKey) {
+    if (shouldSubmitComposerEnter(e.key, e.shiftKey, e.nativeEvent.isComposing)) {
       e.preventDefault();
       handleSubmit();
     }
@@ -575,6 +598,7 @@ export function Composer() {
                   submitting ||
                   readingAttachments ||
                   !backendStatus.ready ||
+                  isPromptSubmissionBlocked(retrying, compacting) ||
                   (!input.trim() && attachments.length === 0) ||
                   (attachments.length > 0 && !modelSupportsImages)
                 }
@@ -582,6 +606,10 @@ export function Composer() {
                 title={
                   !backendStatus.ready
                     ? t("The agent backend is not ready", "智能体后端尚未就绪")
+                    : retrying
+                      ? t("Wait for the automatic retry to finish or cancel it", "请等待自动重试完成或取消重试")
+                    : compacting
+                      ? t("Wait for compaction to finish", "请等待压缩完成")
                     : isStreaming
                       ? t("{action} (Enter)", "{action}（Enter）", { action: streamingSubmitLabel })
                       : t("Send message (Enter)", "发送消息（Enter）")

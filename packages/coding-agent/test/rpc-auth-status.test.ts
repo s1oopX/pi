@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { AgentSessionRuntime } from "../src/core/agent-session-runtime.ts";
 import { SessionManager } from "../src/core/session-manager.ts";
+import type { ExtensionFactory } from "../src/index.ts";
 import { runRpcMode } from "../src/modes/rpc/rpc-mode.ts";
 import { createHarness, type Harness } from "./suite/harness.ts";
 
@@ -207,6 +208,84 @@ describe("RPC provider auth status", () => {
 			expect(switchResponse.data).toEqual({ cancelled: false, cwd: resumedCwd });
 		} finally {
 			harness.cleanup();
+			restoreListeners(listenerSnapshot);
+		}
+	});
+
+	it("emits session_changed for extension replacements before new-session events", async () => {
+		const listenerSnapshot = takeListenerSnapshot();
+		const extensionFactory: ExtensionFactory = (pi) => {
+			pi.registerCommand("replace", {
+				description: "replace",
+				handler: async (_args, ctx) => {
+					await ctx.newSession({
+						withSession: async (replacedCtx) => {
+							await replacedCtx.sendMessage({
+								customType: "replacement-ready",
+								content: "replacement ready",
+								display: true,
+							});
+						},
+					});
+				},
+			});
+		};
+		const harnesses = await Promise.all(
+			[1, 2, 3].map(() => createHarness({ extensionFactories: [extensionFactory] })),
+		);
+		let currentIndex = 0;
+		let rebindSession: (() => Promise<void>) | undefined;
+		const runtimeHost = {
+			get session() {
+				return harnesses[currentIndex].session;
+			},
+			newSession: vi.fn(async (options?: Parameters<AgentSessionRuntime["newSession"]>[0]) => {
+				currentIndex += 1;
+				await rebindSession?.();
+				await options?.withSession?.(harnesses[currentIndex].session.createReplacedSessionContext());
+				return { cancelled: false, cwd: harnesses[currentIndex].session.sessionManager.getCwd() };
+			}),
+			switchSession: vi.fn(async () => ({
+				cancelled: true,
+				cwd: harnesses[currentIndex].session.sessionManager.getCwd(),
+			})),
+			fork: vi.fn(async () => ({ cancelled: true, selectedText: "" })),
+			dispose: vi.fn(async () => {}),
+			setRebindSession: vi.fn((callback: () => Promise<void>) => {
+				rebindSession = callback;
+			}),
+		} as unknown as AgentSessionRuntime;
+
+		try {
+			void runRpcMode(runtimeHost);
+			await vi.waitFor(() => expect(rpcIo.lineHandler).toBeDefined());
+
+			await sendCommand({ id: "direct", type: "new_session" });
+			expect(parseOutputLines().filter((record) => record.type === "session_changed")).toHaveLength(0);
+
+			const promptStartedAt = parseOutputLines().length;
+			await sendCommand({ id: "extension", type: "prompt", message: "/replace" });
+			const promptOutput = parseOutputLines().slice(promptStartedAt);
+			const changedIndex = promptOutput.findIndex((record) => record.type === "session_changed");
+			const replacementMessageIndex = promptOutput.findIndex(
+				(record) =>
+					record.type === "message_start" &&
+					(record.message as { customType?: string } | undefined)?.customType === "replacement-ready",
+			);
+			const responseIndex = promptOutput.findIndex(
+				(record) => record.id === "extension" && record.type === "response",
+			);
+			expect(changedIndex).toBeGreaterThanOrEqual(0);
+			expect(replacementMessageIndex).toBeGreaterThan(changedIndex);
+			expect(responseIndex).toBeGreaterThan(changedIndex);
+			expect(promptOutput[changedIndex]).toMatchObject({
+				type: "session_changed",
+				cwd: harnesses[2].session.sessionManager.getCwd(),
+				sessionId: harnesses[2].session.sessionId,
+				reason: "extension_command",
+			});
+		} finally {
+			for (const harness of harnesses) harness.cleanup();
 			restoreListeners(listenerSnapshot);
 		}
 	});

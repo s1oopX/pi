@@ -131,6 +131,7 @@ export function CommandPalette({ entries, keybindings, platform, onClose, onRun 
       <div
         ref={panelRef}
         className="command-palette"
+        data-app-command-palette
         role="dialog"
         aria-modal="true"
         aria-labelledby={titleId}

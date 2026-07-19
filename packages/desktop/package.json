@@ -1,6 +1,6 @@
 {
 	"name": "@s1oopx/pi-studio",
-	"version": "0.1.0",
+	"version": "0.80.3",
 	"private": true,
 	"description": "Pi Studio desktop client for third-party API service support",
 	"author": "s1oopX <s1oopp1337@gmail.com>",
@@ -15,6 +15,7 @@
 		"build:backend": "node scripts/build-backend.mjs",
 		"dev:renderer": "cd renderer-next && npx vite",
 		"build:renderer": "cd renderer-next && npx tsc --noEmit && npx vite build",
+		"test": "node --test \"test/*.test.js\"",
 		"start": "npm run build:backend && electron .",
 		"pack:dir": "npm run build:renderer && npm run build:backend && electron-builder --dir --win --x64 --config.electronDist=../../node_modules/electron/dist",
 		"pack:portable": "npm run build:renderer && npm run build:backend && electron-builder --win portable --x64 --config.electronDist=../../node_modules/electron/dist"
@@ -40,7 +41,11 @@
 					"pi-studio-backend.exe",
 					"photon_rs_bg.wasm",
 					"package.json",
-					"export-html/**/*"
+					"README.md",
+					"docs/**/*",
+					"examples/**/*",
+					"export-html/**/*",
+					"theme/**/*"
 				]
 			}
 		],

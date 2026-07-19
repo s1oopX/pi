@@ -1,7 +1,23 @@
 import { describe, expect, it } from "vitest";
-import { resolvePromptStreamingBehavior } from "./submission";
+import {
+  isPromptSubmissionBlocked,
+  resolvePromptStreamingBehavior,
+  shouldSubmitComposerEnter,
+} from "./submission";
 
 describe("composer submission", () => {
+  it("blocks prompts while automatic retry or compaction is active", () => {
+    expect(isPromptSubmissionBlocked(true, false)).toBe(true);
+    expect(isPromptSubmissionBlocked(false, true)).toBe(true);
+    expect(isPromptSubmissionBlocked(false, false)).toBe(false);
+  });
+
+  it("does not submit Enter while an IME is composing", () => {
+    expect(shouldSubmitComposerEnter("Enter", false, true)).toBe(false);
+    expect(shouldSubmitComposerEnter("Enter", false, false)).toBe(true);
+    expect(shouldSubmitComposerEnter("Enter", true, false)).toBe(false);
+  });
+
   it("sends idle messages as plain prompts", () => {
     expect(resolvePromptStreamingBehavior(false, "Continue", "follow-up")).toBeUndefined();
     expect(resolvePromptStreamingBehavior(false, "Continue", "steer")).toBeUndefined();

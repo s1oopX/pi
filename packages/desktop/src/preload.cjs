@@ -10,6 +10,9 @@ contextBridge.exposeInMainWorld("piDesktop", {
 	getBackendStatus() {
 		return ipcRenderer.invoke("backend:get-status");
 	},
+	getPendingExtensionUIRequests() {
+		return ipcRenderer.invoke("backend:get-pending-extension-ui-requests");
+	},
 	restartBackend() {
 		return ipcRenderer.invoke("backend:restart");
 	},

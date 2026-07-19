@@ -5,6 +5,7 @@ import type {
   BackendStatus,
   CustomModelApi,
   CustomModelsConfig,
+  ExtensionUIRequestEvent,
   ForkMessage,
   ForkResult,
   GetSessionsCommand,
@@ -27,6 +28,7 @@ export interface PiDesktopApi {
   request(command: BackendCommand): Promise<unknown>;
   send(command: BackendSendCommand): Promise<void>;
   getBackendStatus(): Promise<BackendStatus>;
+  getPendingExtensionUIRequests?: () => Promise<ExtensionUIRequestEvent[]>;
   restartBackend(): Promise<void>;
   chooseWorkspace(): Promise<{ cwd: string; changed: boolean }>;
   openWorkspace(cwd: string): Promise<{ cwd: string; changed: boolean }>;
@@ -331,6 +333,13 @@ export async function setExtensionFlag(name: string, value: boolean | string): P
 
 export async function getBackendStatus(): Promise<BackendStatus> {
   return requireApi().getBackendStatus();
+}
+
+export async function getPendingExtensionUIRequests(): Promise<ExtensionUIRequestEvent[]> {
+  const api = getApi();
+  if (!api?.getPendingExtensionUIRequests) return [];
+  const requests = await api.getPendingExtensionUIRequests();
+  return Array.isArray(requests) ? requests : [];
 }
 
 export async function restartBackend(): Promise<void> {

@@ -7,6 +7,7 @@ export interface MessageRefreshContext {
   workspaceCwd: string;
   generation: number;
   isStreaming: boolean;
+  messageCount: number;
   activeMessageIndex: number | null;
 }
 
@@ -36,13 +37,10 @@ export function shouldApplyMessageRefresh(
   if (candidate.generation !== current.generation) {
     return { apply: false, reason: "stale-generation" };
   }
-  // While streaming, never accept a shorter transcript — that usually means a
-  // refresh raced ahead of the live tail and would flash/drop the active bubble.
-  if (
-    current.isStreaming &&
-    current.activeMessageIndex !== null &&
-    candidate.messageCount < current.activeMessageIndex + 1
-  ) {
+  // get_messages contains finalized messages only. While a run is active, a
+  // shorter snapshot is necessarily behind the event stream, even in the gap
+  // between message_end and the next message_start when there is no cursor.
+  if (current.isStreaming && candidate.messageCount < current.messageCount) {
     return { apply: false, reason: "streaming-shrink" };
   }
   return { apply: true };

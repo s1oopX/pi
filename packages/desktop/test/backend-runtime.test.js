@@ -8,6 +8,21 @@ import test from "node:test";
 
 const backendPath = join(import.meta.dirname, "../../coding-agent/dist/pi-studio-backend.exe");
 
+test("Studio backend includes all packaged runtime assets", { skip: !existsSync(backendPath) }, () => {
+	const exportDir = join(import.meta.dirname, "../../coding-agent/dist/export-html");
+	for (const asset of ["template.html", "template.css", "template.js", "vendor/marked.min.js", "vendor/highlight.min.js"]) {
+		assert.equal(existsSync(join(exportDir, asset)), true, `missing export asset: ${asset}`);
+	}
+	const themeDir = join(import.meta.dirname, "../../coding-agent/dist/theme");
+	for (const theme of ["dark.json", "light.json", "pi-studio-dark.json", "pi-studio-light.json"]) {
+		assert.equal(existsSync(join(themeDir, theme)), true, `missing theme asset: ${theme}`);
+	}
+	const packageDir = join(import.meta.dirname, "../../coding-agent/dist");
+	for (const doc of ["README.md", "docs/providers.md", "docs/models.md", "examples/README.md"]) {
+		assert.equal(existsSync(join(packageDir, doc)), true, `missing documentation asset: ${doc}`);
+	}
+});
+
 test("Studio backend returns only models from the user models.json", { skip: !existsSync(backendPath) }, async (t) => {
 	const agentDir = mkdtempSync(join(tmpdir(), "pi-studio-backend-"));
 	writeFileSync(

@@ -1,4 +1,4 @@
-import { type CSSProperties, useCallback, useEffect, useMemo, useState } from "react";
+import { type CSSProperties, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { usePanelResize } from "./hooks/usePanelResize";
 import { getSidebarBoundsForViewport, getWorkbenchBoundsForViewport } from "./lib/panelSizing";
 import { Layout } from "./components/Layout";
@@ -32,6 +32,8 @@ export function App() {
   const [commandPaletteOpen, setCommandPaletteOpen] = useState(false);
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [workbenchView, setWorkbenchView] = useState<WorkbenchView | "closed">("closed");
+  const workbenchReturnFocusRef = useRef<HTMLElement | null>(null);
+  const workbenchWasOpenRef = useRef(false);
   const [viewportWidth, setViewportWidth] = useState(() =>
     typeof window === "undefined" ? DEFAULT_VIEWPORT_WIDTH : window.innerWidth
   );
@@ -90,13 +92,22 @@ export function App() {
 
   useBackendEvents();
 
-  const openWorkbench = useCallback((view: WorkbenchView) => {
-    setWorkbenchView(view);
+  const rememberWorkbenchReturnFocus = useCallback(() => {
+    const activeElement = document.activeElement;
+    if (!(activeElement instanceof HTMLElement)) return;
+    if (activeElement.closest(".workbench-panel, .workbench-resize")) return;
+    workbenchReturnFocusRef.current = activeElement;
   }, []);
 
+  const openWorkbench = useCallback((view: WorkbenchView) => {
+    rememberWorkbenchReturnFocus();
+    setWorkbenchView(view);
+  }, [rememberWorkbenchReturnFocus]);
+
   const toggleWorkbench = useCallback(() => {
+    rememberWorkbenchReturnFocus();
     setWorkbenchView((current) => current === "closed" ? "launcher" : "closed");
-  }, []);
+  }, [rememberWorkbenchReturnFocus]);
 
   const handleAppCommand = useCallback((commandId: AppCommandId) => {
     if (commandId === "open-command-palette") {
@@ -149,6 +160,25 @@ export function App() {
     window.addEventListener("resize", handleResize);
     return () => window.removeEventListener("resize", handleResize);
   }, []);
+
+  useEffect(() => {
+    const workbenchOpen = workbenchView !== "closed";
+    if (!workbenchOpen && workbenchWasOpenRef.current) {
+      const returnFocus = workbenchReturnFocusRef.current;
+      workbenchReturnFocusRef.current = null;
+      const focusFrame = requestAnimationFrame(() => {
+        if (document.activeElement !== document.body) return;
+        if (returnFocus?.isConnected) {
+          returnFocus.focus();
+          return;
+        }
+        document.querySelector<HTMLElement>(".composer-input")?.focus();
+      });
+      workbenchWasOpenRef.current = false;
+      return () => cancelAnimationFrame(focusFrame);
+    }
+    workbenchWasOpenRef.current = workbenchOpen;
+  }, [workbenchView]);
 
   return (
     <>

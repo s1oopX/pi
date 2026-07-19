@@ -26,7 +26,11 @@ test("desktop package builds and ships only its catalog-free backend", () => {
 		"pi-studio-backend.exe",
 		"photon_rs_bg.wasm",
 		"package.json",
+		"README.md",
+		"docs/**/*",
+		"examples/**/*",
 		"export-html/**/*",
+		"theme/**/*",
 	]);
 });
 

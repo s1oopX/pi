@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, type KeyboardEvent as ReactKeyboardEvent } from "react";
 import { useI18n } from "../../i18n";
 import * as api from "../../ipc/api";
 import { useStore } from "../../store";
@@ -33,6 +33,8 @@ export function TopBar({
   const [openingLocation, setOpeningLocation] = useState(false);
   const [locationMenuOpen, setLocationMenuOpen] = useState(false);
   const locationMenuRef = useRef<HTMLDivElement>(null);
+  const locationMenuTriggerRef = useRef<HTMLButtonElement>(null);
+  const locationMenuInitialFocusRef = useRef<"first" | "last">("first");
 
   const activeSession = sessions.find((candidate) => candidate.id === session?.sessionId);
   const threadTitle =
@@ -78,6 +80,37 @@ export function TopBar({
     onOpenWorkbench(view);
   }
 
+  function closeLocationMenu(restoreFocus = false) {
+    setLocationMenuOpen(false);
+    if (restoreFocus) requestAnimationFrame(() => locationMenuTriggerRef.current?.focus());
+  }
+
+  function handleLocationMenuKeyDown(event: ReactKeyboardEvent<HTMLDivElement>) {
+    if (event.key === "Escape") {
+      event.preventDefault();
+      event.stopPropagation();
+      closeLocationMenu(true);
+      return;
+    }
+    if (!["ArrowDown", "ArrowUp", "Home", "End"].includes(event.key)) return;
+    event.preventDefault();
+    event.stopPropagation();
+    const items = Array.from(
+      locationMenuRef.current?.querySelectorAll<HTMLButtonElement>("[role='menuitem']:not(:disabled)") ?? [],
+    );
+    if (items.length === 0) return;
+    const currentIndex = items.indexOf(document.activeElement as HTMLButtonElement);
+    let nextIndex: number;
+    if (event.key === "Home") nextIndex = 0;
+    else if (event.key === "End") nextIndex = items.length - 1;
+    else if (event.key === "ArrowDown") {
+      nextIndex = currentIndex < 0 || currentIndex === items.length - 1 ? 0 : currentIndex + 1;
+    } else {
+      nextIndex = currentIndex <= 0 ? items.length - 1 : currentIndex - 1;
+    }
+    items[nextIndex]?.focus();
+  }
+
   useEffect(() => {
     const handleFocus = () => refreshWorkspaceGitStatus();
     window.addEventListener("focus", handleFocus);
@@ -86,17 +119,25 @@ export function TopBar({
 
   useEffect(() => {
     if (!locationMenuOpen) return;
+    const focusFrame = requestAnimationFrame(() => {
+      const items = locationMenuRef.current?.querySelectorAll<HTMLButtonElement>("[role='menuitem']:not(:disabled)");
+      if (!items || items.length === 0) return;
+      items[locationMenuInitialFocusRef.current === "last" ? items.length - 1 : 0]?.focus();
+    });
     function handlePointerDown(event: PointerEvent) {
       if (!(event.target instanceof Node)) return;
       if (locationMenuRef.current?.contains(event.target)) return;
       setLocationMenuOpen(false);
     }
     function handleKeyDown(event: KeyboardEvent) {
-      if (event.key === "Escape") setLocationMenuOpen(false);
+      if (event.key !== "Escape") return;
+      event.preventDefault();
+      closeLocationMenu(true);
     }
     document.addEventListener("pointerdown", handlePointerDown);
     document.addEventListener("keydown", handleKeyDown);
     return () => {
+      cancelAnimationFrame(focusFrame);
       document.removeEventListener("pointerdown", handlePointerDown);
       document.removeEventListener("keydown", handleKeyDown);
     };
@@ -157,6 +198,7 @@ export function TopBar({
             <span className="top-bar-open-location-label">{t("Open location", "打开位置")}</span>
           </button>
           <button
+            ref={locationMenuTriggerRef}
             className="top-bar-open-location-menu-button"
             type="button"
             disabled={openingLocation}
@@ -164,27 +206,48 @@ export function TopBar({
             aria-haspopup="menu"
             aria-expanded={locationMenuOpen}
             title={t("Choose open method", "选择打开方式")}
-            onClick={() => setLocationMenuOpen((open) => !open)}
+            onClick={() => {
+              if (locationMenuOpen) {
+                closeLocationMenu();
+                return;
+              }
+              locationMenuInitialFocusRef.current = "first";
+              setLocationMenuOpen(true);
+            }}
+            onKeyDown={(event) => {
+              if (locationMenuOpen || (event.key !== "ArrowDown" && event.key !== "ArrowUp")) return;
+              event.preventDefault();
+              locationMenuInitialFocusRef.current = event.key === "ArrowUp" ? "last" : "first";
+              setLocationMenuOpen(true);
+            }}
           >
             <svg className="top-bar-open-location-chevron" viewBox="0 0 16 16" aria-hidden="true">
               <path d="m5 6 3 3 3-3" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
             </svg>
           </button>
           {locationMenuOpen && (
-            <div className="top-bar-open-location-menu" role="menu">
-              <button type="button" role="menuitem" onClick={handleOpenWorkspaceLocation}>
+            <div
+              className="top-bar-open-location-menu"
+              role="menu"
+              onKeyDown={handleLocationMenuKeyDown}
+              onBlur={(event) => {
+                if (event.relatedTarget instanceof Node && event.currentTarget.contains(event.relatedTarget)) return;
+                closeLocationMenu();
+              }}
+            >
+              <button type="button" role="menuitem" tabIndex={-1} onClick={handleOpenWorkspaceLocation}>
                 <svg viewBox="0 0 24 24" aria-hidden="true">
                   <path d="M4 7.5A2.5 2.5 0 0 1 6.5 5H10l2 2h5.5A2.5 2.5 0 0 1 20 9.5v7A2.5 2.5 0 0 1 17.5 19h-11A2.5 2.5 0 0 1 4 16.5z" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinejoin="round" />
                 </svg>
                 <span>{t("File Explorer", "文件资源管理器")}</span>
               </button>
-              <button type="button" role="menuitem" onClick={() => handleOpenInWorkbench("files")}>
+              <button type="button" role="menuitem" tabIndex={-1} onClick={() => handleOpenInWorkbench("files")}>
                 <svg viewBox="0 0 24 24" aria-hidden="true">
                   <path d="M5 5h14v14H5zM9 5v14M9 9h10M9 13h10" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinejoin="round" />
                 </svg>
                 <span>{t("Workbench files", "工作台文件")}</span>
               </button>
-              <button type="button" role="menuitem" onClick={() => handleOpenInWorkbench("terminal")}>
+              <button type="button" role="menuitem" tabIndex={-1} onClick={() => handleOpenInWorkbench("terminal")}>
                 <svg viewBox="0 0 24 24" aria-hidden="true">
                   <path d="m6 8 4 4-4 4M12 17h6" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" />
                 </svg>

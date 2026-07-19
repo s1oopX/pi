@@ -4,6 +4,7 @@ import {
   followUp,
   forkSession,
   getAuthStatus,
+  getPendingExtensionUIRequests,
   getForkMessages,
   getResources,
   getSessions,
@@ -49,6 +50,33 @@ describe("image prompt API", () => {
       { type: "steer", message: "Adjust now", images: [image] },
       { type: "follow_up", message: "More detail", images: [image] },
     ]);
+  });
+});
+
+describe("extension UI request hydration API", () => {
+  it("returns the main-process pending request snapshot", async () => {
+    const pending = [{ type: "extension_ui_request", id: "request-1", method: "confirm" }];
+    Object.defineProperty(globalThis, "window", {
+      configurable: true,
+      value: {
+        piDesktop: {
+          getPendingExtensionUIRequests() {
+            return Promise.resolve(pending);
+          },
+        },
+      },
+    });
+
+    await expect(getPendingExtensionUIRequests()).resolves.toEqual(pending);
+  });
+
+  it("treats an older preload without the hydration bridge as empty", async () => {
+    Object.defineProperty(globalThis, "window", {
+      configurable: true,
+      value: { piDesktop: {} },
+    });
+
+    await expect(getPendingExtensionUIRequests()).resolves.toEqual([]);
   });
 });
 

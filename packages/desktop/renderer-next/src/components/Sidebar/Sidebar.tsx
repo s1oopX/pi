@@ -292,10 +292,8 @@ export function Sidebar({ collapsed, onToggle }: SidebarProps) {
     try {
       const result = await api.newSession(targetCwd);
       if (result.cancelled) return;
-      if (!isSameWorkspace(result.cwd, useStore.getState().workspaceCwd)) {
-        useStore.getState().resetForWorkspace(result.cwd);
-      }
-      await useStore.getState().refreshAsync();
+      await useStore.getState().resetForWorkspace(result.cwd);
+      requestAnimationFrame(() => document.querySelector<HTMLTextAreaElement>(".composer-input")?.focus());
     } catch (error) {
       showToast(
         t("Failed to create thread: {error}", "新建会话失败：{error}", {
@@ -344,11 +342,7 @@ export function Sidebar({ collapsed, onToggle }: SidebarProps) {
     try {
       const result = await api.switchSession(sessionPath);
       if (result.cancelled) return;
-      if (!isSameWorkspace(result.cwd, useStore.getState().workspaceCwd)) {
-        useStore.getState().resetForWorkspace(result.cwd);
-      } else {
-        useStore.getState().refreshSession();
-      }
+      useStore.getState().resetForWorkspace(result.cwd);
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
       setFailedSwitch({ path: sessionPath, error: message });
@@ -386,6 +380,11 @@ export function Sidebar({ collapsed, onToggle }: SidebarProps) {
 
   function handleSessionMenuKeyDown(event: KeyboardEvent<HTMLDivElement>) {
     if (event.key === "Escape") {
+      event.preventDefault();
+      closeSessionMenu(true);
+      return;
+    }
+    if (event.key === "Tab") {
       event.preventDefault();
       closeSessionMenu(true);
       return;
@@ -428,7 +427,7 @@ export function Sidebar({ collapsed, onToggle }: SidebarProps) {
     try {
       const result = await api.cloneSession();
       if (result.cancelled) return;
-      await useStore.getState().refreshAsync();
+      useStore.getState().resetForWorkspace(useStore.getState().workspaceCwd);
       showToast(t("Thread cloned", "会话已克隆"), "success");
     } catch (error) {
       showToast(
@@ -553,6 +552,11 @@ export function Sidebar({ collapsed, onToggle }: SidebarProps) {
 
   function handleWorkspaceMenuKeyDown(event: KeyboardEvent<HTMLDivElement>) {
     if (event.key === "Escape") {
+      event.preventDefault();
+      closeWorkspaceMenu(true);
+      return;
+    }
+    if (event.key === "Tab") {
       event.preventDefault();
       closeWorkspaceMenu(true);
       return;
@@ -1110,8 +1114,8 @@ export function Sidebar({ collapsed, onToggle }: SidebarProps) {
                   ? t("Finish or stop the current run before browsing branches", "请先完成或停止当前运行，再浏览分支")
                   : undefined}
                 onClick={() => {
-                  closeSessionMenu();
-                  setBranchNavigatorOpen(true);
+                  closeSessionMenu(true);
+                  requestAnimationFrame(() => setBranchNavigatorOpen(true));
                 }}
               >
                 {t("Browse branches", "浏览分支")}
