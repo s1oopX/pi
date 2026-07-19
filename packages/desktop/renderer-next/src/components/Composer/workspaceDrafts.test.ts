@@ -3,6 +3,7 @@ import type { ComposerAttachment } from "./attachments";
 import {
   appendFileReference,
   clearComposerWorkspaceDraft,
+  getComposerWorkspaceDraftKey,
   getComposerWorkspaceDraft,
   setComposerWorkspaceDraft,
 } from "./workspaceDrafts";
@@ -22,6 +23,15 @@ afterEach(() => {
 });
 
 describe("workspace composer drafts", () => {
+  it("uses one stable identity for composer state and stored drafts", () => {
+    expect(getComposerWorkspaceDraftKey("  C:\\workspace-a  ", "session-a")).toBe(
+      getComposerWorkspaceDraftKey("C:\\workspace-a", "session-a"),
+    );
+    expect(getComposerWorkspaceDraftKey("C:\\workspace-a", "session-a")).not.toBe(
+      getComposerWorkspaceDraftKey("C:\\workspace-a", "session-b"),
+    );
+  });
+
   it("appends file references without replacing the existing prompt", () => {
     expect(appendFileReference("", "src/app.ts")).toBe("@src/app.ts ");
     expect(appendFileReference("Review the auth flow", "src/app.ts")).toBe("Review the auth flow @src/app.ts ");

@@ -66,8 +66,6 @@ export function App() {
   });
   const initialize = useStore((state) => state.initialize);
   const settingsRoute = useStore((state) => state.settingsRoute);
-  const workspaceCwd = useStore((state) => state.workspaceCwd);
-  const sessionId = useStore((state) => state.session?.sessionId ?? "no-session");
   const backendReady = useStore((state) => state.backendStatus.ready);
   const isStreaming = useStore((state) => state.isStreaming);
   const { keybindings } = useAppKeybindings();
@@ -239,7 +237,7 @@ export function App() {
           >
             <section className="conversation-pane" aria-label="Conversation">
               <MessageList />
-              <Composer key={`${workspaceCwd || "no-workspace"}:${sessionId}`} />
+              <Composer />
             </section>
             {workbenchView !== "closed" && (
               <>

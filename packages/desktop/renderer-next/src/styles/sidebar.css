@@ -448,6 +448,14 @@
   line-height: var(--line-height-meta);
 }
 
+.status-text {
+  min-width: 0;
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .status-row-retry:hover {
   background: var(--accent-soft);
   color: var(--accent-hover);

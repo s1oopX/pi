@@ -1,4 +1,5 @@
 import {
+  useLayoutEffect,
   useEffect,
   useId,
   useMemo,
@@ -39,6 +40,7 @@ import {
 } from "./submission";
 import {
   clearComposerWorkspaceDraft,
+  getComposerWorkspaceDraftKey,
   getComposerWorkspaceDraft,
   setComposerWorkspaceDraft,
 } from "./workspaceDrafts";
@@ -69,6 +71,9 @@ export function Composer() {
   const suggestionsListboxId = useId();
   const workspaceCwd = useStore((state) => state.workspaceCwd);
   const sessionId = useStore((state) => state.session?.sessionId ?? null);
+  const composerContextKey = getComposerWorkspaceDraftKey(workspaceCwd, sessionId);
+  const composerContextRef = useRef({ key: composerContextKey, cwd: workspaceCwd, sessionId });
+  const pendingTextareaResizeRef = useRef<string | null>(null);
   const [input, setInput] = useState(() => getComposerWorkspaceDraft(workspaceCwd, sessionId).input);
   const [attachments, setAttachments] = useState<ComposerAttachment[]>(
     () => getComposerWorkspaceDraft(workspaceCwd, sessionId).attachments,
@@ -95,6 +100,7 @@ export function Composer() {
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const fileRequestSeq = useRef(0);
+  const attachmentRequestSeq = useRef(0);
   const dragDepthRef = useRef(0);
 
   const token = getActiveToken(input, input.length);
@@ -103,9 +109,38 @@ export function Composer() {
     [extensionUIRequests],
   );
 
-  useEffect(() => {
+  useLayoutEffect(() => {
+    const previousContext = composerContextRef.current;
+    if (previousContext.key !== composerContextKey) {
+      setComposerWorkspaceDraft(previousContext.cwd, previousContext.sessionId, input, attachments);
+      const draft = getComposerWorkspaceDraft(workspaceCwd, sessionId);
+      composerContextRef.current = { key: composerContextKey, cwd: workspaceCwd, sessionId };
+      pendingTextareaResizeRef.current = composerContextKey;
+      setInput(draft.input);
+      setAttachments(draft.attachments);
+      setReadingAttachments(false);
+      setSubmitting(false);
+      setStreamingSubmitMode("follow-up");
+      setDraggingFiles(false);
+      setMenuOpen(false);
+      setActiveIndex(0);
+      setFileMatches([]);
+      dragDepthRef.current = 0;
+      fileRequestSeq.current += 1;
+      attachmentRequestSeq.current += 1;
+      if (textareaRef.current) textareaRef.current.style.height = "auto";
+      return;
+    }
+    if (pendingTextareaResizeRef.current === composerContextKey) {
+      pendingTextareaResizeRef.current = null;
+      const textarea = textareaRef.current;
+      if (textarea) {
+        textarea.style.height = "auto";
+        textarea.style.height = `${Math.min(textarea.scrollHeight, 200)}px`;
+      }
+    }
     setComposerWorkspaceDraft(workspaceCwd, sessionId, input, attachments);
-  }, [attachments, input, sessionId, workspaceCwd]);
+  }, [attachments, composerContextKey, input, sessionId, workspaceCwd]);
 
   useEffect(() => {
     const focusFrame = requestAnimationFrame(() => {
@@ -214,9 +249,12 @@ export function Composer() {
     }
 
     setReadingAttachments(true);
+    const requestKey = composerContextKey;
+    const requestSeq = ++attachmentRequestSeq.current;
     try {
       const filesToRead = selectedFiles.slice(0, availableSlots);
       const results = await Promise.allSettled(filesToRead.map((file) => readImageAttachment(file)));
+      if (requestSeq !== attachmentRequestSeq.current || composerContextRef.current.key !== requestKey) return;
       const accepted = results.flatMap((result) => (result.status === "fulfilled" ? [result.value] : []));
       const errors = results.flatMap((result) =>
         result.status === "rejected"
@@ -249,7 +287,9 @@ export function Composer() {
         }), "info");
       }
     } finally {
-      setReadingAttachments(false);
+      if (requestSeq === attachmentRequestSeq.current && composerContextRef.current.key === requestKey) {
+        setReadingAttachments(false);
+      }
     }
   }
 
@@ -321,15 +361,18 @@ export function Composer() {
       showToast(t("The current model does not support image input", "当前模型不支持图片输入"), "error");
       return;
     }
+    const requestKey = composerContextKey;
     setSubmitting(true);
     try {
       const images = toImageContent(attachments);
       await submit(getPromptText(message, images.length), images.length > 0 ? images : undefined);
+      if (composerContextRef.current.key !== requestKey) return;
       clearComposerWorkspaceDraft(workspaceCwd, sessionId);
       setInput("");
       setAttachments([]);
       if (textareaRef.current) textareaRef.current.style.height = "auto";
     } catch (error) {
+      if (composerContextRef.current.key !== requestKey) return;
       showToast(t("Failed to send message: {error}", "发送消息失败：{error}", {
         error: error instanceof Error ? error.message : String(error),
       }), "error");
@@ -338,7 +381,7 @@ export function Composer() {
         autosize();
       });
     } finally {
-      setSubmitting(false);
+      if (composerContextRef.current.key === requestKey) setSubmitting(false);
     }
   }
 

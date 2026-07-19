@@ -7,13 +7,13 @@ export interface ComposerWorkspaceDraft {
 
 const drafts = new Map<string, ComposerWorkspaceDraft>();
 
-function workspaceKey(cwd: string, sessionId?: string | null): string {
+export function getComposerWorkspaceDraftKey(cwd: string, sessionId?: string | null): string {
   const workspace = cwd.trim() || "__no_workspace__";
   return `${workspace}\u0000${sessionId ?? "__no_session__"}`;
 }
 
 export function getComposerWorkspaceDraft(cwd: string, sessionId?: string | null): ComposerWorkspaceDraft {
-  const draft = drafts.get(workspaceKey(cwd, sessionId));
+  const draft = drafts.get(getComposerWorkspaceDraftKey(cwd, sessionId));
   return draft
     ? { input: draft.input, attachments: draft.attachments.map((attachment) => ({ ...attachment })) }
     : { input: "", attachments: [] };
@@ -25,7 +25,7 @@ export function setComposerWorkspaceDraft(
   input: string,
   attachments: readonly ComposerAttachment[],
 ): void {
-  const key = workspaceKey(cwd, sessionId);
+  const key = getComposerWorkspaceDraftKey(cwd, sessionId);
   if (!input && attachments.length === 0) {
     drafts.delete(key);
     return;
@@ -37,7 +37,7 @@ export function setComposerWorkspaceDraft(
 }
 
 export function clearComposerWorkspaceDraft(cwd: string, sessionId?: string | null): void {
-  drafts.delete(workspaceKey(cwd, sessionId));
+  drafts.delete(getComposerWorkspaceDraftKey(cwd, sessionId));
 }
 
 export function appendFileReference(input: string, file: string): string {
