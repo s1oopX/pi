@@ -39,7 +39,7 @@ export function Settings() {
     return window.confirm(
       t(
         "You have unsaved custom provider changes. Discard them?",
-        "自定义提供商有未保存更改，确定丢弃吗？"",
+        "自定义提供商有未保存更改，确定丢弃吗？",
       ),
     );
   }
