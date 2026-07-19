@@ -613,13 +613,6 @@
   font-size: var(--font-size-compact);
 }
 
-.project-tree-empty {
-  padding: 5px 8px 6px;
-  color: var(--faint);
-  font-size: var(--font-size-badge);
-  line-height: var(--line-height-badge);
-}
-
 .task-tree {
   padding-top: var(--space-2);
   border-top: 1px solid var(--border);

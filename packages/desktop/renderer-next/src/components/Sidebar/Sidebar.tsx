@@ -899,25 +899,36 @@ export function Sidebar({ collapsed, onToggle }: SidebarProps) {
                     {workspaceNavigationItems.map((cwd) => {
                       const isCurrent = !isTaskContext && isSameWorkspace(cwd, workspaceCwd);
                       const projectSessions = sessionOwnership.projects.find((project) => isSameWorkspace(project.cwd, cwd))?.sessions ?? [];
-                      const isExpanded = normalizedSessionQuery.length > 0
-                        ? projectSessions.length > 0
-                        : expandedProjects.some((candidate) => isSameWorkspace(candidate, cwd));
+                      const hasProjectSessions = projectSessions.length > 0;
+                      const isExpanded = hasProjectSessions && (
+                        normalizedSessionQuery.length > 0 ||
+                        expandedProjects.some((candidate) => isSameWorkspace(candidate, cwd))
+                      );
                       const workspaceDisplay = getWorkspaceDisplayParts(cwd, workspaceNavigationItems);
                       return (
-                        <div className="project-tree-node" key={cwd} role="treeitem" aria-expanded={isExpanded}>
+                        <div
+                          className="project-tree-node"
+                          key={cwd}
+                          role="treeitem"
+                          aria-expanded={hasProjectSessions ? isExpanded : undefined}
+                        >
                           <div className={`project-tree-row ${isCurrent ? "active" : ""}`}>
-                            <button
-                              className="project-tree-toggle"
-                              type="button"
-                              aria-label={isExpanded
-                                ? t("Collapse {project}", "收起 {project}", { project: workspaceDisplay.name })
-                                : t("Expand {project}", "展开 {project}", { project: workspaceDisplay.name })}
-                              onClick={() => toggleProject(cwd)}
-                            >
-                              <svg className={isExpanded ? "expanded" : ""} viewBox="0 0 18 18" aria-hidden="true">
-                                <path d="m7 5 4 4-4 4" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round" />
-                              </svg>
-                            </button>
+                            {hasProjectSessions ? (
+                              <button
+                                className="project-tree-toggle"
+                                type="button"
+                                aria-label={isExpanded
+                                  ? t("Collapse {project}", "收起 {project}", { project: workspaceDisplay.name })
+                                  : t("Expand {project}", "展开 {project}", { project: workspaceDisplay.name })}
+                                onClick={() => toggleProject(cwd)}
+                              >
+                                <svg className={isExpanded ? "expanded" : ""} viewBox="0 0 18 18" aria-hidden="true">
+                                  <path d="m7 5 4 4-4 4" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round" />
+                                </svg>
+                              </button>
+                            ) : (
+                              <span className="project-tree-toggle" aria-hidden="true" />
+                            )}
                             <button
                               className="project-tree-main"
                               type="button"
@@ -925,7 +936,7 @@ export function Sidebar({ collapsed, onToggle }: SidebarProps) {
                               title={cwd}
                               disabled={switchingWorkspace || (!isCurrent && isStreaming)}
                               onClick={() => {
-                                if (!isExpanded) toggleProject(cwd);
+                                if (hasProjectSessions && !isExpanded) toggleProject(cwd);
                                 void handleOpenWorkspace(cwd);
                               }}
                             >
@@ -953,17 +964,9 @@ export function Sidebar({ collapsed, onToggle }: SidebarProps) {
                               </svg>
                             </button>
                           </div>
-                          {isExpanded && (
+                          {hasProjectSessions && isExpanded && (
                             <div className="project-tree-children" role="group">
-                              {projectSessions.length > 0
-                                ? projectSessions.map((candidate) => renderSessionRow(candidate, true))
-                                : !sessionsLoading && !sessionSearchPending && (
-                                    <div className="project-tree-empty">
-                                      {normalizedSessionQuery
-                                        ? t("No matching threads", "没有匹配的会话")
-                                        : t("No threads yet", "尚无会话")}
-                                    </div>
-                                  )}
+                              {projectSessions.map((candidate) => renderSessionRow(candidate, true))}
                             </div>
                           )}
                         </div>
