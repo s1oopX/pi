@@ -563,10 +563,12 @@ function requestBackend(command, { allowStarting = false, timeoutMs = 30000 } = 
 	const payload = { ...command, id };
 
 	return new Promise((resolve, reject) => {
-		const timeout = setTimeout(() => {
-			pendingRequests.delete(id);
-			reject(new Error(`Timed out waiting for ${command.type}`));
-		}, timeoutMs);
+		const timeout = timeoutMs > 0
+			? setTimeout(() => {
+					pendingRequests.delete(id);
+					reject(new Error(`Timed out waiting for ${command.type}`));
+				}, timeoutMs)
+			: undefined;
 
 		pendingRequests.set(id, { resolve, reject, timeout });
 		backend.stdin.write(`${JSON.stringify(payload)}\n`, (error) => {
@@ -700,6 +702,7 @@ const SESSION_MUTATION_COMMAND_TYPES = new Set([
 ]);
 
 function getRequestTimeoutMs(command) {
+	if (command?.type === "bash") return 0;
 	if (command?.type === "prompt") return PROMPT_REQUEST_TIMEOUT_MS;
 	return LONG_REQUEST_COMMAND_TYPES.has(command?.type) ? LONG_REQUEST_COMMAND_TIMEOUT_MS : undefined;
 }

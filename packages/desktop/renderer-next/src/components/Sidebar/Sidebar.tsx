@@ -62,6 +62,7 @@ export function Sidebar({ collapsed, onToggle }: SidebarProps) {
   const [renaming, setRenaming] = useState(false);
   const [renameValue, setRenameValue] = useState("");
   const [exporting, setExporting] = useState(false);
+  const [creatingThread, setCreatingThread] = useState(false);
   const [sessionMenu, setSessionMenu] = useState<SessionMenuState | null>(null);
   const [workspaceMenu, setWorkspaceMenu] = useState<WorkspaceMenuState | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<SessionInfo | null>(null);
@@ -77,6 +78,7 @@ export function Sidebar({ collapsed, onToggle }: SidebarProps) {
   const menuTriggerRef = useRef<HTMLButtonElement | null>(null);
   const workspaceMenuRef = useRef<HTMLDivElement>(null);
   const workspaceTriggerRef = useRef<HTMLButtonElement | null>(null);
+  const creatingThreadRef = useRef(false);
 
   const activeSessionId = session?.sessionId;
   const switchingWorkspace = switchingWorkspaceCwd !== null;
@@ -281,6 +283,7 @@ export function Sidebar({ collapsed, onToggle }: SidebarProps) {
   }
 
   async function handleNewThread(targetCwd: string) {
+    if (creatingThreadRef.current) return;
     if (useStore.getState().isStreaming) {
       showToast(t("Finish or stop the current run before creating a new thread.", "请先完成或停止当前运行，再新建会话。"), "warning");
       return;
@@ -289,6 +292,8 @@ export function Sidebar({ collapsed, onToggle }: SidebarProps) {
       showToast(t("Choose a project first.", "请先选择项目。"), "warning");
       return;
     }
+    creatingThreadRef.current = true;
+    setCreatingThread(true);
     try {
       const result = await api.newSession(targetCwd);
       if (result.cancelled) return;
@@ -301,6 +306,9 @@ export function Sidebar({ collapsed, onToggle }: SidebarProps) {
         }),
         "error",
       );
+    } finally {
+      creatingThreadRef.current = false;
+      setCreatingThread(false);
     }
   }
 
@@ -724,7 +732,7 @@ export function Sidebar({ collapsed, onToggle }: SidebarProps) {
             title={isStreaming
               ? t("Finish or stop the current run before creating a new task", "请先完成或停止当前运行，再新建任务")
               : t("New task", "新建任务")}
-            disabled={!backendStatus.ready || switchingWorkspace || isStreaming}
+            disabled={!backendStatus.ready || switchingWorkspace || isStreaming || creatingThread}
             onClick={handleNewTask}
           >
             <svg viewBox="0 0 18 18" aria-hidden="true">
@@ -794,7 +802,7 @@ export function Sidebar({ collapsed, onToggle }: SidebarProps) {
           <button
             className="new-agent-button"
             type="button"
-            disabled={!backendStatus.ready || switchingWorkspace || isStreaming}
+            disabled={!backendStatus.ready || switchingWorkspace || isStreaming || creatingThread}
             title={isStreaming
               ? t("Finish or stop the current run before creating a new task", "请先完成或停止当前运行，再新建任务")
               : !backendStatus.ready
@@ -937,7 +945,7 @@ export function Sidebar({ collapsed, onToggle }: SidebarProps) {
                               type="button"
                               aria-label={t("New thread in {project}", "在 {project} 中新建会话", { project: workspaceDisplay.name })}
                               title={t("New thread in this project", "在此项目中新建会话")}
-                              disabled={!backendStatus.ready || switchingWorkspace || isStreaming}
+                              disabled={!backendStatus.ready || switchingWorkspace || isStreaming || creatingThread}
                               onClick={() => handleNewProjectThread(cwd)}
                             >
                               <svg viewBox="0 0 18 18" aria-hidden="true">
@@ -980,7 +988,7 @@ export function Sidebar({ collapsed, onToggle }: SidebarProps) {
                       : !backendStatus.ready
                         ? t("The agent backend is not ready", "智能体后端尚未就绪")
                         : t("New task", "新建任务")}
-                    disabled={!backendStatus.ready || switchingWorkspace || isStreaming}
+                    disabled={!backendStatus.ready || switchingWorkspace || isStreaming || creatingThread}
                     onClick={handleNewTask}
                   >
                     <svg viewBox="0 0 18 18" aria-hidden="true">

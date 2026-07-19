@@ -260,7 +260,13 @@ function WorkbenchBrowser() {
       showToast(t("Enter a valid URL", "请输入有效 URL"), "error");
       return;
     }
-    await api.openExternal(normalized);
+    try {
+      await api.openExternal(normalized);
+    } catch (error) {
+      showToast(t("Could not open URL: {error}", "无法打开 URL：{error}", {
+        error: error instanceof Error ? error.message : String(error),
+      }), "error");
+    }
   }
 
   return (
@@ -437,7 +443,8 @@ function normalizeBrowserUrl(rawUrl: string): string | null {
   const trimmed = rawUrl.trim();
   if (!trimmed) return null;
   try {
-    return new URL(/^[a-z][a-z0-9+.-]*:/i.test(trimmed) ? trimmed : `https://${trimmed}`).toString();
+    const url = new URL(/^[a-z][a-z0-9+.-]*:/i.test(trimmed) ? trimmed : `https://${trimmed}`);
+    return ["http:", "https:", "mailto:"].includes(url.protocol) ? url.toString() : null;
   } catch {
     return null;
   }

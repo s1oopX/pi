@@ -296,10 +296,6 @@ export function Composer() {
 
   async function handleSubmit(e?: FormEvent) {
     e?.preventDefault();
-    if (menuOpen && suggestions[activeIndex]) {
-      applySuggestion(suggestions[activeIndex]);
-      return;
-    }
     if (!backendStatus.ready) {
       showToast(
         backendStatus.error
@@ -347,6 +343,7 @@ export function Composer() {
   }
 
   function handleKeyDown(e: KeyboardEvent<HTMLTextAreaElement>) {
+    const shouldSubmit = shouldSubmitComposerEnter(e.key, e.shiftKey, e.nativeEvent.isComposing);
     if (menuOpen && suggestions.length > 0) {
       if (e.key === "ArrowDown") {
         e.preventDefault();
@@ -368,8 +365,13 @@ export function Composer() {
         setMenuOpen(false);
         return;
       }
+      if (shouldSubmit && suggestions[activeIndex]) {
+        e.preventDefault();
+        applySuggestion(suggestions[activeIndex]);
+        return;
+      }
     }
-    if (shouldSubmitComposerEnter(e.key, e.shiftKey, e.nativeEvent.isComposing)) {
+    if (shouldSubmit) {
       e.preventDefault();
       handleSubmit();
     }

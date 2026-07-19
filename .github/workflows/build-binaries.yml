@@ -136,6 +136,9 @@ jobs:
 
       - name: Build desktop package
         shell: pwsh
+        env:
+          WIN_CSC_LINK: ${{ secrets.WIN_CSC_LINK }}
+          WIN_CSC_KEY_PASSWORD: ${{ secrets.WIN_CSC_KEY_PASSWORD }}
         run: |
           $tagVersion = $env:RELEASE_TAG.TrimStart('v')
           $desktopVersion = node -p "require('./packages/desktop/package.json').version"
@@ -148,8 +151,14 @@ jobs:
           npm --prefix packages/desktop run build:backend
           npm --prefix packages/desktop test
           Push-Location packages/desktop
-          npx --no-install electron-builder --win portable --x64 --config.electronDist=../../node_modules/electron/dist
+          npx --no-install electron-builder --win portable --x64 --config.electronDist=../../node_modules/electron/dist --config.forceCodeSigning=true
           Pop-Location
+
+          $artifact = "packages/desktop/release/PiStudio-$desktopVersion.exe"
+          $signature = Get-AuthenticodeSignature $artifact
+          if ($signature.Status -ne "Valid") {
+            throw "Desktop artifact signature is $($signature.Status): $($signature.StatusMessage)"
+          }
 
       - name: Prepare desktop release payload
         shell: pwsh
