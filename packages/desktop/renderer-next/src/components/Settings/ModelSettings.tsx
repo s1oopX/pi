@@ -18,6 +18,7 @@ export function ModelSettings() {
   const [exporting, setExporting] = useState(false);
   const [importing, setImporting] = useState(false);
   const [pendingImportProviders, setPendingImportProviders] = useState<Record<string, unknown> | null>(null);
+  const [removeOrphanStoredAuth, setRemoveOrphanStoredAuth] = useState(false);
   const { resolvedLanguage, t } = useI18n();
   const currentModel = session?.model;
 
@@ -80,6 +81,7 @@ export function ModelSettings() {
         return;
       }
       setPendingImportProviders(providers);
+      setRemoveOrphanStoredAuth(false);
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
       showToast(t("Import failed: {message}", "导入失败：{message}", { message }), "error");
@@ -90,7 +92,7 @@ export function ModelSettings() {
     if (!pendingImportProviders || importing) return;
     setImporting(true);
     try {
-      await api.replaceCustomModels(pendingImportProviders);
+      await api.replaceCustomModels(pendingImportProviders, { removeOrphanStoredAuth });
       setPendingImportProviders(null);
       useStore.getState().refresh();
       showToast(t("Model configuration imported", "模型配置已导入"), "success");
@@ -190,12 +192,29 @@ export function ModelSettings() {
                 { count: Object.keys(pendingImportProviders).length },
               )}
             </p>
+            <label className="settings-toggle" style={{ marginTop: 12 }}>
+              <input
+                type="checkbox"
+                checked={removeOrphanStoredAuth}
+                disabled={importing}
+                onChange={(event) => setRemoveOrphanStoredAuth(event.target.checked)}
+              />
+              <span>
+                {t(
+                  "Also remove stored API keys for providers that disappear after import",
+                  "��e��dЛF�,0X� API ƥ",
+                )}
+              </span>
+            </label>
             <div className="about-actions">
               <button
                 className="settings-btn"
                 type="button"
                 disabled={importing}
-                onClick={() => setPendingImportProviders(null)}
+                onClick={() => {
+                  setPendingImportProviders(null);
+                  setRemoveOrphanStoredAuth(false);
+                }}
               >
                 {t("Cancel", "取消")}
               </button>

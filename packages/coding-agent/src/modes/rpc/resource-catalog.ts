@@ -19,6 +19,13 @@ export interface ResourceCatalogInput {
 	skillDiagnostics: readonly ResourceDiagnostic[];
 	prompts: readonly Pick<PromptTemplate, "name" | "description" | "filePath" | "sourceInfo">[];
 	promptDiagnostics: readonly ResourceDiagnostic[];
+	extensionFlags?: readonly {
+		name: string;
+		type: "boolean" | "string";
+		description?: string;
+		default?: boolean | string;
+		extensionPath: string;
+	}[];
 }
 
 export async function loadResourceCatalog(
@@ -71,5 +78,12 @@ export function buildResourceCatalog(input: ResourceCatalogInput): RpcGetResourc
 			...mapDiagnostics("skill", input.skillDiagnostics),
 			...mapDiagnostics("prompt", input.promptDiagnostics),
 		],
+		extensionFlags: (input.extensionFlags ?? []).map((flag) => ({
+			name: flag.name,
+			type: flag.type,
+			description: flag.description,
+			default: flag.default,
+			extensionPath: flag.extensionPath,
+		})),
 	};
 }

@@ -26,6 +26,7 @@ export function Settings() {
   const openSettings = useStore((s) => s.openSettings);
   const { resolvedLanguage, t } = useI18n();
   const [searchQuery, setSearchQuery] = useState("");
+  const [customProvidersDirty, setCustomProvidersDirty] = useState(false);
   const panelRef = useRef<HTMLDivElement>(null);
   const navigationItems = useMemo(() => getSettingsNavigation(resolvedLanguage), [resolvedLanguage]);
   const filteredNavigationItems = useMemo(
@@ -33,12 +34,38 @@ export function Settings() {
     [navigationItems, resolvedLanguage, searchQuery],
   );
 
+  function confirmDiscardCustomProviders(): boolean {
+    if (!customProvidersDirty || settingsRoute !== "custom-providers") return true;
+    return window.confirm(
+      t(
+        "You have unsaved custom provider changes. Discard them?",
+        "自定义提供商有未保存更改，确定丢弃吗？"",
+      ),
+    );
+  }
+
+  function requestCloseSettings(): void {
+    if (!confirmDiscardCustomProviders()) return;
+    setCustomProvidersDirty(false);
+    closeSettings();
+  }
+
+  function requestOpenSettings(route: typeof settingsRoute): void {
+    if (!route) return;
+    if (route === settingsRoute) return;
+    if (!confirmDiscardCustomProviders()) return;
+    if (settingsRoute === "custom-providers") setCustomProvidersDirty(false);
+    openSettings(route);
+  }
+
   useEffect(() => {
     if (!searchQuery.trim() || filteredNavigationItems.length === 0) return;
-    if (!filteredNavigationItems.some((item) => item.route === settingsRoute)) {
-      openSettings(filteredNavigationItems[0].route);
-    }
-  }, [filteredNavigationItems, openSettings, searchQuery, settingsRoute]);
+    if (filteredNavigationItems.some((item) => item.route === settingsRoute)) return;
+    const nextRoute = filteredNavigationItems[0].route;
+    if (!confirmDiscardCustomProviders()) return;
+    if (settingsRoute === "custom-providers") setCustomProvidersDirty(false);
+    openSettings(nextRoute);
+  }, [customProvidersDirty, filteredNavigationItems, openSettings, searchQuery, settingsRoute, t]);
 
   useEffect(() => {
     const previouslyFocused = document.activeElement instanceof HTMLElement ? document.activeElement : null;
@@ -57,7 +84,7 @@ export function Settings() {
       if (event.key === "Escape") {
         if (event.defaultPrevented) return;
         event.preventDefault();
-        closeSettings();
+        requestCloseSettings();
         return;
       }
 
@@ -92,7 +119,7 @@ export function Settings() {
       if (!appShellWasInert) appShell?.removeAttribute("inert");
       if (previouslyFocused?.isConnected) previouslyFocused.focus();
     };
-  }, [closeSettings]);
+  }, [closeSettings, customProvidersDirty, settingsRoute, t]);
 
   if (!settingsRoute) return null;
 
@@ -108,7 +135,7 @@ export function Settings() {
       >
         <div className="settings-sidebar">
           <div className="settings-sidebar-header">
-            <button className="settings-back-btn" type="button" onClick={closeSettings}>
+            <button className="settings-back-btn" type="button" onClick={requestCloseSettings}>
               <svg viewBox="0 0 24 24" width="16" height="16" aria-hidden="true">
                 <path d="M19 12H5M12 19l-7-7 7-7" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
               </svg>
@@ -135,7 +162,7 @@ export function Settings() {
                 key={item.route}
                 className={`settings-nav-item ${settingsRoute === item.route ? "active" : ""}`}
                 type="button"
-                onClick={() => openSettings(item.route)}
+                onClick={() => requestOpenSettings(item.route)}
               >
                 {item.label}
               </button>
@@ -159,7 +186,9 @@ export function Settings() {
           ) : (
             <>
               {settingsRoute === "models-providers" && <ModelSettings />}
-              {settingsRoute === "custom-providers" && <CustomProviderSettings />}
+              {settingsRoute === "custom-providers" && (
+                <CustomProviderSettings onDirtyChange={setCustomProvidersDirty} />
+              )}
               {settingsRoute === "account" && <AccountSettings />}
               {settingsRoute === "agent-general" && <AgentSettings />}
               {settingsRoute === "appearance" && <AppearanceSettings />}
@@ -172,7 +201,7 @@ export function Settings() {
         <button
           className="icon-button settings-close-btn"
           type="button"
-          onClick={closeSettings}
+          onClick={requestCloseSettings}
           aria-label={t("Close settings", "关闭设置")}
         >
           <svg viewBox="0 0 24 24" aria-hidden="true">

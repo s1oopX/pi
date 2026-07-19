@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useI18n } from "../../i18n";
 import * as api from "../../ipc/api";
 import type { CustomModelApi } from "../../ipc/types";
@@ -9,6 +9,8 @@ import { buildCustomModelInput, getConnectionTestFailure } from "./settingsLogic
 type AuthKind = "api_key" | "none";
 
 interface ModelDraft {
+  draftId: string;
+  originalId?: string;
   id: string;
   name: string;
   reasoning: boolean;
@@ -38,14 +40,83 @@ interface ExistingModelConfig {
 
 const API_OPTIONS: CustomModelApi[] = ["openai-completions", "anthropic-messages"];
 
-const EMPTY_MODEL: ModelDraft = {
+const EMPTY_MODEL_DEFAULTS = {
   id: "",
   name: "",
   reasoning: false,
   imageInput: false,
   contextWindow: 128000,
   maxTokens: 16384,
-};
+} as const;
+
+let nextModelDraftId = 0;
+
+function createModelDraft(overrides: Partial<Omit<ModelDraft, "draftId">> = {}): ModelDraft {
+  nextModelDraftId += 1;
+  return {
+    draftId: `model-draft-${nextModelDraftId}`,
+    ...EMPTY_MODEL_DEFAULTS,
+    ...overrides,
+  };
+}
+interface ProviderFormSnapshot {
+  editingProviderId: string | null;
+  providerId: string;
+  baseUrl: string;
+  apiType: CustomModelApi;
+  authKind: AuthKind;
+  apiKey: string;
+  proxyUrl: string;
+  customHeadersText: string;
+  models: Array<Omit<ModelDraft, "draftId">>;
+}
+
+function snapshotModels(models: readonly ModelDraft[]): Array<Omit<ModelDraft, "draftId">> {
+  return models.map(({ draftId: _draftId, ...model }) => model);
+}
+
+function createProviderFormSnapshot(input: {
+  editingProviderId: string | null;
+  providerId: string;
+  baseUrl: string;
+  apiType: CustomModelApi;
+  authKind: AuthKind;
+  apiKey: string;
+  proxyUrl: string;
+  customHeadersText: string;
+  models: readonly ModelDraft[];
+}): ProviderFormSnapshot {
+  return {
+    editingProviderId: input.editingProviderId,
+    providerId: input.providerId,
+    baseUrl: input.baseUrl,
+    apiType: input.apiType,
+    authKind: input.authKind,
+    apiKey: input.apiKey,
+    proxyUrl: input.proxyUrl,
+    customHeadersText: input.customHeadersText,
+    models: snapshotModels(input.models),
+  };
+}
+
+function isProviderFormDirty(current: ProviderFormSnapshot, baseline: ProviderFormSnapshot): boolean {
+  return JSON.stringify(current) !== JSON.stringify(baseline);
+}
+
+function createEmptyProviderFormSnapshot(): ProviderFormSnapshot {
+  return createProviderFormSnapshot({
+    editingProviderId: null,
+    providerId: "",
+    baseUrl: "",
+    apiType: "openai-completions",
+    authKind: "api_key",
+    apiKey: "",
+    proxyUrl: "",
+    customHeadersText: "",
+    models: [createModelDraft()],
+  });
+}
+
 
 // Mirrors the backend's normalizeProviderId: only lowercase latin letters,
 // digits, dot, underscore and hyphen survive. Non-ASCII input (e.g. Chinese)
@@ -63,14 +134,15 @@ function isCustomModelApi(value: string | undefined): value is CustomModelApi {
 }
 
 function modelConfigToDraft(model: ExistingModelConfig): ModelDraft {
-  return {
+  return createModelDraft({
+    originalId: model.id,
     id: model.id,
     name: model.name ?? "",
     reasoning: Boolean(model.reasoning),
     imageInput: Boolean(model.input?.includes("image")),
-    contextWindow: model.contextWindow && model.contextWindow > 0 ? model.contextWindow : EMPTY_MODEL.contextWindow,
-    maxTokens: model.maxTokens && model.maxTokens > 0 ? model.maxTokens : EMPTY_MODEL.maxTokens,
-  };
+    contextWindow: model.contextWindow && model.contextWindow > 0 ? model.contextWindow : EMPTY_MODEL_DEFAULTS.contextWindow,
+    maxTokens: model.maxTokens && model.maxTokens > 0 ? model.maxTokens : EMPTY_MODEL_DEFAULTS.maxTokens,
+  });
 }
 
 function formatHeaders(headers: Record<string, string> | undefined): string {
@@ -114,7 +186,7 @@ function getApiLabel(modelApi: CustomModelApi): string {
   return modelApi === "anthropic-messages" ? "ANTHROPIC" : "OPENAI";
 }
 
-export function CustomProviderSettings() {
+export function CustomProviderSettings({ onDirtyChange }: { onDirtyChange?: (dirty: boolean) => void } = {}) {
   const customModelsConfig = useStore((s) => s.customModelsConfig);
   const { resolvedLanguage, t } = useI18n();
   const [providerId, setProviderId] = useState("");
@@ -124,7 +196,7 @@ export function CustomProviderSettings() {
   const [apiKey, setApiKey] = useState("");
   const [proxyUrl, setProxyUrl] = useState("");
   const [customHeadersText, setCustomHeadersText] = useState("");
-  const [models, setModels] = useState<ModelDraft[]>([{ ...EMPTY_MODEL }]);
+  const [models, setModels] = useState<ModelDraft[]>(() => [createModelDraft()]);
   const [testing, setTesting] = useState(false);
   const [saving, setSaving] = useState(false);
   const [deleting, setDeleting] = useState(false);
@@ -135,7 +207,9 @@ export function CustomProviderSettings() {
   const [fetchedImageInput, setFetchedImageInput] = useState(false);
   const [showKey, setShowKey] = useState(false);
   const [editingProviderId, setEditingProviderId] = useState<string | null>(null);
-  const [editingOriginalModelIds, setEditingOriginalModelIds] = useState<string[]>([]);
+  const baselineRef = useRef<ProviderFormSnapshot>(createEmptyProviderFormSnapshot());
+  const onDirtyChangeRef = useRef(onDirtyChange);
+  onDirtyChangeRef.current = onDirtyChange;
 
   const existingProviders = customModelsConfig?.providers ?? {};
   const normalizedProviderId = normalizeProviderId(providerId);
@@ -147,6 +221,40 @@ export function CustomProviderSettings() {
     normalizedProviderId && !editingProviderId && existingProviders[normalizedProviderId],
   );
   const filledModelCount = useMemo(() => models.filter((model) => model.id.trim()).length, [models]);
+  const currentSnapshot = useMemo(
+    () =>
+      createProviderFormSnapshot({
+        editingProviderId,
+        providerId,
+        baseUrl,
+        apiType,
+        authKind,
+        apiKey,
+        proxyUrl,
+        customHeadersText,
+        models,
+      }),
+    [apiKey, apiType, authKind, baseUrl, customHeadersText, editingProviderId, models, providerId, proxyUrl],
+  );
+  const isDirty = useMemo(
+    () => isProviderFormDirty(currentSnapshot, baselineRef.current),
+    [currentSnapshot],
+  );
+
+  useEffect(() => {
+    onDirtyChangeRef.current?.(isDirty);
+  }, [isDirty]);
+
+  useEffect(() => {
+    return () => {
+      onDirtyChangeRef.current?.(false);
+    };
+  }, []);
+
+  function captureBaseline(next: ProviderFormSnapshot): void {
+    baselineRef.current = next;
+    onDirtyChangeRef.current?.(false);
+  }
 
   function getCustomHeadersOrToast(): Record<string, string> | undefined | null {
     try {
@@ -281,24 +389,25 @@ export function CustomProviderSettings() {
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
       showToast(t("Save failed: {message}", "保存失败：{message}", { message }), "error");
+      useStore.getState().refresh();
     } finally {
       setSaving(false);
     }
   }
 
   function addModel() {
-    setModels((prev) => [...prev, { ...EMPTY_MODEL }]);
+    setModels((prev) => [...prev, createModelDraft()]);
   }
 
-  function removeModel(index: number) {
+  function removeModel(draftId: string) {
     setModels((prev) => {
-      const next = prev.filter((_, modelIndex) => modelIndex !== index);
-      return next.length > 0 ? next : [{ ...EMPTY_MODEL }];
+      const next = prev.filter((model) => model.draftId !== draftId);
+      return next.length > 0 ? next : [createModelDraft()];
     });
   }
 
-  function updateModel<Field extends keyof ModelDraft>(index: number, field: Field, value: ModelDraft[Field]) {
-    setModels((prev) => prev.map((model, modelIndex) => (modelIndex === index ? { ...model, [field]: value } : model)));
+  function updateModel<Field extends keyof ModelDraft>(draftId: string, field: Field, value: ModelDraft[Field]) {
+    setModels((prev) => prev.map((model) => (model.draftId === draftId ? { ...model, [field]: value } : model)));
   }
 
   async function handleTest() {
@@ -347,9 +456,7 @@ export function CustomProviderSettings() {
     const headers = getCustomHeadersOrToast();
     if (!provider || !validateEndpointFields() || headers === null) return;
 
-    const validModels = models
-      .map((model, index) => ({ model, index }))
-      .filter(({ model }) => model.id.trim());
+    const validModels = models.filter((model) => model.id.trim());
     if (validModels.length === 0) {
       showToast(t("At least one model with an ID is required", "至少需要一个带 ID 的模型"), "error");
       return;
@@ -357,15 +464,16 @@ export function CustomProviderSettings() {
 
     setSaving(true);
     try {
-      const savedModelIds = new Set<string>();
-      const replacedOriginalModelIds = new Set<string>();
-      for (const { model, index } of validModels) {
+      const keptOriginalIds = new Set<string>();
+      for (const model of validModels) {
         const modelId = model.id.trim();
-        const replaceModelId = editingProviderId === provider ? editingOriginalModelIds[index]?.trim() : undefined;
-        savedModelIds.add(modelId);
-        if (replaceModelId && replaceModelId !== modelId) {
-          replacedOriginalModelIds.add(replaceModelId);
-        }
+        const replaceModelId =
+          editingProviderId === provider && model.originalId && model.originalId !== modelId
+            ? model.originalId
+            : undefined;
+        if (editingProviderId === provider) keptOriginalIds.add(modelId);
+        if (model.originalId) keptOriginalIds.add(model.originalId);
+        if (replaceModelId) keptOriginalIds.add(replaceModelId);
         await api.upsertCustomModel({
           provider,
           baseUrl: baseUrl.trim(),
@@ -386,9 +494,8 @@ export function CustomProviderSettings() {
         });
       }
       if (editingProviderId === provider) {
-        const removedModelIds = editingOriginalModelIds.filter(
-          (modelId) => modelId && !savedModelIds.has(modelId) && !replacedOriginalModelIds.has(modelId),
-        );
+        const existingOriginalIds = (editingProviderConfig?.models ?? []).map((model) => model.id);
+        const removedModelIds = existingOriginalIds.filter((modelId) => modelId && !keptOriginalIds.has(modelId));
         for (const modelId of removedModelIds) {
           await api.removeCustomModel(provider, modelId, false);
         }
@@ -410,6 +517,7 @@ export function CustomProviderSettings() {
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
       showToast(t("Save failed: {message}", "保存失败：{message}", { message }), "error");
+      useStore.getState().refresh();
     } finally {
       setSaving(false);
     }
@@ -417,7 +525,6 @@ export function CustomProviderSettings() {
 
   function resetForm() {
     setEditingProviderId(null);
-    setEditingOriginalModelIds([]);
     setProviderId("");
     setBaseUrl("");
     setApiType("openai-completions");
@@ -425,17 +532,17 @@ export function CustomProviderSettings() {
     setApiKey("");
     setProxyUrl("");
     setCustomHeadersText("");
-    setModels([{ ...EMPTY_MODEL }]);
+    setModels([createModelDraft()]);
     setTestResult(null);
     setFetchedModels([]);
     setSelectedIds(new Set());
     setFetchedImageInput(false);
+    captureBaseline(createEmptyProviderFormSnapshot());
   }
 
   function editProvider(name: string, config: ExistingProviderConfig) {
     const existingModels = config.models ?? [];
     setEditingProviderId(name);
-    setEditingOriginalModelIds(existingModels.map((model) => model.id));
     setProviderId(name);
     setBaseUrl(config.baseUrl ?? "");
     setApiType(isCustomModelApi(config.api) ? config.api : "openai-completions");
@@ -443,11 +550,24 @@ export function CustomProviderSettings() {
     setApiKey("");
     setProxyUrl(config.proxyUrl ?? "");
     setCustomHeadersText(formatHeaders(config.headers));
-    setModels(existingModels.length > 0 ? existingModels.map(modelConfigToDraft) : [{ ...EMPTY_MODEL }]);
+    setModels(existingModels.length > 0 ? existingModels.map(modelConfigToDraft) : [createModelDraft()]);
     setFetchedModels([]);
     setSelectedIds(new Set());
     setFetchedImageInput(false);
     setTestResult(null);
+        captureBaseline(
+      createProviderFormSnapshot({
+        editingProviderId: name,
+        providerId: name,
+        baseUrl: config.baseUrl ?? "",
+        apiType: isCustomModelApi(config.api) ? config.api : "openai-completions",
+        authKind: config.authKind ?? (config.hasStoredAuth ? "api_key" : "none"),
+        apiKey: "",
+        proxyUrl: config.proxyUrl ?? "",
+        customHeadersText: formatHeaders(config.headers),
+        models: existingModels.length > 0 ? existingModels.map(modelConfigToDraft) : [createModelDraft()],
+      }),
+    );
     showToast(
       t("Editing {provider}. Existing API key is preserved unless replaced.", "正在编辑 {provider}。不填写新密钥则保留原密钥。", {
         provider: name,
@@ -487,10 +607,9 @@ export function CustomProviderSettings() {
       useStore.getState().refresh();
       if (editingProviderId === provider) {
         setModels((prev) => {
-          const next = prev.filter((model) => model.id !== modelId);
-          return next.length > 0 ? next : [{ ...EMPTY_MODEL }];
+          const next = prev.filter((model) => model.originalId !== modelId && model.id !== modelId);
+          return next.length > 0 ? next : [createModelDraft()];
         });
-        setEditingOriginalModelIds((prev) => prev.filter((id) => id !== modelId));
       }
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
@@ -699,19 +818,19 @@ export function CustomProviderSettings() {
               </div>
             </div>
 
-            {models.map((model, index) => (
-              <div key={index} className="custom-model-row">
+            {models.map((model) => (
+              <div key={model.draftId} className="custom-model-row">
                 <div className="custom-model-fields">
                   <input
                     className="form-input form-input-sm"
                     value={model.id}
-                    onChange={(event) => updateModel(index, "id", event.target.value)}
+                    onChange={(event) => updateModel(model.draftId, "id", event.target.value)}
                     placeholder={t("Model ID (required)", "模型 ID（必填）")}
                   />
                   <input
                     className="form-input form-input-sm"
                     value={model.name}
-                    onChange={(event) => updateModel(index, "name", event.target.value)}
+                    onChange={(event) => updateModel(model.draftId, "name", event.target.value)}
                     placeholder={t("Display name (optional)", "显示名称（可选）")}
                   />
                   <div className="custom-model-options">
@@ -719,7 +838,7 @@ export function CustomProviderSettings() {
                       <input
                         type="checkbox"
                         checked={model.reasoning}
-                        onChange={(event) => updateModel(index, "reasoning", event.target.checked)}
+                        onChange={(event) => updateModel(model.draftId, "reasoning", event.target.checked)}
                       />
                       <span>{t("Reasoning", "推理")}</span>
                     </label>
@@ -727,7 +846,7 @@ export function CustomProviderSettings() {
                       <input
                         type="checkbox"
                         checked={model.imageInput}
-                        onChange={(event) => updateModel(index, "imageInput", event.target.checked)}
+                        onChange={(event) => updateModel(model.draftId, "imageInput", event.target.checked)}
                       />
                       <span>{t("Image input", "图片输入")}</span>
                     </label>
@@ -735,14 +854,14 @@ export function CustomProviderSettings() {
                       className="form-input form-input-num"
                       type="number"
                       value={model.contextWindow}
-                      onChange={(event) => updateModel(index, "contextWindow", Number(event.target.value))}
+                      onChange={(event) => updateModel(model.draftId, "contextWindow", Number(event.target.value))}
                       title={t("Context window", "上下文窗口")}
                     />
                     <input
                       className="form-input form-input-num"
                       type="number"
                       value={model.maxTokens}
-                      onChange={(event) => updateModel(index, "maxTokens", Number(event.target.value))}
+                      onChange={(event) => updateModel(model.draftId, "maxTokens", Number(event.target.value))}
                       title={t("Max output tokens", "最大输出 token 数")}
                     />
                   </div>
@@ -750,7 +869,7 @@ export function CustomProviderSettings() {
                 <button
                   className="settings-btn-sm settings-btn-danger"
                   type="button"
-                  onClick={() => removeModel(index)}
+                  onClick={() => removeModel(model.draftId)}
                   disabled={saving || models.length === 1}
                   aria-label={t("Remove model", "移除模型")}
                 >

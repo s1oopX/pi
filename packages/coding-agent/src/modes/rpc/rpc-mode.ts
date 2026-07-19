@@ -1081,6 +1081,7 @@ export async function runRpcMode(runtimeHost: AgentSessionRuntime): Promise<neve
 			}
 
 			case "replace_custom_models": {
+				const previousProviders = Object.keys(readCustomModelsConfig().providers);
 				const config = validateImportedCustomModels(command.providers);
 				writeCustomModelsConfig(config);
 				session.modelRegistry.refresh();
@@ -1088,10 +1089,20 @@ export async function runRpcMode(runtimeHost: AgentSessionRuntime): Promise<neve
 					(count, provider) => count + (provider.models?.length || 0),
 					0,
 				);
+				const removedStoredAuthProviders: string[] = [];
+				if (command.removeOrphanStoredAuth) {
+					for (const provider of previousProviders) {
+						if (provider in config.providers) continue;
+						if (!session.modelRegistry.authStorage.has(provider)) continue;
+						session.modelRegistry.authStorage.remove(provider);
+						removedStoredAuthProviders.push(provider);
+					}
+				}
 				return success(id, "replace_custom_models", {
 					path: getModelsPath(),
 					providers: Object.keys(config.providers).length,
 					models,
+					removedStoredAuthProviders,
 				});
 			}
 
@@ -1605,6 +1616,13 @@ export async function runRpcMode(runtimeHost: AgentSessionRuntime): Promise<neve
 							skillDiagnostics: skillsResult.diagnostics,
 							prompts: promptsResult.prompts,
 							promptDiagnostics: promptsResult.diagnostics,
+							extensionFlags: Array.from(session.extensionRunner.getFlags().values()).map((flag) => ({
+								name: flag.name,
+								type: flag.type,
+								description: flag.description,
+								default: flag.default,
+								extensionPath: flag.extensionPath,
+							})),
 						};
 					},
 					command.reload

@@ -42,7 +42,13 @@ export function ShortcutsSettings() {
     if (commandId === "new-thread") return t("New Thread", "新建会话");
     if (commandId === "focus-thread-search") return t("Search Threads", "搜索会话");
     if (commandId === "focus-composer") return t("Focus Message Input", "聚焦消息输入框");
-    return t("Switch Workspace", "切换工作区");
+    if (commandId === "switch-workspace") return t("Switch Workspace", "切换工作区");
+    if (commandId === "toggle-workbench") return t("Toggle Workbench", "切换工作台");
+    if (commandId === "open-workbench-review") return t("Open Review", "打开审阅");
+    if (commandId === "open-workbench-terminal") return t("Open Terminal", "打开终端");
+    if (commandId === "open-workbench-browser") return t("Open Browser", "打开浏览器");
+    if (commandId === "open-workbench-files") return t("Open Files", "打开文件");
+    return t("Open Side Task", "打开侧边任务");
   }
 
   function commandDescription(commandId: AppCommandId): string {
@@ -51,7 +57,17 @@ export function ShortcutsSettings() {
     if (commandId === "new-thread") return t("Start a new agent session in the current workspace.", "在当前工作区中启动新的智能体会话。");
     if (commandId === "focus-thread-search") return t("Move focus to the thread search field.", "将焦点移到会话搜索框。");
     if (commandId === "focus-composer") return t("Move focus to the prompt composer.", "将焦点移到提示词编辑器。");
-    return t("Open the workspace switcher.", "打开工作区切换器。");
+    if (commandId === "switch-workspace") return t("Open the workspace switcher.", "打开工作区切换器。");
+    if (commandId === "toggle-workbench") return t("Open or close the right workbench.", "打开或关闭右侧工作台。");
+    if (commandId === "open-workbench-review") {
+      return t("Open branch and review tools in the workbench.", "在工作台中打开分支和审阅工具。");
+    }
+    if (commandId === "open-workbench-terminal") return t("Open the terminal in the workbench.", "在工作台中打开终端。");
+    if (commandId === "open-workbench-browser") return t("Open browser actions in the workbench.", "在工作台中打开浏览器操作。");
+    if (commandId === "open-workbench-files") {
+      return t("Open workspace file search in the workbench.", "在工作台中搜索工作区文件。");
+    }
+    return t("Create a task from the workbench.", "从工作台创建任务。");
   }
 
   function keybindingErrorMessage(error: AppKeybindingError): string {

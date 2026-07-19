@@ -303,6 +303,14 @@ export interface RpcResourceDiagnosticDTO {
 	path?: string;
 }
 
+export interface RpcExtensionFlagDTO {
+	name: string;
+	type: "boolean" | "string";
+	description?: string;
+	default?: boolean | string;
+	extensionPath: string;
+}
+
 export interface RpcCustomModelConfigModelDTO {
 	id: string;
 	name?: string;
@@ -405,6 +413,7 @@ export interface RpcGetResourcesDataDTO {
 	skills: RpcResourceItemDTO[];
 	prompts: RpcResourceItemDTO[];
 	diagnostics: RpcResourceDiagnosticDTO[];
+	extensionFlags: RpcExtensionFlagDTO[];
 }
 
 // ============================================================================

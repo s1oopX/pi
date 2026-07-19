@@ -1,10 +1,11 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useI18n } from "../../i18n";
 import * as api from "../../ipc/api";
 import type { QueueMode, ThinkingLevel } from "../../ipc/types";
 import { useStore, type PermissionMode } from "../../store";
 import { PERMISSION_MODE_OPTIONS } from "../PermissionSelector/permissionModes";
 import { showToast } from "../Toast";
+import { hasPermissionModeExtension } from "./settingsLogic";
 
 const THINKING_LEVELS: ThinkingLevel[] = ["off", "minimal", "low", "medium", "high", "xhigh"];
 const QUEUE_MODES: QueueMode[] = ["all", "one-at-a-time"];
@@ -19,11 +20,35 @@ export function AgentSettings() {
   const { t } = useI18n();
   const [pendingSetting, setPendingSetting] = useState<"auto-compaction" | "auto-retry" | null>(null);
   const [manualCompactPending, setManualCompactPending] = useState(false);
+  const [permissionExtensionStatus, setPermissionExtensionStatus] = useState<
+    "unknown" | "available" | "missing"
+  >("unknown");
   const thinkingLevel = (session?.thinkingLevel ?? "medium") as ThinkingLevel;
-  const steeringMode = (session?.steeringMode ?? "all") as QueueMode;
-  const followUpMode = (session?.followUpMode ?? "all") as QueueMode;
+  // Match SettingsManager defaults: queue modes are one-at-a-time unless configured.
+  const steeringMode = (session?.steeringMode ?? "one-at-a-time") as QueueMode;
+  const followUpMode = (session?.followUpMode ?? "one-at-a-time") as QueueMode;
   const autoCompaction = session?.autoCompactionEnabled ?? true;
   const autoRetry = session?.autoRetryEnabled ?? true;
+  const sessionReady = session !== null;
+  const sessionControlsDisabled = !sessionReady || pendingSetting !== null;
+
+  useEffect(() => {
+    let cancelled = false;
+    void (async () => {
+      try {
+        const resources = await api.getResources();
+        if (cancelled) return;
+        setPermissionExtensionStatus(
+          hasPermissionModeExtension(resources) ? "available" : "missing",
+        );
+      } catch {
+        if (!cancelled) setPermissionExtensionStatus("unknown");
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   function permissionLabel(mode: PermissionMode): string {
     if (mode === "full") return t("Full access", "完全访问");
@@ -56,6 +81,7 @@ export function AgentSettings() {
   }
 
   async function handleThinking(level: ThinkingLevel) {
+    if (!sessionReady) return;
     try {
       await api.setThinkingLevel(level);
       useStore.getState().refresh();
@@ -66,6 +92,7 @@ export function AgentSettings() {
   }
 
   async function handleSteeringMode(mode: QueueMode) {
+    if (!sessionReady) return;
     try {
       await api.setSteeringMode(mode);
       useStore.getState().refresh();
@@ -76,6 +103,7 @@ export function AgentSettings() {
   }
 
   async function handleFollowUpMode(mode: QueueMode) {
+    if (!sessionReady) return;
     try {
       await api.setFollowUpMode(mode);
       useStore.getState().refresh();
@@ -86,6 +114,7 @@ export function AgentSettings() {
   }
 
   async function handleAutoCompaction(enabled: boolean) {
+    if (!sessionReady) return;
     setPendingSetting("auto-compaction");
     try {
       await api.setAutoCompaction(enabled);
@@ -99,6 +128,7 @@ export function AgentSettings() {
   }
 
   async function handleAutoRetry(enabled: boolean) {
+    if (!sessionReady) return;
     setPendingSetting("auto-retry");
     try {
       await api.setAutoRetry(enabled);
@@ -137,12 +167,28 @@ export function AgentSettings() {
   return (
     <div className="settings-section">
       <h3 className="settings-section-title">{t("Agent Settings", "智能体设置")}</h3>
+      {!sessionReady && (
+        <p className="settings-section-desc" role="status">
+          {t(
+            "The current session is not ready. Session-specific settings cannot be changed yet.",
+            "当前会话未就绪，暂时无法修改会话级设置。",
+          )}
+        </p>
+      )}
 
       <div className="settings-group">
         <span className="settings-group-label">{t("Tool Permissions", "工具权限")}</span>
         <p className="settings-group-desc">
           {t("Choose when the agent asks before running commands or changing files.", "选择智能体在运行命令或更改文件前何时询问。")}
         </p>
+        {permissionExtensionStatus === "missing" && (
+          <p className="settings-group-desc" role="status">
+            {t(
+              "The tool-approval extension is not loaded. Changing this setting will not enforce tool permissions until it is available.",
+              "未加载 tool-approval 扩展。在可用前，更改此设置不会真正约束工具权限。",
+            )}
+          </p>
+        )}
         <div className="settings-radio-group">
           {PERMISSION_MODE_OPTIONS.map((option) => (
             <label key={option.mode} className="settings-radio-option">
@@ -170,6 +216,7 @@ export function AgentSettings() {
                 name="thinking-level"
                 value={level}
                 checked={thinkingLevel === level}
+                disabled={sessionControlsDisabled}
                 onChange={() => handleThinking(level)}
               />
               <span>{thinkingLabel(level)}</span>
@@ -183,7 +230,7 @@ export function AgentSettings() {
         <p className="settings-group-desc">
           {t("How steering messages are processed while the agent runs.", "智能体运行时如何处理引导消息。")}
         </p>
-        <select className="form-select" value={steeringMode} onChange={(event) => handleSteeringMode(event.target.value as QueueMode)}>
+        <select className="form-select" value={steeringMode} disabled={sessionControlsDisabled} onChange={(event) => handleSteeringMode(event.target.value as QueueMode)}>
           {QUEUE_MODES.map((mode) => <option key={mode} value={mode}>{queueModeLabel(mode)}</option>)}
         </select>
       </div>
@@ -193,7 +240,7 @@ export function AgentSettings() {
         <p className="settings-group-desc">
           {t("How follow-up messages are dispatched after a turn completes.", "一轮完成后如何发送跟进消息。")}
         </p>
-        <select className="form-select" value={followUpMode} onChange={(event) => handleFollowUpMode(event.target.value as QueueMode)}>
+        <select className="form-select" value={followUpMode} disabled={sessionControlsDisabled} onChange={(event) => handleFollowUpMode(event.target.value as QueueMode)}>
           {QUEUE_MODES.map((mode) => <option key={mode} value={mode}>{queueModeLabel(mode)}</option>)}
         </select>
       </div>
@@ -207,7 +254,7 @@ export function AgentSettings() {
           <input
             type="checkbox"
             checked={autoRetry}
-            disabled={!session || pendingSetting !== null}
+            disabled={sessionControlsDisabled}
             onChange={(event) => handleAutoRetry(event.target.checked)}
           />
           <span>
@@ -227,7 +274,7 @@ export function AgentSettings() {
           <input
             type="checkbox"
             checked={autoCompaction}
-            disabled={!session || pendingSetting !== null}
+            disabled={sessionControlsDisabled}
             onChange={(event) => handleAutoCompaction(event.target.checked)}
           />
           <span>

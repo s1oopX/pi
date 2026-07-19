@@ -45,6 +45,7 @@ describe("RPC resource catalog", () => {
 		]);
 		expect(catalog.skills[0]?.name).toBe("review");
 		expect(catalog.prompts[0]?.name).toBe("fix");
+		expect(catalog.extensionFlags).toEqual([]);
 		expect(catalog.diagnostics).toEqual([
 			{ resource: "extension", type: "error", message: "Syntax error", path: "/project/.pi/extensions/broken.ts" },
 			{ resource: "extension", type: "collision", message: "Duplicate command", path: "/command" },
@@ -76,13 +77,43 @@ describe("RPC resource catalog", () => {
 		expect(catalog.extensions[0]?.name).toBe("after.ts");
 	});
 
+	it("includes registered extension flags in the catalog", () => {
+		const catalog = buildResourceCatalog({
+			extensions: [],
+			extensionErrors: [],
+			extensionDiagnostics: [],
+			skills: [],
+			skillDiagnostics: [],
+			prompts: [],
+			promptDiagnostics: [],
+			extensionFlags: [
+				{
+					name: "permission-mode",
+					type: "string",
+					description: "Tool permission mode",
+					default: "ask",
+					extensionPath: "/home/me/.pi/agent/extensions/tool-approval.ts",
+				},
+			],
+		});
+
+		expect(catalog.extensionFlags).toEqual([
+			{
+				name: "permission-mode",
+				type: "string",
+				description: "Tool permission mode",
+				default: "ask",
+				extensionPath: "/home/me/.pi/agent/extensions/tool-approval.ts",
+			},
+		]);
+	});
 	it("exposes resource reload through RpcClient", async () => {
 		const client = new RpcClient();
 		const privateClient = client as unknown as {
 			send: (command: { type: string; reload?: boolean }) => Promise<unknown>;
 			getData: <T>(response: unknown) => T;
 		};
-		const data = { extensions: [], skills: [], prompts: [], diagnostics: [] };
+		const data = { extensions: [], skills: [], prompts: [], diagnostics: [], extensionFlags: [] };
 		const send = vi.fn(async () => ({
 			type: "response",
 			command: "get_resources",

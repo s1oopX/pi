@@ -3,6 +3,7 @@ import {
   buildCustomModelInput,
   createModelConfigBackup,
   getConnectionTestFailure,
+  hasPermissionModeExtension,
   readModelConfigBackupProviders,
 } from "./settingsLogic";
 
@@ -30,5 +31,29 @@ describe("settings logic", () => {
     expect(readModelConfigBackupProviders(backup)).toBe(providers);
     expect(readModelConfigBackupProviders({ ...backup, version: 2 })).toBeNull();
     expect(readModelConfigBackupProviders({ ...backup, providers: [] })).toBeNull();
+  });
+
+  it("detects permission-mode via registered flags, with path fallback", () => {
+    expect(
+      hasPermissionModeExtension({
+        extensionFlags: [{ name: "permission-mode" }],
+      }),
+    ).toBe(true);
+    expect(
+      hasPermissionModeExtension({
+        extensions: [{ name: "C:\\Users\\me\\.pi\\agent\\extensions\\tool-approval.ts" }],
+      }),
+    ).toBe(true);
+    expect(
+      hasPermissionModeExtension({
+        extensions: [{ path: "/home/me/.pi/agent/extensions/tool-approval.js" }],
+      }),
+    ).toBe(true);
+    expect(
+      hasPermissionModeExtension({
+        extensions: [{ name: "ssh.ts" }, { path: "preset.ts" }],
+      }),
+    ).toBe(false);
+    expect(hasPermissionModeExtension(null)).toBe(false);
   });
 });

@@ -1,8 +1,12 @@
+import { translateText, type ResolvedLanguage } from "../../i18n";
+
 export interface ModelConfigBackup {
   format: "pi-studio-models";
   version: 1;
   providers: Record<string, unknown>;
 }
+
+export const PERMISSION_MODE_EXTENSION_FLAG = "permission-mode";
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
@@ -42,4 +46,42 @@ export function readModelConfigBackupProviders(backup: unknown): Record<string, 
   }
   return backup.providers;
 }
-import { translateText, type ResolvedLanguage } from "../../i18n";
+function extensionPathName(path: string): string {
+  const segments = path.split(/[\\/]/).filter(Boolean);
+  return (segments[segments.length - 1] ?? path).toLocaleLowerCase("en");
+}
+
+function hasPermissionModeExtensionByPath(
+  extensions: readonly { name?: string; path?: string }[],
+): boolean {
+  return extensions.some((extension) => {
+    const candidates = [extension.name, extension.path]
+      .filter((value): value is string => typeof value === "string" && value.length > 0)
+      .map((value) => extensionPathName(value));
+    return candidates.some(
+      (name) =>
+        name === "tool-approval.ts" ||
+        name === "tool-approval.js" ||
+        name.includes("tool-approval") ||
+        name.includes(PERMISSION_MODE_EXTENSION_FLAG),
+    );
+  });
+}
+
+/** Detect whether the runtime registered the permission-mode extension flag. */
+export function hasPermissionModeExtension(
+  resources:
+    | {
+        extensionFlags?: readonly { name?: string }[];
+        extensions?: readonly { name?: string; path?: string }[];
+      }
+    | null
+    | undefined,
+): boolean {
+  const flags = resources?.extensionFlags ?? [];
+  if (flags.some((flag) => flag.name === PERMISSION_MODE_EXTENSION_FLAG)) {
+    return true;
+  }
+  // Fallback for older backends that only return extension file paths.
+  return hasPermissionModeExtensionByPath(resources?.extensions ?? []);
+}

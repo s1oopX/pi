@@ -233,6 +233,7 @@ export interface RemoveCustomProviderCommand {
 export interface ReplaceCustomModelsCommand {
   type: "replace_custom_models";
   providers: Record<string, unknown>;
+  removeOrphanStoredAuth?: boolean;
 }
 
 // Session management

@@ -189,8 +189,11 @@ export async function removeCustomProvider(provider: string, removeAuth?: boolea
   await requireApi().request({ type: "remove_custom_provider", provider, removeAuth });
 }
 
-export async function replaceCustomModels(providers: Record<string, unknown>): Promise<void> {
-  await requireApi().request({ type: "replace_custom_models", providers });
+export async function replaceCustomModels(
+  providers: Record<string, unknown>,
+  options: { removeOrphanStoredAuth?: boolean } = {},
+): Promise<void> {
+  await requireApi().request({ type: "replace_custom_models", providers, ...options });
 }
 
 // --- Thinking ---

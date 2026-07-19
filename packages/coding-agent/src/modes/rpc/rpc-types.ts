@@ -57,7 +57,12 @@ export type RpcCommand =
 	| { id?: string; type: "set_api_key"; provider: string; apiKey: string }
 	| { id?: string; type: "remove_api_key"; provider: string }
 	| { id?: string; type: "get_custom_models" }
-	| { id?: string; type: "replace_custom_models"; providers: Record<string, unknown> }
+	| {
+			id?: string;
+			type: "replace_custom_models";
+			providers: Record<string, unknown>;
+			removeOrphanStoredAuth?: boolean;
+	  }
 	| {
 			id?: string;
 			type: "fetch_provider_models";
@@ -260,7 +265,7 @@ export type RpcResponse =
 			type: "response";
 			command: "replace_custom_models";
 			success: true;
-			data: { path: string; providers: number; models: number };
+			data: { path: string; providers: number; models: number; removedStoredAuthProviders: string[] };
 	  }
 	| {
 			id?: string;
@@ -403,6 +408,13 @@ export type RpcResponse =
 					type: "warning" | "error" | "collision";
 					message: string;
 					path?: string;
+				}>;
+				extensionFlags: Array<{
+					name: string;
+					type: "boolean" | "string";
+					description?: string;
+					default?: boolean | string;
+					extensionPath: string;
 				}>;
 			};
 	  }
