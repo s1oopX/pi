@@ -1,3 +1,4 @@
+import type { ReactNode } from "react";
 import type { SettingsRoute } from "../../store";
 
 type IconRoute = Exclude<SettingsRoute, null>;
@@ -6,7 +7,7 @@ type IconRoute = Exclude<SettingsRoute, null>;
 // stroke-based to match the app's existing inline-SVG language (sidebar,
 // workbench). Rendered inside .settings-section-icon, which tints them to the
 // muted foreground for a calm header rather than a loud colored glyph.
-const ICON_PATHS: Record<IconRoute, JSX.Element> = {
+const ICON_PATHS: Record<IconRoute, ReactNode> = {
   "models-providers": (
     <>
       <rect x="4" y="4" width="16" height="16" rx="2" />

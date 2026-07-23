@@ -5,6 +5,7 @@ import {
   useAppearancePreferences,
 } from "../../appearance/preferences";
 import { useI18n, type LanguagePreference } from "../../i18n";
+import { SettingsSectionIcon } from "./SettingsSectionIcon";
 import { useStore, type Theme } from "../../store";
 
 const THEME_OPTIONS: Theme[] = ["system", "light", "dark"];

@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useI18n } from "../../i18n";
+import { SettingsSectionIcon } from "./SettingsSectionIcon";
 import * as api from "../../ipc/api";
 import type { ResourcesData } from "../../ipc/types";
 import { useStore } from "../../store";

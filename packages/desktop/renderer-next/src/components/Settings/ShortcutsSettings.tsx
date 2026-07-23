@@ -1,5 +1,6 @@
 import { useMemo, useState, type KeyboardEvent } from "react";
 import { useI18n } from "../../i18n";
+import { SettingsSectionIcon } from "./SettingsSectionIcon";
 import {
   APP_COMMAND_IDS,
   DEFAULT_APP_KEYBINDINGS,
