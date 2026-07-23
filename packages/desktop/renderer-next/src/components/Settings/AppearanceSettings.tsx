@@ -41,7 +41,10 @@ export function AppearanceSettings() {
 
   return (
     <div className="settings-section">
-      <h3 className="settings-section-title">{t("Appearance", "外观")}</h3>
+      <h3 className="settings-section-title">
+        <SettingsSectionIcon route="appearance" />
+        {t("Appearance", "外观")}
+      </h3>
       <p className="settings-section-desc">
         {t("Adjust the application language, theme, text size, and spacing.", "调整应用语言、主题、文字大小和间距。")}
       </p>

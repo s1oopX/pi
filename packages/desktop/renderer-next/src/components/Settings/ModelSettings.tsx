@@ -4,6 +4,7 @@ import { useStore } from "../../store";
 import * as api from "../../ipc/api";
 import { showToast } from "../Toast";
 import type { AuthStatus, Model } from "../../ipc/types";
+import { SettingsSectionIcon } from "./SettingsSectionIcon";
 import {
   createModelConfigBackup,
   getConnectionTestFailure,
@@ -106,7 +107,10 @@ export function ModelSettings() {
 
   return (
     <div className="settings-section">
-      <h3 className="settings-section-title">{t("Models & Providers", "模型与提供商")}</h3>
+      <h3 className="settings-section-title">
+        <SettingsSectionIcon route="models-providers" />
+        {t("Models & Providers", "模型与提供商")}
+      </h3>
       <p className="settings-section-desc">
         {t("Select the active model or manage provider authentication.", "选择当前模型或管理提供商认证。")}
       </p>

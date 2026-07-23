@@ -6,6 +6,7 @@ import { useStore, type PermissionMode } from "../../store";
 import { PERMISSION_MODE_OPTIONS } from "../PermissionSelector/permissionModes";
 import { showToast } from "../Toast";
 import { hasPermissionModeExtension } from "./settingsLogic";
+import { SettingsSectionIcon } from "./SettingsSectionIcon";
 
 const THINKING_LEVELS: ThinkingLevel[] = ["off", "minimal", "low", "medium", "high", "xhigh"];
 const QUEUE_MODES: QueueMode[] = ["all", "one-at-a-time"];
@@ -166,7 +167,10 @@ export function AgentSettings() {
 
   return (
     <div className="settings-section">
-      <h3 className="settings-section-title">{t("Agent Settings", "智能体设置")}</h3>
+      <h3 className="settings-section-title">
+        <SettingsSectionIcon route="agent-general" />
+        {t("Agent Settings", "智能体设置")}
+      </h3>
       {!sessionReady && (
         <p className="settings-section-desc" role="status">
           {t(

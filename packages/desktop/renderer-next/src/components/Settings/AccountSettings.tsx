@@ -4,6 +4,7 @@ import * as api from "../../ipc/api";
 import { useStore } from "../../store";
 import { showToast } from "../Toast";
 import { canRemoveProviderAuth, deriveProviderIds, resolveProviderId } from "./providerOptions";
+import { SettingsSectionIcon } from "./SettingsSectionIcon";
 
 export function AccountSettings() {
   const authStatuses = useStore((state) => state.authStatuses);
@@ -60,7 +61,10 @@ export function AccountSettings() {
 
   return (
     <div className="settings-section">
-      <h3 className="settings-section-title">{t("Account & API Keys", "账户与 API 密钥")}</h3>
+      <h3 className="settings-section-title">
+        <SettingsSectionIcon route="account" />
+        {t("Account & API Keys", "账户与 API 密钥")}
+      </h3>
       <p className="settings-section-desc">
         {t("Configure model provider API keys. Keys are stored locally.", "配置模型提供商 API 密钥。密钥仅存储在本机。")}
       </p>

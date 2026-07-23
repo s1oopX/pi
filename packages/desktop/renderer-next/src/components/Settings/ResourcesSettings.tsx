@@ -120,7 +120,10 @@ export function ResourcesSettings() {
     <div className="settings-section">
       <div className="resources-heading">
         <div>
-          <h3 className="settings-section-title">{t("Resources", "资源")}</h3>
+          <h3 className="settings-section-title">
+            <SettingsSectionIcon route="resources" />
+            {t("Resources", "资源")}
+          </h3>
           <p className="settings-section-desc">
             {t(
               "Read-only resources loaded for the current workspace.",

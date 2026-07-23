@@ -5,6 +5,7 @@ import type { CustomModelApi } from "../../ipc/types";
 import { useStore } from "../../store";
 import { showToast } from "../Toast";
 import { buildCustomModelInput, getConnectionTestFailure } from "./settingsLogic";
+import { SettingsSectionIcon } from "./SettingsSectionIcon";
 
 type AuthKind = "api_key" | "none";
 
@@ -619,7 +620,10 @@ export function CustomProviderSettings({ onDirtyChange }: { onDirtyChange?: (dir
 
   return (
     <div className="settings-section">
-      <h3 className="settings-section-title">{t("Custom Providers", "自定义提供商")}</h3>
+      <h3 className="settings-section-title">
+        <SettingsSectionIcon route="custom-providers" />
+        {t("Custom Providers", "自定义提供商")}
+      </h3>
       <p className="settings-section-desc">
         {t(
           "Connect third-party OpenAI-compatible or Anthropic-compatible API endpoints.",

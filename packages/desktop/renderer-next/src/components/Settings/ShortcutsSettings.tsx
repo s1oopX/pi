@@ -200,7 +200,10 @@ export function ShortcutsSettings() {
     <div className="settings-section shortcuts-settings">
       <div className="shortcuts-heading">
         <div>
-          <h3 className="settings-section-title">{t("Keyboard Shortcuts", "键盘快捷键")}</h3>
+          <h3 className="settings-section-title">
+            <SettingsSectionIcon route="shortcuts" />
+            {t("Keyboard Shortcuts", "键盘快捷键")}
+          </h3>
           <p className="settings-section-desc">
             {t("Change application commands without changing editor keybindings.", "更改应用命令快捷键，不影响编辑器按键绑定。")}
           </p>

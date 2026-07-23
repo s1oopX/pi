@@ -3,6 +3,7 @@ import { useStore } from "../../store";
 import * as api from "../../ipc/api";
 import { useI18n } from "../../i18n";
 import { showToast } from "../Toast";
+import { SettingsSectionIcon } from "./SettingsSectionIcon";
 
 export function AboutSettings() {
   const appInfo = useStore((s) => s.appInfo);
@@ -97,7 +98,10 @@ export function AboutSettings() {
 
   return (
     <div className="settings-section">
-      <h3 className="settings-section-title">{t("About", "关于")}</h3>
+      <h3 className="settings-section-title">
+        <SettingsSectionIcon route="about" />
+        {t("About", "关于")}
+      </h3>
 
       <div className="about-info">
         <div className="about-row">
