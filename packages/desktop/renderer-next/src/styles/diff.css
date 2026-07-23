@@ -58,6 +58,90 @@
   font-weight: 600;
 }
 
+/* Inline +N -M change counts, in the toolbar summary and each file header. */
+.diff-stat-badge {
+  display: inline-flex;
+  gap: var(--space-2);
+  margin-left: var(--space-3);
+  font-family: var(--font-mono);
+  font-size: var(--font-size-meta);
+  font-variant-numeric: tabular-nums;
+}
+
+.diff-stat-added {
+  color: var(--success);
+}
+
+.diff-stat-deleted {
+  color: var(--danger);
+}
+
+/* Per-file collapsible sections replace diff2html's monolithic block. */
+.diff-file-section + .diff-file-section {
+  border-top: 1px solid var(--border);
+}
+
+.diff-file-toggle {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  width: 100%;
+  min-height: var(--control-height);
+  padding: 5px 12px;
+  background: var(--control-bg);
+  color: var(--text);
+  text-align: left;
+  transition: background-color var(--transition);
+}
+
+.diff-file-toggle:hover {
+  background: var(--control-hover);
+}
+
+.diff-file-chevron {
+  flex-shrink: 0;
+  color: var(--faint);
+  font-size: var(--font-size-meta);
+}
+
+.diff-file-path {
+  overflow: hidden;
+  flex: 1;
+  min-width: 0;
+  font-family: var(--font-mono);
+  font-size: var(--font-size-compact);
+  line-height: var(--line-height-compact);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.diff-file-kind {
+  flex-shrink: 0;
+  padding: 1px 6px;
+  border-radius: var(--radius-pill);
+  background: var(--surface);
+  color: var(--muted);
+  font-size: var(--font-size-badge);
+  font-weight: 600;
+  letter-spacing: 0;
+  text-transform: uppercase;
+}
+
+.diff-file-kind.kind-added {
+  background: var(--success-soft);
+  color: var(--success);
+}
+
+.diff-file-kind.kind-deleted {
+  background: var(--danger-soft);
+  color: var(--danger);
+}
+
+.diff-file-kind.kind-renamed {
+  background: var(--warning-soft);
+  color: var(--warning);
+}
+
 .diff-content {
   overflow: auto;
   background: var(--main-bg);
@@ -94,13 +178,9 @@
   border-top: 1px solid var(--border);
 }
 
+/* Each file now carries our own collapsible header, so hide diff2html's. */
 .diff-content .d2h-file-header {
-  height: auto;
-  min-height: var(--control-height);
-  padding: 5px 12px;
-  border-color: var(--border);
-  background: var(--control-bg);
-  color: var(--text);
+  display: none;
 }
 
 .diff-content .d2h-file-name-wrapper,
@@ -190,5 +270,12 @@
   .diff-content .d2h-code-line,
   .diff-content .d2h-code-side-line {
     padding-inline: 8px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .diff-format-btn,
+  .diff-file-toggle {
+    transition: none;
   }
 }
