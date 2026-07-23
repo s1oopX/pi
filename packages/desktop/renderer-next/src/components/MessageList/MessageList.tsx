@@ -15,6 +15,7 @@ import type { Message } from "../../ipc/types";
 import { planConversationLayout } from "./conversationLayout";
 import { isMessageListNearBottom } from "./scrollState";
 import { shouldShowListStreamingDots } from "./streamingPresentation";
+import { areBubbleRowPropsEqual } from "./bubbleRowMemo";
 
 const ESTIMATED_MESSAGE_HEIGHT = 80;
 
@@ -45,7 +46,7 @@ const MemoizedBubble = memo(function MemoizedBubble({
       toolExecutionsByCallId={toolExecutionsByCallId}
     />
   );
-});
+}, areBubbleRowPropsEqual);
 
 export function MessageList() {
   const { t } = useI18n();
