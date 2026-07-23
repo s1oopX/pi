@@ -91,4 +91,33 @@ describe("formatAgentLiveStatus", () => {
     });
     expect(tool.primary).toBe("正在运行 read");
   });
+
+  it("includes step count when tools have been invoked", () => {
+    const status = formatAgentLiveStatus({
+      isStreaming: true,
+      elapsedSeconds: 7,
+      activeTool: "grep",
+      stepCount: 4,
+    });
+    expect(status.steps).toBe("4 steps");
+  });
+
+  it("omits step count when zero", () => {
+    const status = formatAgentLiveStatus({
+      isStreaming: true,
+      elapsedSeconds: 2,
+      stepCount: 0,
+    });
+    expect(status.steps).toBeUndefined();
+  });
+
+  it("localizes step count in Chinese", () => {
+    const status = formatAgentLiveStatus({
+      isStreaming: true,
+      elapsedSeconds: 0,
+      stepCount: 3,
+      language: "zh-CN",
+    });
+    expect(status.steps).toBe("3 步");
+  });
 });

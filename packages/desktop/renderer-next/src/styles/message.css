@@ -80,7 +80,7 @@
 }
 
 .message-turn-user .message-turn-body > .message-content {
-  padding: 8px 42px 8px 12px;
+  padding: 8px 74px 8px 12px;
   border: 0;
   border-radius: var(--radius-3xl);
   background: color-mix(in srgb, var(--surface) 70%, transparent);
@@ -130,8 +130,34 @@
   right: 0;
   bottom: 0;
   z-index: 1;
+  display: flex;
+  align-items: center;
+  gap: 8px;
   min-height: 22px;
   margin: 0;
+}
+
+/* Finalized-turn metadata (tokens · cost · model · time). Stays faint and
+   fades to full strength on turn hover, mirroring the copy button so the
+   readout is available on demand without cluttering every answer. */
+.message-turn-meta {
+  color: var(--faint);
+  font-size: calc(11px * var(--font-scale));
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+  opacity: 0;
+  transition: opacity var(--transition-fast), color var(--transition-fast);
+}
+
+.message-turn:hover .message-turn-meta,
+.message-turn:focus-within .message-turn-meta {
+  opacity: 1;
+}
+
+@media (hover: none) {
+  .message-turn-meta {
+    opacity: 0.7;
+  }
 }
 
 .message-turn-assistant > .message-avatar,
@@ -282,6 +308,9 @@
 }
 
 .code-block-lang {
+  display: flex;
+  align-items: center;
+  gap: 8px;
   color: var(--muted);
   font-size: calc(12px * var(--font-scale));
   font-weight: 400;
@@ -289,17 +318,34 @@
   text-transform: lowercase;
 }
 
-.code-block-copy {
-  padding: 2px 6px;
+.code-block-lines {
+  color: var(--faint);
+  font-size: calc(10px * var(--font-scale));
+  font-weight: 500;
+  text-transform: none;
+}
+
+.code-block-actions {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+}
+
+.code-block-action {
+  padding: 2px 7px;
   border-radius: var(--radius-sm);
   color: var(--muted);
   font-size: calc(12px * var(--font-scale));
   transition: background var(--transition-fast), color var(--transition-fast);
 }
 
-.code-block-copy:hover {
+.code-block-action:hover:not(:disabled) {
   background: var(--control-hover);
   color: var(--text);
+}
+
+.code-block-action:disabled {
+  opacity: 0.5;
 }
 
 .code-block-body {
@@ -354,6 +400,17 @@
   background: transparent;
 }
 
+/* Timeline connector: sequential tool call steps linked by a left border. */
+.tool-call-part + .tool-call-part,
+.thinking-part + .tool-call-part,
+.tool-call-part + .thinking-part,
+.file-changes-card + .tool-call-part,
+.tool-call-part + .file-changes-card,
+.thinking-part + .file-changes-card {
+  margin-top: 0;
+  padding-top: 0;
+}
+
 /* First answer block after process log: visual gear-change (Codex-style). */
 .message-answer.after-process {
   margin-top: 14px;
@@ -361,6 +418,24 @@
 
 .message-answer > :first-child {
   margin-top: 0;
+}
+
+/* Turn summary (Codex-style compact footer after a completed agent turn). */
+
+.turn-summary {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 12px;
+  padding-top: 8px;
+  border-top: 1px solid var(--border);
+}
+
+.turn-summary-text {
+  color: var(--faint);
+  font-size: calc(11px * var(--font-scale));
+  font-weight: 500;
+  letter-spacing: 0;
 }
 
 .agent-working {
@@ -384,6 +459,17 @@
 .agent-working-elapsed {
   color: var(--faint);
   font-variant-numeric: tabular-nums;
+}
+
+.agent-working-steps {
+  color: var(--faint);
+  font-variant-numeric: tabular-nums;
+}
+
+.agent-working-steps::before {
+  content: "·";
+  margin-right: 6px;
+  color: var(--faint);
 }
 
 .agent-working-elapsed::before {
@@ -944,10 +1030,27 @@
   overflow: hidden;
   margin: 12px 0;
   padding: 0;
-  border: 0;
+  border: 1px solid var(--border);
   border-radius: var(--radius-3xl);
   background: var(--surface);
   box-shadow: var(--shadow-pop);
+  animation: approval-in 200ms cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.inline-approval.risk-elevated {
+  border-color: color-mix(in srgb, var(--warning) 50%, var(--border));
+}
+
+@keyframes approval-in {
+  from {
+    opacity: 0;
+    transform: translateY(6px) scale(0.985);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
 }
 
 .inline-approval-header {
@@ -970,10 +1073,27 @@
   font-weight: 600;
 }
 
+.inline-approval-risk-badge {
+  margin-left: auto;
+  padding: 2px 8px;
+  border-radius: var(--radius-pill);
+  background: var(--warning-soft);
+  color: var(--warning);
+  font-size: calc(10px * var(--font-scale));
+  font-weight: 650;
+  letter-spacing: 0;
+  text-transform: uppercase;
+}
+
+.inline-approval-detail-wrap {
+  position: relative;
+  margin: 0 16px;
+}
+
 .inline-approval-detail {
   overflow-y: auto;
   max-height: 240px;
-  margin: 0 16px;
+  margin: 0;
   padding: 9px 10px;
   border: 1px solid var(--border);
   border-radius: var(--radius-sm);
@@ -985,6 +1105,26 @@
   word-break: break-word;
 }
 
+.inline-approval-detail.collapsed {
+  overflow: hidden;
+  max-height: 132px;
+  mask-image: linear-gradient(to bottom, #000 60%, transparent);
+}
+
+.inline-approval-detail-toggle {
+  margin-top: 4px;
+  padding: 2px 4px;
+  color: var(--accent);
+  font-size: calc(11.5px * var(--font-scale));
+  font-weight: 550;
+  cursor: pointer;
+  transition: color var(--transition-fast);
+}
+
+.inline-approval-detail-toggle:hover {
+  color: var(--accent-hover);
+}
+
 .inline-approval-actions {
   display: flex;
   flex-wrap: wrap;
@@ -994,21 +1134,43 @@
 }
 
 .inline-approval .dialog-btn {
-  min-height: 28px;
-  padding: 4px 12px;
+  min-height: 30px;
+  padding: 5px 14px;
   border-radius: var(--radius);
   box-shadow: none;
+  font-weight: 600;
 }
 
 .inline-approval .dialog-btn-danger {
   border-color: var(--control-border);
   background: transparent;
-  color: var(--text);
+  color: var(--muted);
 }
 
 .inline-approval .dialog-btn-danger:hover:not(:disabled) {
   border-color: var(--border-strong);
   background: var(--control-hover);
+  color: var(--text);
+}
+
+.inline-approval .dialog-btn-primary {
+  border-color: var(--success);
+  background: var(--success);
+  color: var(--main-bg);
+}
+
+.inline-approval .dialog-btn-primary:hover:not(:disabled) {
+  border-color: var(--success);
+  background: color-mix(in srgb, var(--success) 85%, transparent);
+}
+
+.inline-approval.risk-elevated .dialog-btn-primary {
+  border-color: var(--warning);
+  background: var(--warning);
+}
+
+.inline-approval.risk-elevated .dialog-btn-primary:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--warning) 85%, transparent);
 }
 
 .inline-approval-field {
@@ -1117,6 +1279,11 @@
   color: var(--text);
 }
 
+.message-edit-btn:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
 @media (hover: none) {
   .message-copy-btn {
     opacity: 0.72;
@@ -1178,7 +1345,8 @@
     .thinking-header,
     .tool-call-header,
     .file-changes-header,
-    .message-copy-btn
+    .message-copy-btn,
+    .message-turn-meta
   ) {
     transition: none;
   }

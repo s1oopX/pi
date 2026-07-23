@@ -5,6 +5,7 @@ import { translateText, useI18n, type ResolvedLanguage } from "../../i18n";
 import { useElapsedSeconds } from "../../hooks/useElapsedSeconds";
 import { useStore } from "../../store";
 import { CodeBlock } from "./CodeBlock";
+import { CodeStreamingContext } from "./codeStreamingContext";
 import { DiffView } from "../DiffView";
 import { buildFileChangeDisplayPlan, type FileChange } from "../MessageList/toolPairing";
 import { formatAgentLiveStatus } from "./agentLiveStatus";
@@ -22,6 +23,9 @@ import {
   type ToolPhase,
 } from "./toolPresentation";
 import { shouldAutoExpandToolBody, summarizeToolOutput } from "./toolOutputPresentation";
+import { formatMessageMeta } from "./messageMeta";
+import { beginEditUserMessage } from "./editUserMessage";
+import { TurnSummary } from "./TurnSummary";
 import * as ipcApi from "../../ipc/api";
 import type { Message, ToolCall } from "../../ipc/types";
 import type { ToolExecutionsByCallId } from "../../store";
@@ -100,12 +104,14 @@ function AssistantContent({
   const sessionCompacting = useStore((state) => Boolean(state.session?.isCompacting));
   const isCompacting = compactionActivity !== null || sessionCompacting;
   const elapsedSeconds = useElapsedSeconds(Boolean(streaming) || isCompacting);
+  const stepCount = Object.keys(toolExecutionsByCallId).length;
   const liveStatus = formatAgentLiveStatus({
     isStreaming: Boolean(streaming),
     elapsedSeconds,
     activeTool,
     isCompacting,
     compactionReason: compactionActivity?.reason,
+    stepCount,
     language: resolvedLanguage === "zh-CN" ? "zh-CN" : "en",
   });
   // Render blocks in their natural order (thinking usually precedes text and
@@ -136,6 +142,7 @@ function AssistantContent({
   let processEmitted = false;
 
   return (
+    <CodeStreamingContext.Provider value={Boolean(streaming)}>
     <div className="message-content">
       {message.content.map((block, i) => {
         const fileChangeGroup = fileChangePlan.groupsByStartIndex.get(i);
@@ -189,10 +196,16 @@ function AssistantContent({
         >
           <span className="agent-working-dot" aria-hidden="true" />
           <span className="agent-working-primary">{liveStatus.primary}</span>
+          {liveStatus.steps && (
+            <span className="agent-working-steps">{liveStatus.steps}</span>
+          )}
           {liveStatus.elapsed && (
             <span className="agent-working-elapsed">{liveStatus.elapsed}</span>
           )}
         </div>
+      )}
+      {!streaming && !errorMessage && (
+        <TurnSummary message={message} language={resolvedLanguage} />
       )}
       {errorMessage && !suppressError && (
         <div className="message-error" role="alert">
@@ -204,6 +217,7 @@ function AssistantContent({
         <p className="message-empty-note">{t("The model returned an empty response.", "模型返回了空响应。")}</p>
       )}
     </div>
+    </CodeStreamingContext.Provider>
   );
 }
 
@@ -441,6 +455,37 @@ function UserContent({ message }: { message: Extract<Message, { role: "user" }> 
       )}
       {visibleText && <Markdown components={markdownComponents}>{visibleText}</Markdown>}
     </div>
+  );
+}
+
+function EditButton({ message, language }: { message: Message; language: ResolvedLanguage }) {
+  const { t } = useI18n();
+  const [editing, setEditing] = useState(false);
+
+  async function handleEdit() {
+    if (editing) return;
+    setEditing(true);
+    try {
+      await beginEditUserMessage(message, language);
+    } finally {
+      setEditing(false);
+    }
+  }
+
+  return (
+    <button
+      className="message-copy-btn message-edit-btn"
+      type="button"
+      disabled={editing}
+      onClick={handleEdit}
+      aria-label={t("Edit and resend", "编辑并重发")}
+      title={t("Edit and resend", "编辑并重发")}
+    >
+      <svg viewBox="0 0 24 24" width="14" height="14" aria-hidden="true">
+        <path d="M12 20h9" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" />
+        <path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4Z" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" />
+      </svg>
+    </button>
   );
 }
 
@@ -724,12 +769,21 @@ export function MessageBubble({
     );
   }
 
+  const meta = message.role === "assistant" && !streaming
+    ? formatMessageMeta(message, resolvedLanguage)
+    : null;
+  const canEdit = message.role === "user" && !streaming;
+
   return (
     <div className={`message-turn message-turn-${message.role}`}>
       <MessageAvatar role={message.role} />
       <div className="message-turn-body">
         <div className="message-turn-head">
           <span className="message-turn-author">{getRoleLabel(message.role, resolvedLanguage)}</span>
+          {meta?.line && (
+            <span className="message-turn-meta" title={meta.line}>{meta.line}</span>
+          )}
+          {canEdit && <EditButton message={message} language={resolvedLanguage} />}
           {copyText && <CopyButton text={copyText} />}
         </div>
         <MessageBody

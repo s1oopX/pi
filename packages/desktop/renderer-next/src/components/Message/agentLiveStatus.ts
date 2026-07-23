@@ -11,6 +11,8 @@ export interface AgentLiveStatusInput {
   activeTool?: string | null;
   isCompacting?: boolean;
   compactionReason?: CompactionReason | null;
+  /** Number of tool calls completed or in-flight this turn. */
+  stepCount?: number;
   /** Optional language for labels; defaults to English keys consumers re-translate. */
   language?: "en" | "zh-CN";
 }
@@ -22,6 +24,8 @@ export interface AgentLiveStatus {
   primary: string;
   /** Elapsed time label when streaming and not compacting; otherwise undefined. */
   elapsed?: string;
+  /** Step count label (e.g. "3 steps") when tools have been invoked. */
+  steps?: string;
   /** Secondary detail (tool name already folded into primary when present). */
   tone: "working" | "tool" | "compacting";
   /** Full single-line label for aria / simple consumers. */
@@ -54,6 +58,11 @@ function compactingPrimary(reason: CompactionReason | null | undefined, language
   return language === "zh-CN" ? "正在压缩上下文" : "Compacting context";
 }
 
+function formatSteps(count: number | undefined, language: "en" | "zh-CN"): string | undefined {
+  if (!count || count <= 0) return undefined;
+  return language === "zh-CN" ? `${count} 步` : `${count} steps`;
+}
+
 /**
  * Build the live status model for the streaming assistant turn tail.
  * Not streaming and not compacting → not visible.
@@ -62,6 +71,7 @@ export function formatAgentLiveStatus(input: AgentLiveStatusInput): AgentLiveSta
   const language = input.language ?? "en";
   const compacting = Boolean(input.isCompacting);
   const streaming = Boolean(input.isStreaming);
+  const steps = formatSteps(input.stepCount, language);
 
   if (!streaming && !compacting) {
     return {
@@ -77,6 +87,7 @@ export function formatAgentLiveStatus(input: AgentLiveStatusInput): AgentLiveSta
     return {
       visible: true,
       primary,
+      steps,
       tone: "compacting",
       line: primary,
     };
@@ -92,6 +103,7 @@ export function formatAgentLiveStatus(input: AgentLiveStatusInput): AgentLiveSta
       visible: true,
       primary,
       elapsed,
+      steps,
       tone: "tool",
       line,
     };
@@ -104,6 +116,7 @@ export function formatAgentLiveStatus(input: AgentLiveStatusInput): AgentLiveSta
     visible: true,
     primary,
     elapsed,
+    steps,
     tone: "working",
     line,
   };
