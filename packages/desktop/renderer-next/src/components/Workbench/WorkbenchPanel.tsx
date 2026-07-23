@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState, type FormEvent } from "react";
+import { useEffect, useMemo, useRef, useState, type FormEvent, type KeyboardEvent } from "react";
 import { BranchNavigatorContent } from "../BranchNavigator";
 import { appendFileReference } from "../Composer/workspaceDrafts";
 import { TerminalPanel, type TerminalPanelHandle } from "../Terminal";
@@ -6,6 +6,7 @@ import { showToast } from "../Toast";
 import { useI18n } from "../../i18n";
 import * as api from "../../ipc/api";
 import { useStore } from "../../store";
+import { createCommandHistoryState, pushCommand, recallNext, recallPrevious } from "./commandHistory";
 
 export type WorkbenchView = "launcher" | "review" | "terminal" | "browser" | "files" | "side-task";
 
@@ -179,16 +180,39 @@ function WorkbenchTerminal() {
   const terminalRef = useRef<TerminalPanelHandle>(null);
   const [command, setCommand] = useState("");
   const [running, setRunning] = useState(false);
+  const historyRef = useRef(createCommandHistoryState());
 
   useEffect(() => {
     terminalRef.current?.writeln("Pi Studio");
     terminalRef.current?.writeln("");
   }, []);
 
+  function handleCommandKeyDown(event: KeyboardEvent<HTMLInputElement>) {
+    if (running) return;
+    if (event.key === "ArrowUp") {
+      const recall = recallPrevious(historyRef.current, command);
+      historyRef.current = recall.state;
+      if (recall.value !== null) {
+        event.preventDefault();
+        setCommand(recall.value);
+      }
+      return;
+    }
+    if (event.key === "ArrowDown") {
+      const recall = recallNext(historyRef.current);
+      historyRef.current = recall.state;
+      if (recall.value !== null) {
+        event.preventDefault();
+        setCommand(recall.value);
+      }
+    }
+  }
+
   async function runCommand(event: FormEvent) {
     event.preventDefault();
     const trimmed = command.trim();
     if (!trimmed || running) return;
+    historyRef.current = pushCommand(historyRef.current, trimmed);
     setCommand("");
     setRunning(true);
     terminalRef.current?.writeln(`$ ${trimmed}`);
@@ -231,6 +255,7 @@ function WorkbenchTerminal() {
         <input
           value={command}
           onChange={(event) => setCommand(event.target.value)}
+          onKeyDown={handleCommandKeyDown}
           placeholder={t("Command", "命令")}
           disabled={running}
           autoFocus
