@@ -40,27 +40,32 @@
   --control-height: 32px;
   --control-height-comfortable: 36px;
 
-  --app-bg: light-dark(#f4f4f2, #0f0f0f);
-  --main-bg: light-dark(#ffffff, #1c1c1c);
-  --sidebar-bg: light-dark(#f7f7f5, #161616);
-  --surface: light-dark(#f3f3f3, #262626);
-  --surface-hover: light-dark(rgb(26 28 31 / 5%), rgb(255 255 255 / 8%));
-  --elevated: light-dark(#ffffff, #282828);
-  --text: light-dark(#1a1c1f, #ffffff);
-  --text-soft: light-dark(rgb(26 28 31 / 70%), rgb(255 255 255 / 70%));
-  --muted: light-dark(rgb(26 28 31 / 50%), rgb(255 255 255 / 50%));
-  --faint: light-dark(rgb(26 28 31 / 35%), rgb(255 255 255 / 35%));
-  --border: light-dark(rgb(26 28 31 / 8%), rgb(255 255 255 / 8%));
-  --border-strong: light-dark(rgb(26 28 31 / 12%), rgb(255 255 255 / 16%));
+  /* Region color-temperature layering (Codex-style): warm neutral ramp where
+     the frame sinks darkest, the sidebar sits a clear step below the main
+     surface, and the main canvas reads brightest. Warmed toward beige so the
+     region boundaries emerge from tone rather than hairlines. Semantic hues
+     (accent/success/warning/danger) stay untouched — they are the point-light. */
+  --app-bg: light-dark(#e8e2d7, #131110);
+  --main-bg: light-dark(#fdfcfa, #201c19);
+  --sidebar-bg: light-dark(#efeae1, #191614);
+  --surface: light-dark(#f2efe8, #292420);
+  --surface-hover: light-dark(rgb(40 34 24 / 5%), rgb(255 250 240 / 8%));
+  --elevated: light-dark(#ffffff, #2b2622);
+  --text: light-dark(#1c1a16, #fbf9f6);
+  --text-soft: light-dark(rgb(28 26 22 / 70%), rgb(255 250 240 / 70%));
+  --muted: light-dark(rgb(28 26 22 / 50%), rgb(255 250 240 / 50%));
+  --faint: light-dark(rgb(28 26 22 / 35%), rgb(255 250 240 / 35%));
+  --border: light-dark(rgb(40 34 24 / 9%), rgb(255 250 240 / 8%));
+  --border-strong: light-dark(rgb(40 34 24 / 14%), rgb(255 250 240 / 16%));
 
-  --control-bg: light-dark(rgb(26 28 31 / 5%), rgb(255 255 255 / 5%));
-  --control-hover: light-dark(rgb(26 28 31 / 5%), rgb(255 255 255 / 8%));
-  --control-active: light-dark(rgb(26 28 31 / 8%), rgb(255 255 255 / 10%));
+  --control-bg: light-dark(rgb(40 34 24 / 5%), rgb(255 250 240 / 5%));
+  --control-hover: light-dark(rgb(40 34 24 / 6%), rgb(255 250 240 / 8%));
+  --control-active: light-dark(rgb(40 34 24 / 9%), rgb(255 250 240 / 10%));
   --control-border: var(--border);
 
-  --primary: light-dark(#1a1c1f, #ffffff);
-  --primary-hover: light-dark(#0d0d0d, #ffffff);
-  --primary-contrast: light-dark(#ffffff, #0d0d0d);
+  --primary: light-dark(#1c1a16, #fbf9f6);
+  --primary-hover: light-dark(#0d0b08, #ffffff);
+  --primary-contrast: light-dark(#fdfcfa, #0d0b08);
 
   --accent: light-dark(#0285ff, #99ceff);
   --accent-hover: light-dark(#006fd6, #b6dcff);
