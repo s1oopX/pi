@@ -236,6 +236,43 @@
   text-align: center;
 }
 
+/* Staggered entrance: brand, title, subtitle, then the action grid fade up in
+   sequence. Each element carries its own delay so the surface assembles itself
+   rather than snapping in all at once (Codex-style calm reveal). */
+.empty-state > * {
+  animation: empty-state-rise 420ms var(--ease-standard) both;
+}
+
+.empty-state-icon,
+.empty-state-brand {
+  animation-delay: 0ms;
+}
+
+.empty-state-title {
+  animation-delay: 60ms;
+}
+
+.empty-state-subtitle {
+  animation-delay: 120ms;
+}
+
+.empty-state-cta,
+.empty-state-cards {
+  animation-delay: 180ms;
+}
+
+@keyframes empty-state-rise {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
 .empty-state-icon {
   display: inline-flex;
   align-items: center;
@@ -263,6 +300,24 @@
   width: 44px;
   height: 44px;
   display: block;
+  animation: empty-state-brand-settle 620ms var(--ease-standard) both;
+}
+
+@keyframes empty-state-brand-settle {
+  from {
+    opacity: 0;
+    transform: scale(0.86);
+  }
+
+  60% {
+    opacity: 1;
+    transform: scale(1.04);
+  }
+
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
 }
 
 .empty-state-title {
@@ -302,6 +357,17 @@
   width: 100%;
 }
 
+/* Cards rise individually after the grid container appears, each offset from
+   the previous so the four options cascade in rather than popping together. */
+.empty-state-cards .empty-state-card {
+  animation: empty-state-rise 380ms var(--ease-standard) both;
+}
+
+.empty-state-cards .empty-state-card:nth-child(1) { animation-delay: 220ms; }
+.empty-state-cards .empty-state-card:nth-child(2) { animation-delay: 280ms; }
+.empty-state-cards .empty-state-card:nth-child(3) { animation-delay: 340ms; }
+.empty-state-cards .empty-state-card:nth-child(4) { animation-delay: 400ms; }
+
 .empty-state-card {
   display: grid;
   grid-template-columns: 32px minmax(0, 1fr);
@@ -315,12 +381,23 @@
   border-radius: var(--radius-sm);
   background: transparent;
   text-align: left;
-  transition: border-color var(--transition-fast), background var(--transition-fast);
+  transition:
+    border-color var(--transition-fast),
+    background var(--transition-fast),
+    transform var(--transition-fast),
+    box-shadow var(--transition-fast);
 }
 
 .empty-state-card:hover {
   border-color: var(--border-strong);
   background: var(--surface);
+  transform: translateY(-1px);
+  box-shadow: var(--shadow-sm);
+}
+
+.empty-state-card:active {
+  transform: translateY(0);
+  box-shadow: none;
 }
 
 .empty-state-card-icon {
@@ -411,5 +488,12 @@
   .empty-state-card,
   .message-list-jump-latest {
     transition: none;
+  }
+
+  /* Skip the staggered reveal so the surface appears at rest immediately. */
+  .empty-state > *,
+  .empty-state-cards .empty-state-card,
+  .empty-state-brand-icon {
+    animation: none;
   }
 }
