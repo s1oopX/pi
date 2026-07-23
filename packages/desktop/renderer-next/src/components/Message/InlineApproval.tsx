@@ -10,6 +10,7 @@ import * as api from "../../ipc/api";
 import { useI18n } from "../../i18n";
 import { useStore } from "../../store";
 import type { ExtensionUIRequestEvent } from "../../ipc/types";
+import { isElevatedRisk } from "./approvalRisk";
 
 type ApprovalResponse = Record<string, unknown>;
 type RespondToApproval = (response: ApprovalResponse) => Promise<void>;
@@ -77,9 +78,12 @@ function ConfirmApproval({
   const { t } = useI18n();
   const title = typeof request.title === "string" ? request.title : t("Approve action?", "批准此操作？");
   const message = typeof request.message === "string" ? request.message : "";
+  const elevated = isElevatedRisk(request);
+  const isLong = message.split("\n").length > 8 || message.length > 400;
+  const [detailExpanded, setDetailExpanded] = useState(!isLong);
 
   return (
-    <div className="inline-approval" role="alertdialog" aria-label={title}>
+    <div className={`inline-approval ${elevated ? "risk-elevated" : ""}`} role="alertdialog" aria-label={title}>
       <div className="inline-approval-header">
         <span className="inline-approval-icon" aria-hidden="true">
           <svg viewBox="0 0 24 24" width="15" height="15">
@@ -94,8 +98,28 @@ function ConfirmApproval({
           </svg>
         </span>
         <span className="inline-approval-title">{title}</span>
+        {elevated && (
+          <span className="inline-approval-risk-badge">
+            {t("Destructive", "危险操作")}
+          </span>
+        )}
       </div>
-      {message && <pre className="inline-approval-detail">{message}</pre>}
+      {message && (
+        <div className="inline-approval-detail-wrap">
+          <pre className={`inline-approval-detail ${!detailExpanded ? "collapsed" : ""}`}>{message}</pre>
+          {isLong && (
+            <button
+              className="inline-approval-detail-toggle"
+              type="button"
+              onClick={() => setDetailExpanded((v) => !v)}
+            >
+              {detailExpanded
+                ? t("Show less", "收起")
+                : t("Show more", "展开")}
+            </button>
+          )}
+        </div>
+      )}
       <div className="inline-approval-actions">
         <button
           className="dialog-btn dialog-btn-danger"
