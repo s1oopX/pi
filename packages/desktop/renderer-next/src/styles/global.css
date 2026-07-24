@@ -94,11 +94,16 @@
   --radius-3xl: 20px;
   --radius-pill: 999px;
 
-  --shadow-sm: 0 1px 2px -1px rgb(0 0 0 / 8%);
-  --shadow-md: 0 2px 4px -1px rgb(0 0 0 / 8%);
-  --shadow-pop: 0 8px 16px -4px rgb(0 0 0 / 12%), 0 0 0 0.5px var(--border-strong);
-  --shadow-dialog: 0 16px 32px -8px rgb(0 0 0 / 30%);
+  /* Soft surface separation (Codex-style): prefer ambient shadows over hard
+   hairlines. Borders remain for dense controls; large regions separate by
+   elevation. */
+--shadow-sm: 0 1px 2px rgb(0 0 0 / 4%);
+  --shadow-md: 0 2px 8px rgb(0 0 0 / 6%);
+  --shadow-pop: 0 8px 24px rgb(0 0 0 / 8%), 0 0 0 0.5px rgb(0 0 0 / 4%);
+  --shadow-dialog: 0 16px 40px rgb(0 0 0 / 16%);
   --shadow-lg: var(--shadow-pop);
+  --shadow-region: 1px 0 0 rgb(0 0 0 / 4%), 8px 0 24px -16px rgb(0 0 0 / 10%);
+  --radius-panel: 16px;
 
   --duration-press: 80ms;
   --duration-hover: 150ms;
@@ -214,7 +219,7 @@ button:disabled {
   align-items: center;
   gap: var(--space-4);
   padding: 0 10px;
-  background: var(--sidebar-bg);
+  background: transparent;
   -webkit-app-region: drag;
 }
 
@@ -271,7 +276,12 @@ html[data-window-controls-overlay="true"] .window-chrome {
   grid-template-columns: var(--sidebar-width) minmax(0, 1fr);
   min-height: 0;
   flex: 1;
-  background: var(--app-bg);
+  margin: 0 8px 8px;
+  border: 0.5px solid rgb(0 0 0 / 5%);
+  border-radius: var(--radius-panel);
+  background: var(--main-bg);
+  box-shadow: var(--shadow-md);
+  overflow: hidden;
   transition: grid-template-columns var(--duration-popover) var(--ease-standard);
 }
 
@@ -368,8 +378,9 @@ html[data-window-controls-overlay="true"] .window-chrome {
   flex-direction: column;
   gap: var(--space-3);
   padding: 0 10px 10px;
-  border-right: 0.5px solid var(--border-strong);
+  border-right: 0;
   background: var(--sidebar-bg);
+  box-shadow: var(--shadow-region);
   overflow: hidden;
 }
 

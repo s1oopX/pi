@@ -54,18 +54,18 @@
   width: min(100%, calc(var(--thread-width) + 22px));
   margin: 0 auto;
   padding: 6px;
-  border: 1px solid var(--border-strong);
+  border: 0.5px solid rgb(0 0 0 / 6%);
   border-radius: var(--radius-3xl);
   background: var(--elevated);
-  box-shadow: var(--shadow-md);
+  box-shadow: 0 2px 12px rgb(0 0 0 / 5%), 0 0 0 0.5px rgb(0 0 0 / 3%);
   transition:
     border-color var(--transition),
     box-shadow var(--transition);
 }
 
 .composer:focus-within {
-  border-color: var(--border-strong);
-  box-shadow: var(--shadow-pop);
+  border-color: rgb(0 0 0 / 8%);
+  box-shadow: 0 8px 28px rgb(0 0 0 / 8%), 0 0 0 0.5px rgb(0 0 0 / 4%);
 }
 
 .composer.drag-active {
