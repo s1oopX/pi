@@ -179,21 +179,13 @@
 }
 
 .settings-nav-item.active {
-  background: var(--accent-soft);
+  background: var(--control-active);
   color: var(--text);
   font-weight: 600;
 }
 
-.settings-nav-item.active::before {
-  position: absolute;
-  top: 8px;
-  bottom: 8px;
-  left: 2px;
-  width: 3px;
-  border-radius: 999px;
-  background: var(--accent);
-  content: "";
-}
+/* No colored accent bar: Codex keeps nav selection neutral (gray fill only),
+   reserving saturated color for semantic controls (toggles, focus). */
 
 .settings-nav-empty {
   padding: 12px 9px;
@@ -628,14 +620,15 @@
 }
 
 .theme-picker-btn.active {
-  background: var(--accent-soft);
-  color: var(--accent);
+  background: var(--elevated);
+  color: var(--text);
   font-weight: 600;
+  box-shadow: var(--shadow-sm);
 }
 
 .theme-picker-btn.active:hover {
-  background: var(--accent-soft);
-  color: var(--accent);
+  background: var(--elevated);
+  color: var(--text);
 }
 
 .font-scale-picker {
