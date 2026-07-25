@@ -922,7 +922,7 @@ export function Sidebar({ collapsed, onToggle }: SidebarProps) {
                                 {workspaceDisplay.detail && <span>{workspaceDisplay.detail}</span>}
                               </span>
                               {isCurrent && (
-                                <span className={`workspace-navigation-status ${backendStatus.ready && !switchingWorkspace ? "ready" : ""}`} role="img" aria-label={workspaceStatusText ?? undefined} />
+                                <span className={`workspace-navigation-status ${backendStatus.ready && !switchingWorkspace ? "ready" : ""}`} role="status" aria-label={workspaceStatusText ?? undefined} />
                               )}
                             </button>
                             <button
@@ -951,7 +951,7 @@ export function Sidebar({ collapsed, onToggle }: SidebarProps) {
               <section className="ownership-section task-tree" aria-labelledby="task-tree-title">
                 <div className="ownership-section-header">
                   <span id="task-tree-title">{t("Tasks", "任务")}</span>
-                  <span className="agent-list-count" role="img" aria-label={t("{count} tasks", "{count} 个任务", { count: taskSessions.length })}>
+                  <span className="agent-list-count">
                     {taskSessions.length}
                   </span>
                   <button
@@ -1013,7 +1013,7 @@ export function Sidebar({ collapsed, onToggle }: SidebarProps) {
             <div className="status-row" title={backendStatus.error}>
               <span
                 className={`backend-dot ${backendStatus.ready && !switchingWorkspace ? "ready" : ""}`}
-                role="img"
+                aria-hidden="true"
                 aria-label={
                   switchingWorkspace
                     ? workspaceStatusText ?? undefined

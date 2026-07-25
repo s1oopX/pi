@@ -649,7 +649,7 @@ export function CustomProviderSettings({ onDirtyChange }: { onDirtyChange?: (dir
             </span>
           </div>
           {(isDuplicateProvider || (authKind === "api_key" && !apiKey.trim() && !editingHasStoredAuth)) && (
-            <span className="custom-provider-warning-dot" role="img" aria-label={t("Needs attention", "需要处理")} />
+            <span className="custom-provider-warning-dot" role="status" aria-label={t("Needs attention", "需要处理")} />
           )}
         </div>
 
@@ -879,12 +879,12 @@ export function CustomProviderSettings({ onDirtyChange }: { onDirtyChange?: (dir
           {fetchedModels.length > 0 && (
             <div className="fetched-models">
               <div className="fetched-models-header">
-                <label className="form-label">
+                <span className="form-label">
                   {t("Available Models ({selected}/{total} selected)", "可用模型（已选 {selected}/{total}）", {
                     selected: selectedIds.size,
                     total: fetchedModels.length,
                   })}
-                </label>
+                </span>
                 <div className="fetched-models-bulk">
                   <button className="settings-btn-sm" type="button" onClick={() => setSelectedIds(new Set(fetchedModels.map((model) => model.id)))}>
                     {t("Select all", "全选")}
