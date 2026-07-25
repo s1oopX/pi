@@ -695,7 +695,7 @@ export function Sidebar({ collapsed, onToggle }: SidebarProps) {
       <aside className={`sidebar ${collapsed ? "collapsed" : ""}`} aria-label={t("Sidebar", "侧边栏")}>
       <div className="sidebar-header">
         {!collapsed && (
-          <div className="brand-lockup" aria-label="Pi Studio">
+          <div className="brand-lockup">
             <BrandIcon className="brand-mark" />
             <span className="brand-copy">
               <strong className="brand-name">Pi Studio</strong>
@@ -922,7 +922,7 @@ export function Sidebar({ collapsed, onToggle }: SidebarProps) {
                                 {workspaceDisplay.detail && <span>{workspaceDisplay.detail}</span>}
                               </span>
                               {isCurrent && (
-                                <span className={`workspace-navigation-status ${backendStatus.ready && !switchingWorkspace ? "ready" : ""}`} aria-label={workspaceStatusText ?? undefined} />
+                                <span className={`workspace-navigation-status ${backendStatus.ready && !switchingWorkspace ? "ready" : ""}`} role="img" aria-label={workspaceStatusText ?? undefined} />
                               )}
                             </button>
                             <button
@@ -951,7 +951,7 @@ export function Sidebar({ collapsed, onToggle }: SidebarProps) {
               <section className="ownership-section task-tree" aria-labelledby="task-tree-title">
                 <div className="ownership-section-header">
                   <span id="task-tree-title">{t("Tasks", "任务")}</span>
-                  <span className="agent-list-count" aria-label={t("{count} tasks", "{count} 个任务", { count: taskSessions.length })}>
+                  <span className="agent-list-count" role="img" aria-label={t("{count} tasks", "{count} 个任务", { count: taskSessions.length })}>
                     {taskSessions.length}
                   </span>
                   <button
@@ -1013,6 +1013,7 @@ export function Sidebar({ collapsed, onToggle }: SidebarProps) {
             <div className="status-row" title={backendStatus.error}>
               <span
                 className={`backend-dot ${backendStatus.ready && !switchingWorkspace ? "ready" : ""}`}
+                role="img"
                 aria-label={
                   switchingWorkspace
                     ? workspaceStatusText ?? undefined

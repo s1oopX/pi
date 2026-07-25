@@ -233,7 +233,7 @@ export function App() {
                 : undefined
             }
           >
-            <section className="conversation-pane" aria-label="Conversation">
+            <section className="conversation-pane" aria-label={t("Conversation", "对话")}>
               <MessageList />
               <Composer />
             </section>

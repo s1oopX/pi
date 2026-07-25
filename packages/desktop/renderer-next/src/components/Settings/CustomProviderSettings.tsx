@@ -649,7 +649,7 @@ export function CustomProviderSettings({ onDirtyChange }: { onDirtyChange?: (dir
             </span>
           </div>
           {(isDuplicateProvider || (authKind === "api_key" && !apiKey.trim() && !editingHasStoredAuth)) && (
-            <span className="custom-provider-warning-dot" aria-label={t("Needs attention", "需要处理")} />
+            <span className="custom-provider-warning-dot" role="img" aria-label={t("Needs attention", "需要处理")} />
           )}
         </div>
 

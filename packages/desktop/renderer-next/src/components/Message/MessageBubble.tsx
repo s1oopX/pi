@@ -192,6 +192,7 @@ function AssistantContent({
       {liveStatus.visible && !errorMessage && (
         <div
           className={`agent-working agent-working-tail tone-${liveStatus.tone}`}
+          role="status"
           aria-live="polite"
           aria-label={liveStatus.line}
         >
@@ -600,7 +601,7 @@ function FileChangeRow({ change, defaultOpen = false }: { change: FileChange; de
         </pre>
       )}
       {open && hasPreview && (
-        <div className="file-changes-diff" aria-label={t("Change preview", "更改预览")}>
+        <div className="file-changes-diff" role="group" aria-label={t("Change preview", "更改预览")}>
           <DiffView patch={change.previewPatch!} />
         </div>
       )}

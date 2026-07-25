@@ -92,7 +92,7 @@ export function TurnSummary({ message, language }: TurnSummaryProps) {
   );
   if (!summary) return null;
   return (
-    <div className="turn-summary" aria-label={summary}>
+    <div className="turn-summary" role="note" aria-label={summary}>
       <span className="turn-summary-text">{summary}</span>
     </div>
   );

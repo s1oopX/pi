@@ -454,7 +454,7 @@ export function Composer() {
         </div>
       )}
       {approvalHistory.length > 0 && approvalRequests.length === 0 && (
-        <div className="composer-approval-history" aria-label={t("Recent approvals", "最近审批")}>
+        <div className="composer-approval-history" role="group" aria-label={t("Recent approvals", "最近审批")}>
           {approvalHistory.slice(-3).reverse().map((entry) => (
             <div className={`approval-history-item decision-${entry.decision}`} key={entry.id} title={entry.method}>
               {approvalHistoryLabel(entry, resolvedLanguage === "zh-CN" ? "zh-CN" : "en")}
@@ -491,7 +491,7 @@ export function Composer() {
           </div>
         )}
         {attachments.length > 0 && (
-          <div className="composer-attachments" aria-label={t("Image attachments", "图片附件")}>
+          <div className="composer-attachments" role="group" aria-label={t("Image attachments", "图片附件")}>
             {attachments.map((attachment) => (
               <div className="composer-attachment" key={attachment.id}>
                 <img

@@ -253,6 +253,7 @@ export function MessageList() {
         {shouldShowListStreamingDots({ isStreaming, streamingIndex, messages }) && (
           <div
             className="streaming-indicator"
+            role="status"
             aria-live="polite"
             aria-label={t("Working…", "正在处理…")}
           >
@@ -289,7 +290,7 @@ function ConversationInlineStatus({
   return (
     <div className="conversation-status-panel">
       {queued.length > 0 && (
-        <div className="conversation-queue" aria-label={t("Queued messages", "已排队的消息")}>
+        <div className="conversation-queue" role="group" aria-label={t("Queued messages", "已排队的消息")}>
           {queued.map((item, index) => (
             <div className="conversation-queue-item" key={`${item.kind}:${index}`} title={item.message}>
               <span className="conversation-queue-badge">
