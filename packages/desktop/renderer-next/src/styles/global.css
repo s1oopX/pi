@@ -33,9 +33,9 @@
   --space-8: 24px;
   --space-9: 32px;
 
-  --sidebar-width: clamp(240px, 275px, min(520px, calc(100vw - 320px)));
+  --sidebar-width: clamp(220px, 250px, min(520px, calc(100vw - 320px)));
   --sidebar-collapsed-width: 52px;
-  --thread-width: 48rem;
+  --thread-width: 44rem;
   --control-height-compact: 28px;
   --control-height: 32px;
   --control-height-comfortable: 36px;
@@ -44,9 +44,9 @@
      app shell (deepest) < sidebar < workbench < main surface (brightest).
      Zero hue, equal RGB channels — regions separate by lightness + hairlines,
      never by color cast. Semantic hues stay point-lights only. */
-  --app-bg: light-dark(#f4f4f4, #0a0a0a);
+  --app-bg: light-dark(#f3f3f3, #0a0a0a);
   --main-bg: light-dark(#ffffff, #1c1c1c);
-  --sidebar-bg: light-dark(#f9f9f9, #141414);
+  --sidebar-bg: light-dark(#f3f3f3, #141414);
   --workbench-bg: light-dark(#fbfbfb, #171717);
   --surface: light-dark(#f4f4f4, #212121);
   --surface-hover: light-dark(rgb(0 0 0 / 5%), rgb(255 255 255 / 7%));
@@ -100,12 +100,12 @@
   /* Soft surface separation (Codex-style): prefer ambient shadows over hard
    hairlines. Borders remain for dense controls; large regions separate by
    elevation. */
---shadow-sm: 0 1px 2px rgb(0 0 0 / 4%);
+  --shadow-sm: 0 1px 2px rgb(0 0 0 / 4%);
   --shadow-md: 0 2px 8px rgb(0 0 0 / 6%);
   --shadow-pop: 0 8px 24px rgb(0 0 0 / 8%), 0 0 0 0.5px rgb(0 0 0 / 4%);
   --shadow-dialog: 0 16px 40px rgb(0 0 0 / 16%);
   --shadow-lg: var(--shadow-pop);
-  --shadow-region: 1px 0 0 rgb(0 0 0 / 4%), 8px 0 24px -16px rgb(0 0 0 / 10%);
+  --shadow-region: -10px 0 22px -14px rgb(0 0 0 / 28%);
   --radius-panel: 16px;
 
   --duration-press: 80ms;
@@ -279,11 +279,11 @@ html[data-window-controls-overlay="true"] .window-chrome {
   grid-template-columns: var(--sidebar-width) minmax(0, 1fr);
   min-height: 0;
   flex: 1;
-  margin: 0 8px 8px;
-  border: 0.5px solid rgb(0 0 0 / 5%);
-  border-radius: var(--radius-panel);
-  background: var(--main-bg);
-  box-shadow: var(--shadow-md);
+  margin: 0;
+  border: 0;
+  border-radius: 0;
+  background: var(--app-bg);
+  box-shadow: none;
   overflow: hidden;
   transition: grid-template-columns var(--duration-popover) var(--ease-standard);
 }
@@ -365,10 +365,16 @@ html[data-window-controls-overlay="true"] .window-chrome {
 
 .main-panel {
   position: relative;
+  z-index: 1;
   min-width: 0;
   display: flex;
   flex-direction: column;
+  border: 1px solid var(--border-strong);
+  border-right: 0;
+  border-bottom: 0;
+  border-radius: var(--radius-2xl) 0 0 0;
   background: var(--main-bg);
+  box-shadow: var(--shadow-region);
   overflow: hidden;
   container: main-panel / inline-size;
 }
@@ -383,7 +389,7 @@ html[data-window-controls-overlay="true"] .window-chrome {
   padding: 0 10px 10px;
   border-right: 0;
   background: var(--sidebar-bg);
-  box-shadow: var(--shadow-region);
+  box-shadow: none;
   overflow: hidden;
 }
 
@@ -778,10 +784,11 @@ html[data-window-controls-overlay="true"] .window-chrome {
 
 .sidebar-footer {
   margin-top: auto;
+  margin-inline: -10px;
   display: flex;
   flex-direction: column;
   gap: var(--space-4);
-  padding-top: var(--space-4);
+  padding: var(--space-4) 10px 0;
   border-top: 1px solid var(--border);
 }
 

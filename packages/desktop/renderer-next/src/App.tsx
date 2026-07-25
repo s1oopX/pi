@@ -44,7 +44,7 @@ export function App() {
   const sidebarBounds = useMemo(() => getSidebarBoundsForViewport(viewportWidth), [viewportWidth]);
   const sidebarResize = usePanelResize({
     storageKey: "sidebar",
-    defaultWidth: 275,
+    defaultWidth: 250,
     bounds: sidebarBounds,
     collapseAt: 180,
     edge: "right",
