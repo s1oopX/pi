@@ -1,5 +1,6 @@
 import { useEffect, useId, useRef, type ReactNode } from "react";
 import { useI18n } from "../../i18n";
+import { Icon } from "../Icon";
 
 interface DialogProps {
   open: boolean;
@@ -66,9 +67,7 @@ export function Dialog({ open, title, children, actions, onClose, className }: D
               onClick={onClose}
               aria-label={t("Close", "关闭")}
             >
-              <svg viewBox="0 0 24 24" aria-hidden="true">
-                <path d="M18 6 6 18M6 6l12 12" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
-              </svg>
+              <Icon name="close" size={16} />
             </button>
           )}
         </div>

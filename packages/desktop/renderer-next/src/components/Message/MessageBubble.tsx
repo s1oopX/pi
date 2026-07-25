@@ -4,6 +4,7 @@ import type { Components } from "react-markdown";
 import { translateText, useI18n, type ResolvedLanguage } from "../../i18n";
 import { useElapsedSeconds } from "../../hooks/useElapsedSeconds";
 import { useStore } from "../../store";
+import { Icon } from "../Icon";
 import { CodeBlock } from "./CodeBlock";
 import { CodeStreamingContext } from "./codeStreamingContext";
 import { DiffView } from "../DiffView";
@@ -325,9 +326,7 @@ function ToolCallPart({
           {phase === "running" ? (
             <span className="tool-call-running-dot" />
           ) : (
-            <svg viewBox="0 0 16 16" width="13" height="13">
-              <path d="M2.5 8h3l1.2-3 2.1 6 1.2-3h3.5" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round" />
-            </svg>
+            <Icon name="activity" size={13} strokeWidth={1.4} />
           )}
         </span>
         <span className="tool-call-summary">
@@ -481,10 +480,7 @@ function EditButton({ message, language }: { message: Message; language: Resolve
       aria-label={t("Edit and resend", "编辑并重发")}
       title={t("Edit and resend", "编辑并重发")}
     >
-      <svg viewBox="0 0 24 24" width="14" height="14" aria-hidden="true">
-        <path d="M12 20h9" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" />
-        <path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4Z" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" />
-      </svg>
+      <Icon name="pencil" size={14} strokeWidth={1.7} />
     </button>
   );
 }
@@ -508,14 +504,9 @@ function CopyButton({ text }: { text: string }) {
       title={copied ? t("Copied", "已复制") : t("Copy", "复制")}
     >
       {copied ? (
-        <svg viewBox="0 0 24 24" width="14" height="14" aria-hidden="true">
-          <path d="M20 6 9 17l-5-5" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
-        </svg>
+        <Icon name="check" size={14} strokeWidth={1.8} />
       ) : (
-        <svg viewBox="0 0 24 24" width="14" height="14" aria-hidden="true">
-          <rect x="9" y="9" width="11" height="11" rx="2" fill="none" stroke="currentColor" strokeWidth="1.6" />
-          <path d="M5 15V5a2 2 0 0 1 2-2h10" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" />
-        </svg>
+        <Icon name="copy" size={14} />
       )}
     </button>
   );
@@ -678,10 +669,7 @@ function FileChangesCard({ changes }: { changes: FileChange[] }) {
           {running > 0 ? (
             <span className="tool-call-running-dot" />
           ) : (
-            <svg viewBox="0 0 24 24" width="15" height="15">
-              <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinejoin="round" />
-              <path d="M14 2v6h6" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinejoin="round" />
-            </svg>
+            <Icon name="file" size={15} />
           )}
         </span>
         <span className="file-changes-title">{title}</span>
@@ -724,10 +712,7 @@ function MessageAvatar({ role }: { role: Message["role"] }) {
   if (role === "user") {
     return (
       <div className="message-avatar message-avatar-user" aria-hidden="true">
-        <svg viewBox="0 0 24 24" width="16" height="16">
-          <circle cx="12" cy="8" r="4" fill="none" stroke="currentColor" strokeWidth="1.7" />
-          <path d="M4 20c0-3.3 3.6-6 8-6s8 2.7 8 6" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" />
-        </svg>
+        <Icon name="user" size={16} strokeWidth={1.7} />
       </div>
     );
   }

@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useI18n } from "../../i18n";
 import { useStore } from "../../store";
+import { Icon } from "../Icon";
 import { AboutSettings } from "./AboutSettings";
 import { AccountSettings } from "./AccountSettings";
 import { AgentSettings } from "./AgentSettings";
@@ -136,18 +137,13 @@ export function Settings() {
         <div className="settings-sidebar">
           <div className="settings-sidebar-header">
             <button className="settings-back-btn" type="button" onClick={requestCloseSettings}>
-              <svg viewBox="0 0 24 24" width="16" height="16" aria-hidden="true">
-                <path d="M19 12H5M12 19l-7-7 7-7" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
-              </svg>
+              <Icon name="arrow-left" size={16} />
               <span>{t("Back", "返回")}</span>
             </button>
             <h2 id="settings-title" className="settings-sidebar-title">{t("Settings", "设置")}</h2>
           </div>
           <label className="settings-search">
-            <svg viewBox="0 0 24 24" aria-hidden="true">
-              <circle cx="11" cy="11" r="6" fill="none" stroke="currentColor" strokeWidth="1.7" />
-              <path d="m16 16 4 4" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" />
-            </svg>
+            <Icon name="search" size={16} />
             <input
               type="search"
               value={searchQuery}
@@ -204,9 +200,7 @@ export function Settings() {
           onClick={requestCloseSettings}
           aria-label={t("Close settings", "关闭设置")}
         >
-          <svg viewBox="0 0 24 24" aria-hidden="true">
-            <path d="M18 6 6 18M6 6l12 12" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" />
-          </svg>
+          <Icon name="close" size={16} />
         </button>
       </div>
     </div>

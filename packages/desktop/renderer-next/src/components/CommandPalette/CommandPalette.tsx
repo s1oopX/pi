@@ -9,6 +9,7 @@ import {
 } from "react";
 import { createPortal } from "react-dom";
 import { useI18n } from "../../i18n";
+import { Icon } from "../Icon";
 import {
   formatAppKeybinding,
   toAriaKeyshortcuts,
@@ -140,10 +141,7 @@ export function CommandPalette({ entries, keybindings, platform, onClose, onRun 
           {t("Command Palette", "命令面板")}
         </h2>
         <div className="command-palette-search">
-          <svg viewBox="0 0 20 20" aria-hidden="true">
-            <circle cx="8.5" cy="8.5" r="4.75" fill="none" stroke="currentColor" strokeWidth="1.5" />
-            <path d="m12 12 4 4" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
-          </svg>
+          <Icon name="search" size={18} />
           <input
             ref={inputRef}
             type="text"

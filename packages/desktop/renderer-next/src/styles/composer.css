@@ -718,7 +718,11 @@
   display: inline-flex;
   flex-shrink: 0;
   color: var(--faint);
-  font-size: calc(9px * var(--font-scale));
+  transition: transform var(--transition), color var(--transition);
+}
+
+.permission-trigger[aria-expanded="true"] .permission-chevron {
+  transform: rotate(180deg);
 }
 
 .permission-popover,

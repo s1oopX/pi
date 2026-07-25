@@ -8,6 +8,7 @@ import {
   runAppCommand,
 } from "./components/CommandPalette";
 import { Composer } from "./components/Composer";
+import { Icon } from "./components/Icon";
 import { MessageList } from "./components/MessageList";
 import { Settings } from "./components/Settings";
 import { ToastContainer } from "./components/Toast";
@@ -190,10 +191,7 @@ export function App() {
               aria-pressed={sidebarCollapsed}
               onClick={() => setSidebarCollapsed((collapsed) => !collapsed)}
             >
-              <svg viewBox="0 0 18 18" aria-hidden="true">
-                <rect x="3" y="3" width="12" height="12" rx="2" fill="none" stroke="currentColor" strokeWidth="1.3" />
-                <path d="M7 3v12" fill="none" stroke="currentColor" strokeWidth="1.3" />
-              </svg>
+              <Icon name="panel-left" size={18} />
             </button>
             <nav className="window-chrome-menu" aria-label={t("Application menu", "应用菜单")}>
               <button type="button" onClick={() => handleAppCommand("open-command-palette")}>

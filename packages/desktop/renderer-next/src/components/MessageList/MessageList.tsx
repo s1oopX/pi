@@ -1,6 +1,7 @@
 import { memo, useEffect, useMemo, useRef, useState } from "react";
 import { useVirtualizer } from "@tanstack/react-virtual";
 import { useI18n } from "../../i18n";
+import { Icon } from "../Icon";
 import { useStreamingMessage } from "../../hooks/useStreamingMessage";
 import { useDelayedFlag } from "../../hooks/useDelayedFlag";
 import { MessageBubble } from "../Message";
@@ -268,9 +269,7 @@ export function MessageList() {
       )}
       {showJumpToLatest && (
         <button className="message-list-jump-latest" type="button" onClick={jumpToLatest}>
-          <svg viewBox="0 0 18 18" aria-hidden="true">
-            <path d="m5 7 4 4 4-4" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
-          </svg>
+          <Icon name="chevron-down" size={16} strokeWidth={1.5} />
           <span>{t("Jump to latest", "跳转到最新消息")}</span>
         </button>
       )}

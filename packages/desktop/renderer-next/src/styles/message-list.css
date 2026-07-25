@@ -343,11 +343,15 @@
   color: var(--main-bg);
   font-size: calc(13px * var(--font-scale));
   font-weight: 600;
-  transition: opacity var(--transition-fast);
+  transition: opacity var(--transition-fast), transform var(--transition-fast);
 }
 
 .empty-state-cta:hover {
   opacity: 0.82;
+}
+
+.empty-state-cta:active {
+  transform: scale(0.97);
 }
 
 .empty-state-cards {

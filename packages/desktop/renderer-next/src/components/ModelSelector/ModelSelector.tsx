@@ -4,6 +4,7 @@ import { useStore } from "../../store";
 import * as api from "../../ipc/api";
 import type { Model, ThinkingLevel } from "../../ipc/types";
 import { showToast } from "../Toast";
+import { Icon } from "../Icon";
 
 const THINKING_LEVELS: ThinkingLevel[] = ["off", "minimal", "low", "medium", "high", "xhigh"];
 const THINKING_LEVEL_SUFFIX_PATTERN = /^(.*?)(?:[-_: ])(off|minimal|low|medium|high|xhigh)$/i;
@@ -357,9 +358,7 @@ export function ModelSelector() {
           <span className="model-picker-thinking">{thinkingLabel(effectiveThinkingLevel)}</span>
         )}
         <span className="model-picker-chevron" aria-hidden="true">
-          <svg viewBox="0 0 24 24" width="12" height="12">
-            <path d="m6 9 6 6 6-6" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
-          </svg>
+          <Icon name="chevron-down" size={12} strokeWidth={2} />
         </span>
       </button>
 
@@ -422,9 +421,7 @@ export function ModelSelector() {
               >
                 <span className="model-picker-row-label">{t("Reset to defaults", "重置为默认设置")}</span>
                 <span className="model-picker-reset-icon" aria-hidden="true">
-                  <svg viewBox="0 0 18 18">
-                    <path d="M14.5 8.5A5.5 5.5 0 1 1 13 4.7M14.5 3.5v5h-5" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round" />
-                  </svg>
+                  <Icon name="rotate-ccw" size={15} strokeWidth={1.4} />
                 </span>
               </button>
             </>
@@ -474,16 +471,7 @@ export function ModelSelector() {
                       </span>
                       {active && (
                         <span className="model-picker-check" aria-hidden="true">
-                          <svg viewBox="0 0 24 24" width="14" height="14">
-                            <path
-                              d="M20 6 9 17l-5-5"
-                              fill="none"
-                              stroke="currentColor"
-                              strokeWidth="2"
-                              strokeLinecap="round"
-                              strokeLinejoin="round"
-                            />
-                          </svg>
+                          <Icon name="check" size={14} />
                         </span>
                       )}
                     </button>
@@ -521,16 +509,7 @@ export function ModelSelector() {
                       <span className="model-picker-suboption-name">{thinkingLabel(level)}</span>
                       {active && (
                         <span className="model-picker-check" aria-hidden="true">
-                          <svg viewBox="0 0 24 24" width="14" height="14">
-                            <path
-                              d="M20 6 9 17l-5-5"
-                              fill="none"
-                              stroke="currentColor"
-                              strokeWidth="2"
-                              strokeLinecap="round"
-                              strokeLinejoin="round"
-                            />
-                          </svg>
+                          <Icon name="check" size={14} />
                         </span>
                       )}
                     </button>
@@ -569,16 +548,7 @@ export function ModelSelector() {
                     </span>
                   </span>
                   <span className="model-picker-check" aria-hidden="true">
-                    <svg viewBox="0 0 24 24" width="14" height="14">
-                      <path
-                        d="M20 6 9 17l-5-5"
-                        fill="none"
-                        stroke="currentColor"
-                        strokeWidth="2"
-                        strokeLinecap="round"
-                        strokeLinejoin="round"
-                      />
-                    </svg>
+                    <Icon name="check" size={14} />
                   </span>
                 </button>
               </div>

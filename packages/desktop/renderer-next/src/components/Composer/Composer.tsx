@@ -17,6 +17,7 @@ import * as api from "../../ipc/api";
 import { PermissionSelector } from "../PermissionSelector";
 import { ModelSelector } from "../ModelSelector";
 import { ContextMeter } from "../ContextMeter";
+import { Icon } from "../Icon";
 import { ExtensionWidgets } from "../ExtensionWidgets";
 import { InlineApproval, isInteractiveExtensionUIRequest } from "../Message/InlineApproval";
 import { showToast } from "../Toast";
@@ -506,9 +507,7 @@ export function Composer() {
                   disabled={submitting}
                   onClick={() => setAttachments((current) => current.filter((item) => item.id !== attachment.id))}
                 >
-                  <svg viewBox="0 0 16 16" aria-hidden="true">
-                    <path d="M4 4l8 8m0-8-8 8" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" />
-                  </svg>
+                  <Icon name="close" size={16} />
                 </button>
               </div>
             ))}
@@ -594,9 +593,7 @@ export function Composer() {
               disabled={submitting || readingAttachments || !modelSupportsImages}
               onClick={() => fileInputRef.current?.click()}
             >
-              <svg viewBox="0 0 24 24" aria-hidden="true">
-                <path d="m20.5 11.5-8.2 8.2a6 6 0 0 1-8.5-8.5l9-9a4 4 0 0 1 5.7 5.7l-9 9a2 2 0 1 1-2.8-2.8l8.2-8.2" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" />
-              </svg>
+              <Icon name="paperclip" size={18} />
             </button>
             <PermissionSelector />
           </div>
@@ -661,14 +658,9 @@ export function Composer() {
                 }
               >
                 {isStreaming ? (
-                  <svg viewBox="0 0 24 24" width="17" height="17" aria-hidden="true">
-                    <path d="M5 7h14M5 12h9M5 17h6" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" />
-                    <path d="M18 13v6m-3-3h6" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" />
-                  </svg>
+                  <Icon name="queue" size={17} strokeWidth={1.8} />
                 ) : (
-                  <svg viewBox="0 0 24 24" width="17" height="17" aria-hidden="true">
-                    <path d="M12 19V5m0 0-5.5 5.5M12 5l5.5 5.5" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
-                  </svg>
+                  <Icon name="send" size={17} strokeWidth={2} />
                 )}
               </button>
             </div>

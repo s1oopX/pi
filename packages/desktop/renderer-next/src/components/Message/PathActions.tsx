@@ -1,6 +1,7 @@
 import type { MouseEvent } from "react";
 import { useI18n } from "../../i18n";
 import * as ipcApi from "../../ipc/api";
+import { Icon } from "../Icon";
 import { showToast } from "../Toast";
 import {
   pathActionCopyLabel,
@@ -49,10 +50,7 @@ export function PathActions({ path }: PathActionsProps) {
           void handleCopy(event);
         }}
       >
-        <svg viewBox="0 0 16 16" width="12" height="12" aria-hidden="true">
-          <rect x="5" y="5" width="8" height="8" rx="1.5" fill="none" stroke="currentColor" strokeWidth="1.3" />
-          <path d="M3 10V3.5A1.5 1.5 0 0 1 4.5 2H10" fill="none" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" />
-        </svg>
+        <Icon name="copy" size={12} />
       </button>
       <button
         className="path-action-btn"
@@ -63,9 +61,7 @@ export function PathActions({ path }: PathActionsProps) {
           void handleReveal(event);
         }}
       >
-        <svg viewBox="0 0 16 16" width="12" height="12" aria-hidden="true">
-          <path d="M2 4.5h4l1.2 1.5H14v6.5a1 1 0 0 1-1 1H3a1 1 0 0 1-1-1z" fill="none" stroke="currentColor" strokeWidth="1.3" strokeLinejoin="round" />
-        </svg>
+        <Icon name="folder-open" size={12} />
       </button>
     </span>
   );

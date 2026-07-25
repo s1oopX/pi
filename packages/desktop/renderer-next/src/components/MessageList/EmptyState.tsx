@@ -3,6 +3,7 @@ import { useI18n } from "../../i18n";
 import * as api from "../../ipc/api";
 import { useStore } from "../../store";
 import { BrandIcon } from "../BrandIcon";
+import { Icon } from "../Icon";
 import { isSameWorkspace } from "../Sidebar/sidebarState";
 import { showToast } from "../Toast";
 
@@ -31,12 +32,7 @@ const ACTION_CARDS: ActionCard[] = [
       english: "Explore this codebase and give me an overview of its structure, main modules, and how they fit together.",
       simplifiedChinese: "请探索这个代码库，概述其结构、主要模块及它们之间的关系。",
     },
-    icon: (
-      <svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true">
-        <circle cx="11" cy="11" r="7" fill="none" stroke="currentColor" strokeWidth="1.6" />
-        <path d="m20 20-3.5-3.5" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" />
-      </svg>
-    ),
+    icon: <Icon name="search" size={20} />,
   },
   {
     id: "build-feature",
@@ -49,11 +45,7 @@ const ACTION_CARDS: ActionCard[] = [
       english: "I want to build a new feature. Help me plan and implement it. Here is what I have in mind: ",
       simplifiedChinese: "我想开发一个新功能。请帮我规划并实现。我的想法是：",
     },
-    icon: (
-      <svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true">
-        <path d="M12 5v14M5 12h14" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" />
-      </svg>
-    ),
+    icon: <Icon name="plus" size={20} />,
   },
   {
     id: "review-changes",
@@ -66,11 +58,7 @@ const ACTION_CARDS: ActionCard[] = [
       english: "Review the recent changes in this repository and suggest improvements.",
       simplifiedChinese: "请审查这个仓库中的近期更改，并提出改进建议。",
     },
-    icon: (
-      <svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true">
-        <path d="M20 6 9 17l-5-5" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" />
-      </svg>
-    ),
+    icon: <Icon name="check" size={20} />,
   },
   {
     id: "fix-problem",
@@ -83,12 +71,7 @@ const ACTION_CARDS: ActionCard[] = [
       english: "I'm hitting a problem. Help me diagnose and fix it. Here are the details: ",
       simplifiedChinese: "我遇到了一个问题。请帮我诊断并修复。具体情况是：",
     },
-    icon: (
-      <svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true">
-        <path d="M12 9v4M12 17h.01" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" />
-        <path d="M10.3 3.9 1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0z" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinejoin="round" />
-      </svg>
-    ),
+    icon: <Icon name="alert-triangle" size={20} />,
   },
 ];
 
@@ -155,10 +138,7 @@ export function EmptyState() {
     return (
       <div className="empty-state">
         <div className="empty-state-icon" aria-hidden="true">
-          <svg viewBox="0 0 24 24" width="40" height="40">
-            <rect x="3" y="4" width="18" height="14" rx="2" fill="none" stroke="currentColor" strokeWidth="1.4" />
-            <path d="M8 21h8M12 18v3" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" />
-          </svg>
+          <Icon name="monitor" size={40} strokeWidth={1.4} />
         </div>
         <h2 className="empty-state-title">{t("No model configured", "尚未配置模型")}</h2>
         <p className="empty-state-subtitle">

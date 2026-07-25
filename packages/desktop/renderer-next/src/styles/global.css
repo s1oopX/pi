@@ -52,9 +52,12 @@
   --surface-hover: light-dark(rgb(0 0 0 / 5%), rgb(255 255 255 / 7%));
   --elevated: light-dark(#ffffff, #242424);
   --text: light-dark(#171717, #ededed);
-  --text-soft: light-dark(rgb(23 23 23 / 72%), rgb(237 237 237 / 72%));
-  --muted: light-dark(rgb(23 23 23 / 50%), rgb(237 237 237 / 50%));
-  --faint: light-dark(rgb(23 23 23 / 35%), rgb(237 237 237 / 35%));
+  --text-soft: light-dark(rgb(23 23 23 / 76%), rgb(237 237 237 / 76%));
+  /* --muted lands on ~4.5:1 small-text contrast (WCAG AA): 60% mixes 23 over a
+     light region to ~#767676, the classic AA threshold on white. Kept below
+     --text-soft so the muted < soft < text hierarchy holds. */
+  --muted: light-dark(rgb(23 23 23 / 60%), rgb(237 237 237 / 62%));
+  --faint: light-dark(rgb(23 23 23 / 38%), rgb(237 237 237 / 40%));
   --border: light-dark(rgb(0 0 0 / 9%), rgb(255 255 255 / 10%));
   --border-strong: light-dark(rgb(0 0 0 / 14%), rgb(255 255 255 / 16%));
 
@@ -462,7 +465,7 @@ html[data-window-controls-overlay="true"] .window-chrome {
   justify-content: center;
   border-radius: var(--radius-sm);
   color: var(--muted);
-  transition: color var(--transition), background-color var(--transition);
+  transition: color var(--transition), background-color var(--transition), transform var(--transition-fast);
   -webkit-app-region: no-drag;
 }
 
@@ -473,6 +476,7 @@ html[data-window-controls-overlay="true"] .window-chrome {
 
 .icon-button:active:not(:disabled) {
   background: var(--control-active);
+  transform: scale(0.94);
 }
 
 .icon-button svg {

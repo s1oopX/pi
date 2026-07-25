@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState, type KeyboardEvent as ReactKeyboardEvent } from "react";
 import { useI18n } from "../../i18n";
+import { Icon } from "../Icon";
 import * as api from "../../ipc/api";
 import { useStore } from "../../store";
 import { isSameWorkspace } from "../Sidebar/sidebarState";
@@ -168,12 +169,7 @@ export function TopBar({
                   state: gitState,
                 })}
               >
-                <svg viewBox="0 0 18 18" aria-hidden="true">
-                  <circle cx="5" cy="4" r="1.75" fill="none" stroke="currentColor" strokeWidth="1.3" />
-                  <circle cx="5" cy="14" r="1.75" fill="none" stroke="currentColor" strokeWidth="1.3" />
-                  <circle cx="13" cy="7" r="1.75" fill="none" stroke="currentColor" strokeWidth="1.3" />
-                  <path d="M5 5.75v6.5M6.75 12.5c3.5-.4 6.25-1.9 6.25-3.75" fill="none" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" />
-                </svg>
+                <Icon name="git-branch" size={16} />
                 <span>{gitLabel}</span>
                 {workspaceGitStatus?.dirty && <span className="top-bar-git-dirty" aria-hidden="true" />}
               </button>
@@ -192,9 +188,7 @@ export function TopBar({
             title={workspaceCwd ? t("Open {path}", "打开 {path}", { path: workspaceCwd }) : t("Open workspace location", "打开工作区位置")}
             onClick={handleOpenWorkspaceLocation}
           >
-            <svg viewBox="0 0 24 24" aria-hidden="true">
-              <path d="M4 7.5A2.5 2.5 0 0 1 6.5 5H10l2 2h5.5A2.5 2.5 0 0 1 20 9.5v7A2.5 2.5 0 0 1 17.5 19h-11A2.5 2.5 0 0 1 4 16.5z" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinejoin="round" />
-            </svg>
+            <Icon name="folder" size={16} />
             <span className="top-bar-open-location-label">{t("Open location", "打开位置")}</span>
           </button>
           <button
@@ -221,9 +215,7 @@ export function TopBar({
               setLocationMenuOpen(true);
             }}
           >
-            <svg className="top-bar-open-location-chevron" viewBox="0 0 16 16" aria-hidden="true">
-              <path d="m5 6 3 3 3-3" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
-            </svg>
+            <Icon className="top-bar-open-location-chevron" name="chevron-down" size={16} />
           </button>
           {locationMenuOpen && (
             <div
@@ -236,21 +228,15 @@ export function TopBar({
               }}
             >
               <button type="button" role="menuitem" tabIndex={-1} onClick={handleOpenWorkspaceLocation}>
-                <svg viewBox="0 0 24 24" aria-hidden="true">
-                  <path d="M4 7.5A2.5 2.5 0 0 1 6.5 5H10l2 2h5.5A2.5 2.5 0 0 1 20 9.5v7A2.5 2.5 0 0 1 17.5 19h-11A2.5 2.5 0 0 1 4 16.5z" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinejoin="round" />
-                </svg>
+                <Icon name="folder" size={18} />
                 <span>{t("File Explorer", "文件资源管理器")}</span>
               </button>
               <button type="button" role="menuitem" tabIndex={-1} onClick={() => handleOpenInWorkbench("files")}>
-                <svg viewBox="0 0 24 24" aria-hidden="true">
-                  <path d="M5 5h14v14H5zM9 5v14M9 9h10M9 13h10" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinejoin="round" />
-                </svg>
+                <Icon name="grid" size={18} />
                 <span>{t("Workbench files", "工作台文件")}</span>
               </button>
               <button type="button" role="menuitem" tabIndex={-1} onClick={() => handleOpenInWorkbench("terminal")}>
-                <svg viewBox="0 0 24 24" aria-hidden="true">
-                  <path d="m6 8 4 4-4 4M12 17h6" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" />
-                </svg>
+                <Icon name="terminal" size={18} />
                 <span>{t("Workbench terminal", "工作台终端")}</span>
               </button>
             </div>
@@ -263,16 +249,7 @@ export function TopBar({
           title={commandPaletteTitle}
           onClick={onOpenCommandPalette}
         >
-          <svg viewBox="0 0 24 24" aria-hidden="true">
-            <path
-              d="m8 8-4 4 4 4M12 16h8"
-              fill="none"
-              stroke="currentColor"
-              strokeWidth="1.7"
-              strokeLinecap="round"
-              strokeLinejoin="round"
-            />
-          </svg>
+          <Icon name="command" size={16} />
         </button>
         <button
           className={`icon-button top-bar-workbench-toggle ${workbenchOpen ? "active" : ""}`}
@@ -282,10 +259,7 @@ export function TopBar({
           title={workbenchTitle}
           onClick={onToggleWorkbench}
         >
-          <svg viewBox="0 0 24 24" aria-hidden="true">
-            <rect x="4" y="5" width="16" height="14" rx="2.5" fill="none" stroke="currentColor" strokeWidth="1.6" />
-            <path d="M14 5v14" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" />
-          </svg>
+          <Icon name="panel-right" size={16} />
         </button>
       </div>
     </div>

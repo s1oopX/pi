@@ -5,6 +5,7 @@ import * as api from "../../ipc/api";
 import type { SessionInfo } from "../../ipc/types";
 import { useStore } from "../../store";
 import { BrandIcon } from "../BrandIcon";
+import { Icon } from "../Icon";
 import { BranchNavigator } from "../BranchNavigator";
 import { Dialog } from "../Dialog";
 import { showToast } from "../Toast";
@@ -670,11 +671,7 @@ export function Sidebar({ collapsed, onToggle }: SidebarProps) {
           aria-expanded={sessionMenu?.session.path === candidate.path}
           onClick={(event) => openSessionMenu(event, candidate)}
         >
-          <svg viewBox="0 0 18 18" aria-hidden="true">
-            <circle cx="4" cy="9" r="1.2" fill="currentColor" />
-            <circle cx="9" cy="9" r="1.2" fill="currentColor" />
-            <circle cx="14" cy="9" r="1.2" fill="currentColor" />
-          </svg>
+          <Icon name="more-horizontal" size={18} />
         </button>
         {failedSwitchError && (
           <div className="agent-row-error" role="alert">
@@ -735,9 +732,7 @@ export function Sidebar({ collapsed, onToggle }: SidebarProps) {
             disabled={!backendStatus.ready || switchingWorkspace || isStreaming || creatingThread}
             onClick={handleNewTask}
           >
-            <svg viewBox="0 0 18 18" aria-hidden="true">
-              <path d="M9 3v12M3 9h12" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" />
-            </svg>
+            <Icon name="plus" size={18} strokeWidth={1.6} />
           </button>
           {session && (
             <button
@@ -748,10 +743,7 @@ export function Sidebar({ collapsed, onToggle }: SidebarProps) {
               disabled={exporting}
               onClick={handleExport}
             >
-              <svg viewBox="0 0 24 24" aria-hidden="true">
-                <path d="M12 3v12m0 0 4-4m-4 4-4-4" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
-                <path d="M4 17v2a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-2" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
-              </svg>
+              <Icon name="download" size={18} strokeWidth={1.5} />
             </button>
           )}
           <span className="sidebar-rail-spacer" />
@@ -779,9 +771,7 @@ export function Sidebar({ collapsed, onToggle }: SidebarProps) {
             disabled={switchingWorkspace}
             onClick={openWorkspaceMenu}
           >
-            <svg viewBox="0 0 24 24" aria-hidden="true">
-              <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z" fill="none" stroke="currentColor" strokeWidth="1.5" />
-            </svg>
+            <Icon name="folder" size={18} strokeWidth={1.5} />
             <span className={`sidebar-rail-status-dot ${backendStatus.ready ? "ready" : ""}`} />
           </button>
           <button
@@ -791,10 +781,7 @@ export function Sidebar({ collapsed, onToggle }: SidebarProps) {
             title={t("Settings", "设置")}
             onClick={() => openSettings("models-providers")}
           >
-            <svg viewBox="0 0 24 24" aria-hidden="true">
-              <path d="M9.7 4.1a2.3 2.3 0 0 1 4.6 0 2.3 2.3 0 0 0 3.3 1.9 2.3 2.3 0 0 1 2.3 4 2.3 2.3 0 0 0 0 3.9 2.3 2.3 0 0 1-2.3 4 2.3 2.3 0 0 0-3.3 1.9 2.3 2.3 0 0 1-4.6 0A2.3 2.3 0 0 0 6.4 18a2.3 2.3 0 0 1-2.3-4 2.3 2.3 0 0 0 0-3.9 2.3 2.3 0 0 1 2.3-4 2.3 2.3 0 0 0 3.3-1.9" fill="none" stroke="currentColor" strokeWidth="1.5" />
-              <circle cx="12" cy="12" r="3" fill="none" stroke="currentColor" strokeWidth="1.5" />
-            </svg>
+            <Icon name="settings" size={18} strokeWidth={1.5} />
           </button>
         </div>
       ) : (
@@ -810,18 +797,13 @@ export function Sidebar({ collapsed, onToggle }: SidebarProps) {
                 : undefined}
             onClick={handleNewTask}
           >
-            <svg className="new-agent-icon" viewBox="0 0 18 18" aria-hidden="true">
-              <path d="M9 3v12M3 9h12" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
-            </svg>
+            <Icon className="new-agent-icon" name="plus" size={18} strokeWidth={1.5} />
             <span>{t("New task", "新建任务")}</span>
           </button>
 
           <div className="agent-list-section">
             <div className="thread-search">
-              <svg className="thread-search-icon" viewBox="0 0 18 18" aria-hidden="true">
-                <circle cx="7.5" cy="7.5" r="4.5" fill="none" stroke="currentColor" strokeWidth="1.4" />
-                <path d="m11 11 3.5 3.5" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" />
-              </svg>
+              <Icon className="thread-search-icon" name="search" size={18} strokeWidth={1.4} />
               <input
                 className="thread-search-input"
                 type="search"
@@ -844,9 +826,7 @@ export function Sidebar({ collapsed, onToggle }: SidebarProps) {
                   aria-label={t("Clear thread search", "清除会话搜索")}
                   onClick={() => setSessionQuery("")}
                 >
-                  <svg viewBox="0 0 18 18" aria-hidden="true">
-                    <path d="m5 5 8 8m0-8-8 8" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" />
-                  </svg>
+                  <Icon name="close" size={18} strokeWidth={1.4} />
                 </button>
               )}
             </div>
@@ -880,9 +860,7 @@ export function Sidebar({ collapsed, onToggle }: SidebarProps) {
                     disabled={switchingWorkspace || isStreaming}
                     onClick={handleChooseWorkspace}
                   >
-                    <svg viewBox="0 0 18 18" aria-hidden="true">
-                      <path d="M9 3v12M3 9h12" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
-                    </svg>
+                    <Icon name="plus" size={18} strokeWidth={1.5} />
                   </button>
                 </div>
                 {workspaceNavigationItems.length === 0 ? (
@@ -922,9 +900,7 @@ export function Sidebar({ collapsed, onToggle }: SidebarProps) {
                                   : t("Expand {project}", "展开 {project}", { project: workspaceDisplay.name })}
                                 onClick={() => toggleProject(cwd)}
                               >
-                                <svg className={isExpanded ? "expanded" : ""} viewBox="0 0 18 18" aria-hidden="true">
-                                  <path d="m7 5 4 4-4 4" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round" />
-                                </svg>
+                                <Icon className={isExpanded ? "expanded" : ""} name="chevron-right" size={18} strokeWidth={1.4} />
                               </button>
                             ) : (
                               <span className="project-tree-toggle" aria-hidden="true" />
@@ -940,9 +916,7 @@ export function Sidebar({ collapsed, onToggle }: SidebarProps) {
                                 void handleOpenWorkspace(cwd);
                               }}
                             >
-                              <svg viewBox="0 0 24 24" aria-hidden="true">
-                                <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z" fill="none" stroke="currentColor" strokeWidth="1.5" />
-                              </svg>
+                              <Icon name="folder" size={18} strokeWidth={1.5} />
                               <span className="workspace-navigation-copy">
                                 <span>{workspaceDisplay.name}</span>
                                 {workspaceDisplay.detail && <span>{workspaceDisplay.detail}</span>}
@@ -959,9 +933,7 @@ export function Sidebar({ collapsed, onToggle }: SidebarProps) {
                               disabled={!backendStatus.ready || switchingWorkspace || isStreaming || creatingThread}
                               onClick={() => handleNewProjectThread(cwd)}
                             >
-                              <svg viewBox="0 0 18 18" aria-hidden="true">
-                                <path d="M9 3v12M3 9h12" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
-                              </svg>
+                              <Icon name="plus" size={18} strokeWidth={1.5} />
                             </button>
                           </div>
                           {hasProjectSessions && isExpanded && (
@@ -994,9 +966,7 @@ export function Sidebar({ collapsed, onToggle }: SidebarProps) {
                     disabled={!backendStatus.ready || switchingWorkspace || isStreaming || creatingThread}
                     onClick={handleNewTask}
                   >
-                    <svg viewBox="0 0 18 18" aria-hidden="true">
-                      <path d="M9 3v12M3 9h12" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
-                    </svg>
+                    <Icon name="plus" size={18} strokeWidth={1.5} />
                   </button>
                 </div>
                 <div className="task-tree-list" role="list">
@@ -1037,10 +1007,7 @@ export function Sidebar({ collapsed, onToggle }: SidebarProps) {
               onClick={() => openSettings("models-providers")}
               title={t("Open settings", "打开设置")}
             >
-              <svg viewBox="0 0 24 24" aria-hidden="true" width="14" height="14">
-                <path d="M9.7 4.1a2.3 2.3 0 0 1 4.6 0 2.3 2.3 0 0 0 3.3 1.9 2.3 2.3 0 0 1 2.3 4 2.3 2.3 0 0 0 0 3.9 2.3 2.3 0 0 1-2.3 4 2.3 2.3 0 0 0-3.3 1.9 2.3 2.3 0 0 1-4.6 0A2.3 2.3 0 0 0 6.4 18a2.3 2.3 0 0 1-2.3-4 2.3 2.3 0 0 0 0-3.9 2.3 2.3 0 0 1 2.3-4 2.3 2.3 0 0 0 3.3-1.9" fill="none" stroke="currentColor" strokeWidth="1.5" />
-                <circle cx="12" cy="12" r="3" fill="none" stroke="currentColor" strokeWidth="1.5" />
-              </svg>
+              <Icon name="settings" size={14} strokeWidth={1.5} />
               <span>{t("Settings", "设置")}</span>
             </button>
             <div className="status-row" title={backendStatus.error}>
@@ -1204,9 +1171,7 @@ export function Sidebar({ collapsed, onToggle }: SidebarProps) {
                     disabled={isStreaming || switchingWorkspace}
                     onClick={() => handleOpenWorkspace(cwd)}
                   >
-                    <svg viewBox="0 0 24 24" aria-hidden="true">
-                      <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z" fill="none" stroke="currentColor" strokeWidth="1.5" />
-                    </svg>
+                    <Icon name="folder" size={18} strokeWidth={1.5} />
                     <span className="workspace-menu-item-copy">
                       <strong>{workspaceDisplay.name}</strong>
                       <span>{workspaceDisplay.detail ?? cwd}</span>
@@ -1229,9 +1194,7 @@ export function Sidebar({ collapsed, onToggle }: SidebarProps) {
                     disabled={switchingWorkspace}
                     onClick={() => handleRemoveWorkspace(cwd)}
                   >
-                    <svg viewBox="0 0 18 18" aria-hidden="true">
-                      <path d="m5 5 8 8m0-8-8 8" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" />
-                    </svg>
+                    <Icon name="close" size={18} strokeWidth={1.4} />
                   </button>
                 </div>
                 );
@@ -1247,9 +1210,7 @@ export function Sidebar({ collapsed, onToggle }: SidebarProps) {
             disabled={isStreaming || switchingWorkspace}
             onClick={handleChooseWorkspace}
           >
-            <svg viewBox="0 0 24 24" aria-hidden="true">
-              <path d="M12 5v14M5 12h14" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
-            </svg>
+            <Icon name="plus" size={18} strokeWidth={1.5} />
             <span>{t("Add workspace...", "添加工作区...")}</span>
           </button>
           {otherWorkspaces.length > 0 && (
@@ -1260,9 +1221,7 @@ export function Sidebar({ collapsed, onToggle }: SidebarProps) {
               disabled={switchingWorkspace}
               onClick={handleClearOtherWorkspaces}
             >
-              <svg viewBox="0 0 24 24" aria-hidden="true">
-                <path d="M5 7h14M9 7V4h6v3m-8 0 1 13h8l1-13" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
-              </svg>
+              <Icon name="trash" size={18} strokeWidth={1.5} />
               <span>{t("Clear other workspaces", "清除其他工作区")}</span>
             </button>
           )}

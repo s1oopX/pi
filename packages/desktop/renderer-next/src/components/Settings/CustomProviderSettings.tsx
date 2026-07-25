@@ -4,6 +4,7 @@ import * as api from "../../ipc/api";
 import type { CustomModelApi } from "../../ipc/types";
 import { useStore } from "../../store";
 import { showToast } from "../Toast";
+import { Icon } from "../Icon";
 import { buildCustomModelInput, getConnectionTestFailure } from "./settingsLogic";
 import { SettingsSectionIcon } from "./SettingsSectionIcon";
 
@@ -758,17 +759,9 @@ export function CustomProviderSettings({ onDirtyChange }: { onDirtyChange?: (dir
                 title={showKey ? t("Hide", "隐藏") : t("Show", "显示")}
               >
                 {showKey ? (
-                  <svg viewBox="0 0 24 24" width="16" height="16" aria-hidden="true">
-                    <path d="M9.88 9.88a3 3 0 0 0 4.24 4.24" fill="none" stroke="currentColor" strokeLinecap="round" strokeWidth="1.6" />
-                    <path d="M10.73 5.08A10.4 10.4 0 0 1 12 5c7 0 10 7 10 7a13.2 13.2 0 0 1-1.67 2.68" fill="none" stroke="currentColor" strokeLinecap="round" strokeWidth="1.6" />
-                    <path d="M6.61 6.61A13.5 13.5 0 0 0 2 12s3 7 10 7a9.7 9.7 0 0 0 5.39-1.61" fill="none" stroke="currentColor" strokeLinecap="round" strokeWidth="1.6" />
-                    <path d="m2 2 20 20" fill="none" stroke="currentColor" strokeLinecap="round" strokeWidth="1.6" />
-                  </svg>
+                  <Icon name="eye-off" size={16} />
                 ) : (
-                  <svg viewBox="0 0 24 24" width="16" height="16" aria-hidden="true">
-                    <path d="M2 12s3-7 10-7 10 7 10 7-3 7-10 7-10-7-10-7z" fill="none" stroke="currentColor" strokeLinejoin="round" strokeWidth="1.6" />
-                    <circle cx="12" cy="12" r="3" fill="none" stroke="currentColor" strokeWidth="1.6" />
-                  </svg>
+                  <Icon name="eye" size={16} />
                 )}
               </button>
             </div>

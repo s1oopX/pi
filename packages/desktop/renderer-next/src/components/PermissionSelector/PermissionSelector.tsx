@@ -1,6 +1,7 @@
 import { useEffect, useId, useRef, useState, type KeyboardEvent as ReactKeyboardEvent } from "react";
 import { useI18n } from "../../i18n";
 import { useStore } from "../../store";
+import { Icon } from "../Icon";
 import { optionForPermissionMode, PERMISSION_MODE_OPTIONS } from "./permissionModes";
 
 export function PermissionSelector() {
@@ -110,7 +111,7 @@ export function PermissionSelector() {
       >
         <span className="permission-dot" aria-hidden="true" />
         <span className="permission-trigger-label">{optionLabel(active.mode)}</span>
-        <span className="permission-chevron" aria-hidden="true">{open ? "\u25be" : "\u25b8"}</span>
+        <Icon className="permission-chevron" name="chevron-down" size={14} />
       </button>
       {open && (
         <div
@@ -145,9 +146,7 @@ export function PermissionSelector() {
               </div>
               {option.mode === permissionMode && (
                 <span className="permission-check" aria-hidden="true">
-                  <svg viewBox="0 0 24 24" width="14" height="14">
-                    <path d="M20 6 9 17l-5-5" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
-                  </svg>
+                  <Icon name="check" size={14} />
                 </span>
               )}
             </button>

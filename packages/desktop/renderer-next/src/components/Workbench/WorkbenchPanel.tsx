@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState, type FormEvent, type KeyboardEvent } from "react";
 import { BranchNavigatorContent } from "../BranchNavigator";
+import { Icon } from "../Icon";
 import { appendFileReference } from "../Composer/workspaceDrafts";
 import { TerminalPanel, type TerminalPanelHandle } from "../Terminal";
 import { showToast } from "../Toast";
@@ -103,9 +104,7 @@ export function WorkbenchPanel({ activeView, keybindingLabels, onClose, onSelect
           aria-label={t("Back to workbench", "返回工作台")}
           title={t("Back to workbench", "返回工作台")}
         >
-          <svg viewBox="0 0 24 24" aria-hidden="true">
-            <path d="m15 6-6 6 6 6" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
-          </svg>
+          <Icon name="chevron-left" size={20} strokeWidth={1.8} />
         </button>
         <h2>{title}</h2>
         <button
@@ -115,9 +114,7 @@ export function WorkbenchPanel({ activeView, keybindingLabels, onClose, onSelect
           aria-label={t("Close workbench", "关闭工作台")}
           title={t("Close workbench", "关闭工作台")}
         >
-          <svg viewBox="0 0 24 24" aria-hidden="true">
-            <path d="M18 6 6 18M6 6l12 12" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" />
-          </svg>
+          <Icon name="close" size={20} strokeWidth={1.8} />
         </button>
       </div>
 
@@ -434,11 +431,7 @@ function WorkbenchIcon({ icon }: { icon: WorkbenchEntry["icon"] }) {
         : icon === "files"
           ? "M4 6.5A2.5 2.5 0 0 1 6.5 4H10l2 2h5.5A2.5 2.5 0 0 1 20 8.5v7A2.5 2.5 0 0 1 17.5 18h-11A2.5 2.5 0 0 1 4 15.5v-9Z"
           : "M12 5v14M5 12h14";
-  return (
-    <svg viewBox="0 0 24 24" aria-hidden="true">
-      <path d={path} fill="none" stroke="currentColor" strokeWidth="1.55" strokeLinecap="round" strokeLinejoin="round" />
-    </svg>
-  );
+  return <Icon path={path} size={18} strokeWidth={1.55} />;
 }
 
 function getWorkbenchTitle(view: WorkbenchView, t: (en: string, zhCN: string, values?: Record<string, string | number>) => string): string {

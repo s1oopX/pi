@@ -11,6 +11,7 @@ import { useI18n } from "../../i18n";
 import { useStore } from "../../store";
 import type { ExtensionUIRequestEvent } from "../../ipc/types";
 import { isElevatedRisk } from "./approvalRisk";
+import { Icon } from "../Icon";
 
 type ApprovalResponse = Record<string, unknown>;
 type RespondToApproval = (response: ApprovalResponse) => Promise<void>;
@@ -86,16 +87,7 @@ function ConfirmApproval({
     <div className={`inline-approval ${elevated ? "risk-elevated" : ""}`} role="alertdialog" aria-label={title}>
       <div className="inline-approval-header">
         <span className="inline-approval-icon" aria-hidden="true">
-          <svg viewBox="0 0 24 24" width="15" height="15">
-            <path
-              d="M12 9v4m0 4h.01M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"
-              fill="none"
-              stroke="currentColor"
-              strokeWidth="1.6"
-              strokeLinecap="round"
-              strokeLinejoin="round"
-            />
-          </svg>
+          <Icon name="alert-triangle" size={15} />
         </span>
         <span className="inline-approval-title">{title}</span>
         {elevated && (
@@ -240,9 +232,7 @@ function TextApproval({
     >
       <div className="inline-approval-header">
         <span className="inline-approval-icon" aria-hidden="true">
-          <svg viewBox="0 0 24 24" width="15" height="15">
-            <path d="M4 4h16v16H4zM8 9h8M8 13h8M8 17h5" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" />
-          </svg>
+          <Icon path="M4 4h16v16H4zM8 9h8M8 13h8M8 17h5" size={15} />
         </span>
         <label id={titleId} className="inline-approval-title" htmlFor={fieldId}>
           {title}
