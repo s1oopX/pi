@@ -1014,13 +1014,6 @@ export function Sidebar({ collapsed, onToggle }: SidebarProps) {
               <span
                 className={`backend-dot ${backendStatus.ready && !switchingWorkspace ? "ready" : ""}`}
                 aria-hidden="true"
-                aria-label={
-                  switchingWorkspace
-                    ? workspaceStatusText ?? undefined
-                    : backendStatus.ready
-                      ? t("Backend running", "后端正在运行")
-                      : workspaceStatusText ?? undefined
-                }
               />
               <span className="status-text">{workspaceStatusText ?? ""}</span>
               {!backendStatus.ready && !backendStatus.starting && !backendStatus.restarting && (

@@ -121,6 +121,7 @@ export function ExtensionWidgets({ widgets, placement }: ExtensionWidgetsProps) 
         "消息编辑器{placement}的扩展小组件",
         { placement: placementLabel },
       )}
+      role="status"
       aria-live="polite"
       aria-relevant="additions text"
     >
