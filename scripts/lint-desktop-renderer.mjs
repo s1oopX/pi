@@ -4,17 +4,16 @@
 // does not reach the two-level `packages/desktop/renderer-next/src` path. Adding
 // the renderer to the shared config is not worth it — the repo `check` script runs
 // `biome check --write`, which would reformat ~120 renderer files to the 3-wide-tab
-// repo style and bury real diffs.
+// repo style and bury real diffs in noise.
 //
-// So this is an audit tool, not a gate: it lints the renderer through a temporary
-// config with the formatter off, keeping the renderer's own formatting untouched.
-// Run it periodically (or before a release) and fix what it finds.
+// So this lints the renderer through a temporary config with the formatter off,
+// leaving the renderer's own 2-space formatting untouched.
 //
-//   node scripts/lint-desktop-renderer.mjs
+//   npm run lint:desktop-renderer
 //
-// Rules disabled below are ones that do not fit this codebase, each with a reason.
-// Everything else stays on, including the a11y rules that caught real defects
-// (aria-labels on roleless elements are silently ignored by screen readers).
+// Rules disabled below do not fit this codebase; each has a reason. Everything
+// else stays on, including the a11y rules that caught real defects (an
+// aria-label on a roleless div is silently ignored by screen readers).
 
 import { spawnSync } from "node:child_process";
 import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
@@ -23,10 +22,10 @@ import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..");
-const RENDERER_DIR = join(repoRoot, "packages", "desktop", "renderer-next", "src");
+const rendererDir = join(repoRoot, "packages", "desktop", "renderer-next", "src");
 // biome resolves relative `includes` against the config file's directory, and the
 // config lives in a temp dir here, so the glob has to be absolute.
-const RENDERER_GLOB = `${RENDERER_DIR.replaceAll("\\", "/")}/**`;
+const rendererGlob = `${rendererDir.replaceAll("\\", "/")}/**`;
 
 const config = {
 	$schema: "https://biomejs.dev/schemas/2.3.5/schema.json",
@@ -38,16 +37,17 @@ const config = {
 		rules: {
 			recommended: true,
 			a11y: {
-				// Suggests <button> over role="button" etc. The renderer's roles
-				// (status/group/separator) have no semantic HTML equivalent.
+				// Suggests <button> over role="button" and similar. The roles this app
+				// needs (status, group, separator) have no semantic HTML equivalent.
 				useSemanticElements: "off",
-				// Decorative icons are correctly marked aria-hidden; a <title>
-				// would make them announce instead.
+				// Decorative icons are correctly marked aria-hidden; adding <title>
+				// would make them announce instead of staying silent.
 				noSvgWithoutTitle: "off",
-				// autoFocus is appropriate in a desktop app's dialogs and pickers.
+				// autoFocus is appropriate for a desktop app's dialogs and pickers.
 				noAutofocus: "off",
-				// The renderer uses roving tabindex: children carry tabIndex={-1}
-				// and the container handles onKeyDown. That is ARIA-conformant.
+				// Menus and listboxes here use roving tabindex: children carry
+				// tabIndex={-1} and the container handles onKeyDown, which is
+				// ARIA-conformant even though the container is not focusable.
 				useFocusableInteractive: "off",
 				useAriaPropsForRole: "off",
 				// Backdrops close via Escape handlers on the panel, and <dialog>
@@ -56,26 +56,25 @@ const config = {
 				useKeyWithClickEvents: "off",
 			},
 			complexity: {
-				// Every `!important` here is justified: 7 sit inside
-				// prefers-reduced-motion blocks (the standard way to force-disable
-				// animation), and 3 override third-party styles (shiki, xterm).
+				// !important is load-bearing here: inside prefers-reduced-motion
+				// blocks, and to override third-party styles (shiki, xterm).
 				noImportantStyles: "off",
 			},
 			correctness: {
-				// Hooks here intentionally depend on specific fields (token?.query)
-				// rather than whole objects, to avoid re-running on identity churn.
+				// Hooks intentionally depend on specific fields (token?.query) rather
+				// than whole objects, to avoid re-running on identity churn.
 				useExhaustiveDependencies: "off",
 			},
 			style: {
 				// Matches the repo-wide config.
 				noNonNullAssertion: "off",
-				// Selector ordering is a stylistic preference, not a defect.
+				// Selector ordering only; the cascade here is deliberate.
 				noDescendingSpecificity: "off",
 			},
 			suspicious: {
 				noExplicitAny: "off",
-				// Sanitizers here match control characters on purpose, the same
-				// reason the repo-wide config disables this rule.
+				// Sanitizers match control characters on purpose, the same reason the
+				// repo-wide config disables this rule.
 				noControlCharactersInRegex: "off",
 				// `(groups[key] ??= []).push(x)` is a deliberate, correct idiom.
 				noAssignInExpressions: "off",
@@ -84,20 +83,20 @@ const config = {
 			},
 		},
 	},
-	files: { includes: [RENDERER_GLOB] },
+	files: { includes: [rendererGlob] },
 };
 
-const dir = mkdtempSync(join(tmpdir(), "pi-renderer-lint-"));
+const configDir = mkdtempSync(join(tmpdir(), "pi-renderer-lint-"));
 try {
-	writeFileSync(join(dir, "biome.json"), JSON.stringify(config, null, 2));
+	writeFileSync(join(configDir, "biome.json"), JSON.stringify(config, null, 2));
 	const result = spawnSync(
-		"node",
+		process.execPath,
 		[
 			join(repoRoot, "node_modules", "@biomejs", "biome", "bin", "biome"),
 			"lint",
-			`--config-path=${dir}`,
+			`--config-path=${configDir}`,
 			"--max-diagnostics=200",
-			RENDERER_DIR,
+			rendererDir,
 		],
 		{ stdio: "inherit", cwd: repoRoot },
 	);
@@ -107,5 +106,5 @@ try {
 	}
 	process.exit(result.status ?? 1);
 } finally {
-	rmSync(dir, { recursive: true, force: true });
+	rmSync(configDir, { recursive: true, force: true });
 }

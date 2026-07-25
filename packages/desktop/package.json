@@ -18,6 +18,8 @@
 		"test": "node --test \"test/*.test.js\"",
 		"start": "npm run build:backend && electron .",
 		"pack:dir": "npm run build:renderer && npm run build:backend && electron-builder --dir --win --x64 --config.electronDist=../../node_modules/electron/dist",
+		"build:renderer:offline": "cd renderer-next && node ../../../node_modules/.bin/tsc --noEmit && node ../../../node_modules/.bin/vite build",
+		"pack:offline": "npm run build:renderer:offline && npm run build:backend && electron-builder --dir --win --x64 --config.electronDist=../../node_modules/electron/dist --config.npmRebuild=false",
 		"pack:portable": "npm run build:renderer && npm run build:backend && electron-builder --win portable --x64 --config.electronDist=../../node_modules/electron/dist"
 	},
 	"build": {

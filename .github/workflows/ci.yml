@@ -64,6 +64,9 @@ jobs:
         run: npx tsc --noEmit
         working-directory: packages/desktop/renderer-next
 
+      - name: Lint renderer
+        run: npm run lint:desktop-renderer
+
       - name: Build renderer
         run: npx vite build
         working-directory: packages/desktop/renderer-next
