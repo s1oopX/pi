@@ -1,4 +1,4 @@
-const { contextBridge, ipcRenderer } = require("electron");
+const { contextBridge, ipcRenderer, webUtils } = require("electron");
 
 // Pure pass-through bridge: every argument is forwarded verbatim and
 // validated on the main-process side, so parameters are typed `unknown`
@@ -119,6 +119,14 @@ contextBridge.exposeInMainWorld("piDesktop", {
 	},
 	importSessionFile() {
 		return ipcRenderer.invoke("session:import");
+	},
+	getDroppedFilePath(/** @type {File} */ file) {
+		// Sandbox-safe absolute path for an OS drag-drop (File.path is gone).
+		try {
+			return webUtils.getPathForFile(file);
+		} catch {
+			return null;
+		}
 	},
 	openExternal(/** @type {unknown} */ url) {
 		return ipcRenderer.invoke("backend:open-external", url);

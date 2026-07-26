@@ -82,6 +82,39 @@ export function Sidebar({ collapsed, onToggle }: SidebarProps) {
   const workspaceMenuRef = useRef<HTMLDivElement>(null);
   const workspaceTriggerRef = useRef<HTMLButtonElement | null>(null);
   const creatingThreadRef = useRef(false);
+  const openWorkspaceRef = useRef<(cwd: string) => Promise<void>>(async () => {});
+
+  // OS drag-drop of a folder anywhere outside the composer opens it as the
+  // workspace (the composer keeps its own drop zone for image attachments).
+  useEffect(() => {
+    function isWorkspaceDrag(event: DragEvent): boolean {
+      if (event.defaultPrevented) return false;
+      if (!event.dataTransfer?.types.includes("Files")) return false;
+      if (event.target instanceof Element && event.target.closest(".composer-wrap")) return false;
+      return true;
+    }
+    function onDragOver(event: DragEvent) {
+      if (!isWorkspaceDrag(event)) return;
+      event.preventDefault();
+      if (event.dataTransfer) event.dataTransfer.dropEffect = "link";
+    }
+    function onDrop(event: DragEvent) {
+      if (!isWorkspaceDrag(event)) return;
+      event.preventDefault();
+      const file = event.dataTransfer?.files?.[0];
+      if (!file) return;
+      const path = api.getDroppedFilePath(file);
+      if (!path) return;
+      void openWorkspaceRef.current(path);
+    }
+    window.addEventListener("dragover", onDragOver);
+    window.addEventListener("drop", onDrop);
+    return () => {
+      window.removeEventListener("dragover", onDragOver);
+      window.removeEventListener("drop", onDrop);
+    };
+  }, []);
+
 
   const activeSessionId = session?.sessionId;
   const switchingWorkspace = switchingWorkspaceCwd !== null;
@@ -516,6 +549,8 @@ export function Sidebar({ collapsed, onToggle }: SidebarProps) {
       setDeleting(false);
     }
   }
+
+  openWorkspaceRef.current = handleOpenWorkspace;
 
   function retainWorkspace(cwd: string) {
     setWorkspaces((current) => {

@@ -70,6 +70,7 @@ export interface PiDesktopApi {
   exportSessionFile(sessionPath: string): Promise<{ exported: boolean; path?: string }>;
   importSessionFile(): Promise<{ imported: boolean; path?: string }>;
   openExternal(url: string): Promise<void>;
+  getDroppedFilePath?: (file: File) => string | null;
   fetchProviderModels(params: {
     baseUrl: string;
     apiKey?: string;
@@ -580,6 +581,10 @@ export async function exportSessionFile(sessionPath: string): Promise<{ exported
 
 export async function importSessionFile(): Promise<{ imported: boolean; path?: string }> {
   return requireApi().importSessionFile();
+}
+
+export function getDroppedFilePath(file: File): string | null {
+  return getApi()?.getDroppedFilePath?.(file) ?? null;
 }
 
 export async function openExternal(url: string): Promise<void> {

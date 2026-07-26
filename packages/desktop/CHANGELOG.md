@@ -8,6 +8,7 @@ client (Electron main process and the `renderer-next` React renderer).
 
 ### Added
 
+- Drop a folder anywhere in the window (outside the composer, which keeps its image-attachment drop zone) to open it as the workspace — resolved sandbox-safely through `webUtils.getPathForFile` in the preload; files and unreadable drops surface the normal open-workspace error.
 - "What's New" in About: an in-app changelog viewer. The packaged app now ships `CHANGELOG.md` inside the asar; a new `app:get-changelog` IPC reads it (512 KB cap) and a dialog renders it with the same markdown stack the conversation uses.
 - "Copy Last Reply" (`Mod+Shift+C`, rebindable, also in the command palette): copies the assistant's latest reply as plain text — the text blocks only, skipping thinking, tool markers, and tool-only turns. Codex-parity quality-of-life for grabbing a long answer without scrolling to hover it.
 - Worktree trust inheritance: project trust now follows the repository identity. A parallel task's worktree resolves its source repository (by parsing the linked worktree's `.git` file — no git invocation) and inherits a trusted decision from it, so a repo you trusted once starts its worktree tasks trusted: no second banner, project extensions load immediately. An explicit decision recorded for the worktree path itself always wins, either way. Proven by an e2e where the extension marker appears in the worktree with no banner shown.
