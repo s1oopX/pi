@@ -27,6 +27,12 @@ test("tool loop: live output streams while the bash tool runs", async (t) => {
 		await studio.waitUntilReady();
 		await studio.sendPrompt("Run the demo command");
 
+		// The bundled tool-approval extension gates bash in the default "ask"
+		// mode; approve so the tool runs and streams.
+		const approval = studio.page.locator(".inline-approval");
+		await approval.waitFor({ state: "visible", timeout: LAUNCH_TIMEOUT_MS });
+		await studio.page.locator(".inline-approval .dialog-btn-primary").click();
+
 		// The tool card must go live before the run finishes, and the live tail
 		// must show the first chunk while the sleep still holds the tool open.
 		const liveOutput = studio.page.locator(".tool-live-output");

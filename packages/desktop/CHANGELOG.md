@@ -8,6 +8,7 @@ client (Electron main process and the `renderer-next` React renderer).
 
 ### Added
 
+- Bundled a tool-approval extension so the permission-mode selector actually enforces tool access. pi has no built-in permission system; previously the full/auto/ask selector set a flag that nothing read, and the settings panel warned the extension was missing. The Studio backend now injects an inline extension that registers the `permission-mode` flag and gates tool calls: `full` runs everything, `auto` asks before risky bash (destructive/privileged/remote-code) and writes outside the workspace, `ask` asks before every command and file change. Denials surface as native inline approval dialogs and block the tool end to end. Covered by unit tests and an e2e test that denies a command and asserts it never ran.
 - Live tool output: while the agent runs a tool, the tool card streams the output tail in real time (`tool_execution_update` snapshots), and the workbench terminal streams direct bash output chunk by chunk (`bash_execution_update` correlated by request id) instead of printing everything at the end.
 - The thinking-level picker now offers `max` on models that support it.
 - Git commit flow on the top bar: the branch button opens a popover listing working-tree changes (first 200, status-colored) with a commit message box and a "Commit all changes" action (`git add --all` + `git commit -m`, no shell, Ctrl+Enter to submit). Committing is blocked while the agent is running.

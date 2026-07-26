@@ -16,6 +16,7 @@ import { ModelRuntime } from "../../coding-agent/src/core/model-runtime.ts";
 import { SessionManager } from "../../coding-agent/src/core/session-manager.ts";
 import { SettingsManager } from "../../coding-agent/src/core/settings-manager.ts";
 import { runRpcMode } from "../../coding-agent/src/modes/rpc/rpc-mode.ts";
+import { toolApprovalExtension } from "./tool-approval.ts";
 
 process.title = `${APP_NAME}-studio-rpc`;
 process.env.PI_CODING_AGENT = "true";
@@ -47,6 +48,9 @@ const createRuntime: CreateAgentSessionRuntimeFactory = async ({
 		agentDir: runtimeAgentDir,
 		settingsManager,
 		modelRuntime,
+		resourceLoaderOptions: {
+			extensionFactories: [{ name: "tool-approval", factory: toolApprovalExtension }],
+		},
 	});
 	const created = await createAgentSessionFromServices({
 		services,
