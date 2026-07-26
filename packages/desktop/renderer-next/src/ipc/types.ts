@@ -433,3 +433,13 @@ export interface WorkspaceGitStatus {
   detached: boolean;
   dirty: boolean;
 }
+
+export interface GitChangeFile {
+  status: string;
+  path: string;
+}
+
+export interface GitChanges {
+  files: GitChangeFile[];
+  truncated: boolean;
+}

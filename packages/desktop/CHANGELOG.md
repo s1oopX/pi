@@ -10,6 +10,8 @@ client (Electron main process and the `renderer-next` React renderer).
 
 - Live tool output: while the agent runs a tool, the tool card streams the output tail in real time (`tool_execution_update` snapshots), and the workbench terminal streams direct bash output chunk by chunk (`bash_execution_update` correlated by request id) instead of printing everything at the end.
 - The thinking-level picker now offers `max` on models that support it.
+- Git commit flow on the top bar: the branch button opens a popover listing working-tree changes (first 200, status-colored) with a commit message box and a "Commit all changes" action (`git add --all` + `git commit -m`, no shell, Ctrl+Enter to submit). Committing is blocked while the agent is running.
+- A tool-loop e2e test: the faux provider returns a bash `tool_calls` step, and the test asserts the running tool card shows the live output tail mid-run before the final reply lands. E2e setup now lives in a shared harness (`test/e2e/harness.mjs`).
 
 - Added a shared `Icon` component as the single source of truth for line icons, with every glyph authored in a 24x24 box at a common stroke weight.
 - Added `npm run lint:desktop-renderer`, an audit that lints the renderer through a temporary biome config. The repo-wide config does not reach `packages/desktop/renderer-next/src`, so this covers the gap without reformatting the renderer.

@@ -28,6 +28,12 @@ contextBridge.exposeInMainWorld("piDesktop", {
 	getWorkspaceGitStatus() {
 		return ipcRenderer.invoke("workspace:get-git-status");
 	},
+	getGitChanges() {
+		return ipcRenderer.invoke("git:changes");
+	},
+	commitAllGitChanges(message) {
+		return ipcRenderer.invoke("git:commit-all", message);
+	},
 	listWorkspaceFiles(query) {
 		return ipcRenderer.invoke("workspace:list-files", query);
 	},

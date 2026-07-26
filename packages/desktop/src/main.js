@@ -11,6 +11,7 @@ import {
 } from "./backend-command-allowlist.js";
 import { createBackendMutationQueue } from "./backend-mutation-queue.js";
 import { sanitizeDiagnostics } from "./diagnostics.js";
+import { commitAllChanges, listGitChanges } from "./git-commit.js";
 import { getGitWorkspaceStatus } from "./git-workspace-status.js";
 import { describeRevealTarget, resolveWorkspacePath } from "./path-reveal.js";
 import { createPendingExtensionUIRequestStore } from "./pending-extension-ui-requests.js";
@@ -963,6 +964,10 @@ ipcMain.handle("workspace:get-git-status", async () => {
 	const cwd = backendCwd;
 	return { cwd, ...(await getGitWorkspaceStatus(cwd)) };
 });
+
+ipcMain.handle("git:changes", async () => listGitChanges(backendCwd));
+
+ipcMain.handle("git:commit-all", async (_event, message) => commitAllChanges(backendCwd, message));
 
 ipcMain.handle("workspace:list-files", async (_event, query) => ({
 	files: listWorkspaceFiles(backendCwd, String(query ?? "")),

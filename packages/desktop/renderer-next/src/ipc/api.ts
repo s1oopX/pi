@@ -9,6 +9,7 @@ import type {
   ForkMessage,
   ForkResult,
   GetSessionsCommand,
+  GitChanges,
   ImageContent,
   LogEntry,
   Message,
@@ -34,6 +35,8 @@ export interface PiDesktopApi {
   openWorkspace(cwd: string): Promise<{ cwd: string; changed: boolean }>;
   getWorkspace(): Promise<{ cwd: string; taskCwd: string }>;
   getWorkspaceGitStatus(): Promise<WorkspaceGitStatus>;
+  getGitChanges(): Promise<GitChanges>;
+  commitAllGitChanges(message: string): Promise<{ committed: boolean; summary: string }>;
   listWorkspaceFiles(query?: string): Promise<{ files: string[] }>;
   openWorkspaceLocation(cwd?: string): Promise<{ opened: boolean }>;
   revealWorkspacePath(targetPath: string): Promise<{ revealed: boolean; path: string; insideWorkspace: boolean }>;
@@ -363,6 +366,14 @@ export async function getWorkspace(): Promise<{ cwd: string; taskCwd: string }> 
 
 export async function getWorkspaceGitStatus(): Promise<WorkspaceGitStatus> {
   return requireApi().getWorkspaceGitStatus();
+}
+
+export async function getGitChanges(): Promise<GitChanges> {
+  return requireApi().getGitChanges();
+}
+
+export async function commitAllGitChanges(message: string): Promise<{ committed: boolean; summary: string }> {
+  return requireApi().commitAllGitChanges(message);
 }
 
 export async function listWorkspaceFiles(query?: string): Promise<string[]> {
