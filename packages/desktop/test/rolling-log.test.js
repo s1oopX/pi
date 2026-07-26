@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { join } from "node:path";
 import { describe, it } from "node:test";
 import { createRollingLog } from "../src/rolling-log.js";
 
@@ -28,8 +29,11 @@ function fakeFs(initial = {}) {
 	};
 }
 
-const DIR = "C:\\data\\logs";
-const CURRENT = `${DIR}\\pi-studio.log`;
+// Platform-native paths: the module joins with the host separator, so string
+// literals with backslashes would break the Linux CI run.
+const DIR = join("data", "logs");
+const CURRENT = join(DIR, "pi-studio.log");
+const HISTORY = (index) => join(DIR, `pi-studio.${index}.log`);
 
 describe("createRollingLog", () => {
 	it("appends timestamped single-line entries and escapes newlines", () => {
@@ -56,21 +60,21 @@ describe("createRollingLog", () => {
 		const fs = fakeFs({ [CURRENT]: "y".repeat(90) });
 		const log = createRollingLog({ directory: DIR, maxBytes: 100, maxFiles: 3, ...fs.impls });
 		log.append("info", "main", "z".repeat(40)); // 90 + entry > 100 -> rotate first
-		assert.equal(fs.files.get(`${DIR}\\pi-studio.1.log`), "y".repeat(90));
+		assert.equal(fs.files.get(HISTORY(1)), "y".repeat(90));
 		assert.match(fs.files.get(CURRENT), /z{40}/u);
 	});
 
 	it("shifts older files and drops the oldest at the cap", () => {
 		const fs = fakeFs({
 			[CURRENT]: "current".padEnd(90, "c"),
-			[`${DIR}\\pi-studio.1.log`]: "one",
-			[`${DIR}\\pi-studio.2.log`]: "two",
+			[HISTORY(1)]: "one",
+			[HISTORY(2)]: "two",
 		});
 		const log = createRollingLog({ directory: DIR, maxBytes: 100, maxFiles: 3, ...fs.impls });
 		log.append("info", "main", "n".repeat(40));
-		assert.equal(fs.files.get(`${DIR}\\pi-studio.2.log`), "one");
-		assert.equal(fs.files.get(`${DIR}\\pi-studio.1.log`), "current".padEnd(90, "c"));
-		assert.equal(fs.files.has(`${DIR}\\pi-studio.3.log`), false, "the oldest file is dropped");
+		assert.equal(fs.files.get(HISTORY(2)), "one");
+		assert.equal(fs.files.get(HISTORY(1)), "current".padEnd(90, "c"));
+		assert.equal(fs.files.has(HISTORY(3)), false, "the oldest file is dropped");
 		assert.match(fs.files.get(CURRENT), /n{40}/u);
 	});
 
