@@ -21,6 +21,17 @@ describe("buildParallelTaskRows", () => {
     expect(rows[1].canStop).toBe(true);
   });
 
+  it("carries the worktree branch through to the row", () => {
+    let state = createInitialTaskRegistryState();
+    state = mergeTaskList(state, [
+      { taskId: "main", cwd: "C:\\repos\\primary", isPrimary: true, ready: true, starting: false },
+      { taskId: "task_1", cwd: "C:\\wt\\primary-1", isPrimary: false, ready: true, starting: false, branch: "task/primary-1" },
+    ]);
+    const rows = buildParallelTaskRows(state);
+    expect(rows.find((row) => row.taskId === "task_1")?.branch).toBe("task/primary-1");
+    expect(rows.find((row) => row.taskId === "main")?.branch).toBeUndefined();
+  });
+
   it("marks the active row and carries live event state", () => {
     let state = registryWithPool();
     state = routeBackendEvent(state, { type: "agent_start", backendId: "task_2" }).state;

@@ -13,6 +13,7 @@ import { sanitizeDiagnostics } from "./diagnostics.js";
 import { commitAllChanges, listGitBranches, listGitChanges, pushCurrentBranch, switchGitBranch } from "./git-commit.js";
 import { createPullRequest, getPullRequestContext } from "./git-pr.js";
 import { getGitWorkspaceStatus } from "./git-workspace-status.js";
+import { createTaskWorktree, isGitRepository, removeTaskWorktree } from "./git-worktree.js";
 import { describeRevealTarget, resolveWorkspacePath } from "./path-reveal.js";
 import { prepareSessionImport, resolveKnownSessionFile } from "./session-files.js";
 import { createTaskRegistry } from "./task-registry.js";
@@ -573,17 +574,66 @@ ipcMain.handle("backend:get-pending-extension-ui-requests", (_event, taskId) =>
 
 ipcMain.handle("backend:get-status", (_event, taskId) => taskRegistry.get(taskId).handle.statusSnapshot());
 
+function getWorktreesRoot() {
+	return join(app.getPath("userData"), "worktrees");
+}
+
+function waitForChildExit(child, timeoutMs) {
+	if (!child || child.exitCode !== null || child.signalCode) {
+		return Promise.resolve();
+	}
+	return new Promise((resolve) => {
+		const timer = setTimeout(resolve, timeoutMs);
+		child.once("exit", () => {
+			clearTimeout(timer);
+			resolve();
+		});
+	});
+}
+
 ipcMain.handle("task:create", async (_event, cwd) => {
 	const nextCwd = String(cwd ?? "");
 	if (!nextCwd || !existsSync(nextCwd) || !statSync(nextCwd).isDirectory()) {
 		throw new Error(`Workspace not found: ${nextCwd}`);
 	}
-	return taskRegistry.create(nextCwd);
+	if (!taskRegistry.isClaimed(nextCwd)) {
+		return taskRegistry.create(nextCwd);
+	}
+	// Same-repo parallelism: a claimed git folder gets its own worktree on a
+	// fresh task branch; non-git folders keep the refusal.
+	taskRegistry.assertCapacity();
+	if (!(await isGitRepository(nextCwd))) {
+		throw new Error(
+			"That folder is already running. Running parallel tasks in one folder needs a git repository (each task gets a worktree).",
+		);
+	}
+	const worktree = await createTaskWorktree(nextCwd, getWorktreesRoot());
+	return taskRegistry.create(worktree.worktreePath, {
+		branch: worktree.branch,
+		sourceRepo: nextCwd,
+		worktreePath: worktree.worktreePath,
+	});
 });
 
 ipcMain.handle("task:list", async () => ({ tasks: taskRegistry.list() }));
 
-ipcMain.handle("task:stop", async (_event, taskId) => taskRegistry.stop(String(taskId ?? "")));
+ipcMain.handle("task:stop", async (_event, taskId) => {
+	const entry = taskRegistry.get(String(taskId ?? ""));
+	const child = entry.handle.child;
+	const result = taskRegistry.stop(entry.taskId);
+	if (entry.meta?.worktreePath && entry.meta?.sourceRepo) {
+		// The backend process holds the worktree cwd open on Windows; give it a
+		// moment to exit, then remove — never forced, a dirty worktree stays.
+		await waitForChildExit(child, 5000);
+		const removal = await removeTaskWorktree(entry.meta.sourceRepo, entry.meta.worktreePath);
+		return {
+			...result,
+			worktreeRemoved: removal.removed,
+			...(removal.removed ? {} : { worktreeKeptReason: removal.reason }),
+		};
+	}
+	return result;
+});
 
 ipcMain.handle("backend:open-external", async (_event, url) => {
 	await openExternalSafely(url);
@@ -741,6 +791,21 @@ ipcMain.handle("backend:restart", async () => {
 	primaryBackend.start();
 });
 
+// Folder picker with an unambiguous cancel signal; workspace:choose overloads
+// "changed:false" for both cancel and picking the current folder, which the
+// same-repo task flow must distinguish.
+ipcMain.handle("dialog:pick-folder", async () => {
+	const result = await dialog.showOpenDialog(mainWindow, {
+		title: "Choose Task Folder",
+		defaultPath: backendCwd,
+		properties: ["openDirectory"],
+	});
+	if (result.canceled || result.filePaths.length === 0) {
+		return { canceled: true };
+	}
+	return { canceled: false, cwd: result.filePaths[0] };
+});
+
 ipcMain.handle("workspace:choose", async () => {
 	const result = await dialog.showOpenDialog(mainWindow, {
 		title: "Open Workspace",
@@ -767,27 +832,35 @@ ipcMain.handle("workspace:open", async (_event, cwd) => {
 
 ipcMain.handle("workspace:get", async () => ({ cwd: backendCwd, taskCwd: getTaskWorkspacePath() }));
 
-ipcMain.handle("workspace:get-git-status", async () => {
-	const cwd = backendCwd;
+// Git and workspace-scoped IPC follows the renderer's active task: a pool
+// task (worktree or plain) gets its own folder's git state, not the primary's.
+function resolveTaskCwd(taskId) {
+	return taskRegistry.get(typeof taskId === "string" && taskId ? taskId : undefined).cwd();
+}
+
+ipcMain.handle("workspace:get-git-status", async (_event, taskId) => {
+	const cwd = resolveTaskCwd(taskId);
 	return { cwd, ...(await getGitWorkspaceStatus(cwd)) };
 });
 
-ipcMain.handle("git:changes", async () => listGitChanges(backendCwd));
+ipcMain.handle("git:changes", async (_event, taskId) => listGitChanges(resolveTaskCwd(taskId)));
 
-ipcMain.handle("git:commit-all", async (_event, message) => commitAllChanges(backendCwd, message));
-
-ipcMain.handle("git:branches", async () => listGitBranches(backendCwd));
-
-ipcMain.handle("git:push", async () => pushCurrentBranch(backendCwd));
-
-ipcMain.handle("git:switch-branch", async (_event, name, options) =>
-	switchGitBranch(backendCwd, name, { create: Boolean(options?.create) }),
+ipcMain.handle("git:commit-all", async (_event, message, taskId) =>
+	commitAllChanges(resolveTaskCwd(taskId), message),
 );
 
-ipcMain.handle("git:pr-context", async () => getPullRequestContext(backendCwd));
+ipcMain.handle("git:branches", async (_event, taskId) => listGitBranches(resolveTaskCwd(taskId)));
 
-ipcMain.handle("git:create-pr", async (_event, params) => {
-	const result = await createPullRequest(backendCwd, {
+ipcMain.handle("git:push", async (_event, taskId) => pushCurrentBranch(resolveTaskCwd(taskId)));
+
+ipcMain.handle("git:switch-branch", async (_event, name, options, taskId) =>
+	switchGitBranch(resolveTaskCwd(taskId), name, { create: Boolean(options?.create) }),
+);
+
+ipcMain.handle("git:pr-context", async (_event, taskId) => getPullRequestContext(resolveTaskCwd(taskId)));
+
+ipcMain.handle("git:create-pr", async (_event, params, taskId) => {
+	const result = await createPullRequest(resolveTaskCwd(taskId), {
 		title: String(params?.title ?? ""),
 		body: String(params?.body ?? ""),
 		base: String(params?.base ?? ""),
@@ -799,8 +872,8 @@ ipcMain.handle("git:create-pr", async (_event, params) => {
 	return result;
 });
 
-ipcMain.handle("workspace:list-files", async (_event, query) => ({
-	files: listWorkspaceFiles(backendCwd, String(query ?? "")),
+ipcMain.handle("workspace:list-files", async (_event, query, taskId) => ({
+	files: listWorkspaceFiles(resolveTaskCwd(taskId), String(query ?? "")),
 }));
 
 ipcMain.handle("workspace:reveal", async (_event, cwd) => {
@@ -815,12 +888,13 @@ ipcMain.handle("workspace:reveal", async (_event, cwd) => {
 	return { opened: true };
 });
 
-ipcMain.handle("workspace:reveal-path", async (_event, targetPath) => {
-	const absolutePath = resolveWorkspacePath(backendCwd, String(targetPath ?? ""));
+ipcMain.handle("workspace:reveal-path", async (_event, targetPath, taskId) => {
+	const taskCwd = resolveTaskCwd(taskId);
+	const absolutePath = resolveWorkspacePath(taskCwd, String(targetPath ?? ""));
 	if (!existsSync(absolutePath)) {
 		throw new Error(`Path not found: ${absolutePath}`);
 	}
-	const { insideWorkspace } = describeRevealTarget(backendCwd, absolutePath);
+	const { insideWorkspace } = describeRevealTarget(taskCwd, absolutePath);
 	if (!insideWorkspace) {
 		throw new Error(`Path is outside the workspace: ${absolutePath}`);
 	}

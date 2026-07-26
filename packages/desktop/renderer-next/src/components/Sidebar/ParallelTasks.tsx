@@ -35,12 +35,17 @@ export function ParallelTasks() {
     if (busy || poolFull) return;
     setCreating(true);
     try {
-      const picked = await api.chooseWorkspace();
-      if (!picked.cwd || !picked.changed) return;
+      const picked = await api.pickTaskFolder();
+      if (picked.canceled || !picked.cwd) return;
       const created = await api.createTask(picked.cwd);
       await refreshTasks();
       await switchActiveTask(created.taskId);
-      showToast(t("Parallel task started in {cwd}", "已在 {cwd} 启动并行任务", { cwd: picked.cwd }), "success");
+      showToast(
+        created.branch
+          ? t("Parallel task started on {branch}", "已在分支 {branch} 上启动并行任务", { branch: created.branch })
+          : t("Parallel task started in {cwd}", "已在 {cwd} 启动并行任务", { cwd: picked.cwd }),
+        "success",
+      );
     } catch (error) {
       showToast(t("Could not start the task: {message}", "启动并行任务失败：{message}", {
         message: errorText(error),
@@ -67,9 +72,14 @@ export function ParallelTasks() {
       if (taskRegistry.activeTaskId === taskId) {
         await switchActiveTask(PRIMARY_TASK_ID);
       }
-      await api.stopTask(taskId);
+      const result = await api.stopTask(taskId);
       await refreshTasks();
-      showToast(t("Task stopped", "任务已停止"), "success");
+      showToast(
+        result.worktreeRemoved === false
+          ? t("Task stopped; the worktree has changes and was kept", "任务已停止；工作树有改动，已保留")
+          : t("Task stopped", "任务已停止"),
+        "success",
+      );
     } catch (error) {
       showToast(t("Could not stop the task: {message}", "停止任务失败：{message}", {
         message: errorText(error),
@@ -115,6 +125,11 @@ export function ParallelTasks() {
               />
               <span className="parallel-task-label">{row.label}</span>
               {row.isPrimary && <span className="parallel-task-kind">{t("main", "主")}</span>}
+              {row.branch && (
+                <span className="parallel-task-branch" title={row.branch}>
+                  {row.branch}
+                </span>
+              )}
               {switchingId === row.taskId && <span className="parallel-task-kind">…</span>}
               {row.unread > 0 && (
                 <span

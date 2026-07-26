@@ -27,6 +27,9 @@ export function createTaskRegistry({ primary, createHandle, maxTasks = DEFAULT_M
 			isPrimary: entry.isPrimary,
 			ready: Boolean(entry.handle.ready),
 			starting: Boolean(entry.handle.starting),
+			// Worktree tasks carry their provenance for display and cleanup.
+			...(entry.meta?.branch ? { branch: entry.meta.branch } : {}),
+			...(entry.meta?.sourceRepo ? { sourceRepo: entry.meta.sourceRepo } : {}),
 		};
 	}
 
@@ -40,7 +43,20 @@ export function createTaskRegistry({ primary, createHandle, maxTasks = DEFAULT_M
 	}
 
 	return {
-		create(cwd) {
+		/** True when the folder is already running as the primary or a task. */
+		isClaimed(cwd) {
+			return Boolean(findClaim(cwd));
+		},
+
+		/** Throws the cap error early, before any expensive provisioning. */
+		assertCapacity() {
+			if (pool.size >= maxTasks) {
+				const running = [...pool.values()].map((entry) => `${entry.taskId} (${entry.cwd()})`).join(", ");
+				throw new Error(`Task limit reached (${maxTasks}). Stop one first — running: ${running}`);
+			}
+		},
+
+		create(cwd, meta) {
 			if (pool.size >= maxTasks) {
 				const running = [...pool.values()].map((entry) => `${entry.taskId} (${entry.cwd()})`).join(", ");
 				throw new Error(`Task limit reached (${maxTasks}). Stop one first — running: ${running}`);
@@ -49,14 +65,14 @@ export function createTaskRegistry({ primary, createHandle, maxTasks = DEFAULT_M
 			if (claim) {
 				throw new Error(
 					claim.isPrimary
-						? `That folder is the primary workspace and already running (same-repo isolation lands in M3)`
-						: `A task is already running in that folder: ${claim.taskId} (same-repo isolation lands in M3)`,
+						? `That folder is the primary workspace and already running`
+						: `A task is already running in that folder: ${claim.taskId}`,
 				);
 			}
 			const taskId = `task_${++taskCounter}`;
 			const fixedCwd = String(cwd);
 			const handle = createHandle(taskId, fixedCwd);
-			const entry = { taskId, cwd: () => fixedCwd, handle, isPrimary: false };
+			const entry = { taskId, cwd: () => fixedCwd, handle, isPrimary: false, meta };
 			pool.set(taskId, entry);
 			handle.start();
 			return snapshot(entry);

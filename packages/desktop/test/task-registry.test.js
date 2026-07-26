@@ -60,7 +60,9 @@ test("refuses creation at the cap and lists the running tasks in the error", () 
 	const { registry } = createFixture();
 	registry.create(poolCwd("a"));
 	registry.create(poolCwd("b"));
+	assert.doesNotThrow(() => registry.assertCapacity());
 	registry.create(poolCwd("c"));
+	assert.throws(() => registry.assertCapacity(), /task limit/iu);
 	assert.throws(
 		() => registry.create(poolCwd("d")),
 		(error) => {
@@ -81,8 +83,10 @@ test("honors a custom cap", () => {
 test("refuses a cwd already claimed by a running task or the primary workspace", () => {
 	const { registry } = createFixture();
 	registry.create(poolCwd("a"));
-	assert.throws(() => registry.create(poolCwd("a")), /already running.*same-repo isolation/isu);
+	assert.throws(() => registry.create(poolCwd("a")), /already running/iu);
 	assert.throws(() => registry.create(primaryCwd), /already running|primary workspace/iu);
+	assert.equal(registry.isClaimed(poolCwd("a")), true);
+	assert.equal(registry.isClaimed(poolCwd("free")), false);
 });
 
 test("get resolves the primary by default, entries by id, and throws on unknown ids", () => {
@@ -117,6 +121,23 @@ test("list returns live snapshots with the primary first", () => {
 		{ taskId: "main", cwd: primaryCwd, isPrimary: true, ready: true, starting: false },
 		{ taskId: "task_1", cwd: poolCwd("a"), isPrimary: false, ready: true, starting: false },
 	]);
+});
+
+test("passes worktree metadata through to snapshots and list entries", () => {
+	const { registry } = createFixture();
+	const created = registry.create(poolCwd("wt"), {
+		branch: "task/my-app-1",
+		sourceRepo: primaryCwd,
+		worktreePath: poolCwd("wt"),
+	});
+	assert.equal(created.branch, "task/my-app-1");
+	assert.equal(created.sourceRepo, primaryCwd);
+	const listed = registry.list().find((entry) => entry.taskId === created.taskId);
+	assert.equal(listed.branch, "task/my-app-1");
+	assert.equal(registry.get(created.taskId).meta.worktreePath, poolCwd("wt"));
+	// Entries without metadata stay unchanged in shape.
+	const plain = registry.create(poolCwd("plain"));
+	assert.equal(plain.branch, undefined);
 });
 
 test("stopAll stops the primary and every pool member", () => {

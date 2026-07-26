@@ -28,44 +28,47 @@ contextBridge.exposeInMainWorld("piDesktop", {
 	chooseWorkspace() {
 		return ipcRenderer.invoke("workspace:choose");
 	},
+	pickTaskFolder() {
+		return ipcRenderer.invoke("dialog:pick-folder");
+	},
 	openWorkspace(cwd) {
 		return ipcRenderer.invoke("workspace:open", cwd);
 	},
 	getWorkspace() {
 		return ipcRenderer.invoke("workspace:get");
 	},
-	getWorkspaceGitStatus() {
-		return ipcRenderer.invoke("workspace:get-git-status");
+	getWorkspaceGitStatus(taskId) {
+		return ipcRenderer.invoke("workspace:get-git-status", taskId);
 	},
-	getGitChanges() {
-		return ipcRenderer.invoke("git:changes");
+	getGitChanges(taskId) {
+		return ipcRenderer.invoke("git:changes", taskId);
 	},
-	commitAllGitChanges(message) {
-		return ipcRenderer.invoke("git:commit-all", message);
+	commitAllGitChanges(message, taskId) {
+		return ipcRenderer.invoke("git:commit-all", message, taskId);
 	},
-	getGitBranches() {
-		return ipcRenderer.invoke("git:branches");
+	getGitBranches(taskId) {
+		return ipcRenderer.invoke("git:branches", taskId);
 	},
-	pushGitBranch() {
-		return ipcRenderer.invoke("git:push");
+	pushGitBranch(taskId) {
+		return ipcRenderer.invoke("git:push", taskId);
 	},
-	switchGitBranch(name, options) {
-		return ipcRenderer.invoke("git:switch-branch", name, options);
+	switchGitBranch(name, options, taskId) {
+		return ipcRenderer.invoke("git:switch-branch", name, options, taskId);
 	},
-	getGitPrContext() {
-		return ipcRenderer.invoke("git:pr-context");
+	getGitPrContext(taskId) {
+		return ipcRenderer.invoke("git:pr-context", taskId);
 	},
-	createGitPullRequest(params) {
-		return ipcRenderer.invoke("git:create-pr", params);
+	createGitPullRequest(params, taskId) {
+		return ipcRenderer.invoke("git:create-pr", params, taskId);
 	},
-	listWorkspaceFiles(query) {
-		return ipcRenderer.invoke("workspace:list-files", query);
+	listWorkspaceFiles(query, taskId) {
+		return ipcRenderer.invoke("workspace:list-files", query, taskId);
 	},
 	openWorkspaceLocation(cwd) {
 		return ipcRenderer.invoke("workspace:reveal", cwd);
 	},
-	revealWorkspacePath(targetPath) {
-		return ipcRenderer.invoke("workspace:reveal-path", targetPath);
+	revealWorkspacePath(targetPath, taskId) {
+		return ipcRenderer.invoke("workspace:reveal-path", targetPath, taskId);
 	},
 	revealSessionFile(sessionPath) {
 		return ipcRenderer.invoke("session:reveal", sessionPath);

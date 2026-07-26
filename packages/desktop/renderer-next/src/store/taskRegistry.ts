@@ -17,6 +17,8 @@ export interface TaskSummary {
   streaming: boolean;
   unread: number;
   completed: boolean;
+  /** Worktree tasks run on their own branch of the source repository. */
+  branch?: string;
 }
 
 export interface TaskListSnapshot {
@@ -25,6 +27,7 @@ export interface TaskListSnapshot {
   isPrimary: boolean;
   ready: boolean;
   starting: boolean;
+  branch?: string;
 }
 
 export interface TaskRegistryState {
@@ -157,6 +160,7 @@ export function mergeTaskList(state: TaskRegistryState, snapshots: TaskListSnaps
       isPrimary: snapshot.isPrimary,
       ready: snapshot.ready,
       starting: snapshot.starting,
+      ...(snapshot.branch ? { branch: snapshot.branch } : {}),
     };
   }
   if (!tasks[PRIMARY_TASK_ID]) {

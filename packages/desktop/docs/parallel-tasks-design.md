@@ -101,7 +101,7 @@ Approvals: `extension_ui_request` events are already correlated by id in the
 per-backend pending store; the dialog surfaces the owning task's name. A
 background task waiting on approval shows a badge on its sidebar row.
 
-### 3.3 Same-repo isolation (M3)
+### 3.3 Same-repo isolation (M3) — LANDED 2026-07-26 (see parallel-tasks-m3-tdd.md)
 
 Two tasks in one repository must not fight over the working tree. Reuse the
 existing git plumbing (`git-commit.js` patterns) to offer, at `task:create`

@@ -44,7 +44,7 @@ The flagship capability: several agent runs at once, each in its own workspace w
 - The **task registry** (main process) caps the pool (default 3), allocates stable ids, enforces one running task per folder, and lazily spawns `BackendHandle`s.
 - **Events are tagged** with their originating backend. The renderer routes them: the active task feeds the full conversation pipeline; background tasks only update summaries — a streaming indicator, an unread counter, a completion state with a toast and an OS notification.
 - **Switching is hydration, not restart.** Activating a task re-pulls its state over RPC (the same battle-tested path used for workspace switches); no process is stopped, and background runs continue uninterrupted. The backend session file remains the single source of truth, so nothing is lost mid-stream.
-- Same-repository isolation (multiple tasks in one checkout via `git worktree`) is the next milestone; until then the registry refuses a second task in a claimed folder.
+- **Same-repository isolation:** picking a folder that is already running provisions a `git worktree` on a fresh `task/<name>` branch under the app's data directory — several agents work one repository without touching each other's files. Git and workspace IPC follows the active task, so a worktree task commits, pushes, and opens pull requests on its own branch from inside the app; stopping the task removes a clean worktree (a worktree with changes is kept, never forced) while the branch stays for review and landing. Non-git folders refuse a second concurrent task.
 
 ### Security model
 
@@ -113,9 +113,9 @@ The fork root is an upstream commit, so upstream releases merge as plain three-w
 
 Near-term (in order):
 
-1. **Same-repo parallel isolation** — `git worktree` per task with merge-back through the existing git panel (design in `docs/parallel-tasks-design.md`).
-2. **Pool lifecycle polish** — idle reaping, pool-size setting, richer task rows.
-3. **Main-process TypeScript migration** and rolling file logs.
+1. **Pool lifecycle polish** — idle reaping, pool-size setting, richer task rows.
+2. **Main-process TypeScript migration** and rolling file logs.
+3. **Worktree ergonomics** — trust inheritance from the source repository, worktree cleanup management for kept-dirty trees.
 
 Deliberately deferred: code signing and auto-update, installer distribution, backend size reduction (~100 MB Bun runtime), macOS/Linux, additional locales.
 

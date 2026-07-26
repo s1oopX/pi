@@ -620,8 +620,8 @@ export const useStore = create<AppState>((set, get) => ({
     // without restarting any backend process.
     api.setActiveBackendTask(isPrimary ? undefined : taskId);
     set({ taskRegistry: switchTask(registry, taskId) });
+    // Git status follows the active task since M3 routes git IPC per task.
     await get().resetForWorkspace(target.cwd || get().workspaceCwd, {
-      gitRefresh: isPrimary,
       ready: isPrimary ? get().backendStatus.ready : target.ready,
     });
   },

@@ -704,6 +704,21 @@
   font-size: 11px;
 }
 
+.parallel-task-branch {
+  flex: none;
+  max-width: 45%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  padding: 0 5px;
+  border-radius: var(--radius-pill);
+  background: var(--control-hover);
+  color: var(--muted);
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  line-height: 16px;
+}
+
 .parallel-task-unread {
   flex: none;
   min-width: 16px;

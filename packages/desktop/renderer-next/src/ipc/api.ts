@@ -39,22 +39,26 @@ export interface PiDesktopApi {
   getPendingExtensionUIRequests?: (taskId?: string) => Promise<ExtensionUIRequestEvent[]>;
   createTask?: (cwd: string) => Promise<TaskSnapshot>;
   listTasks?: () => Promise<{ tasks: TaskSnapshot[] }>;
-  stopTask?: (taskId: string) => Promise<{ stopped: boolean; taskId: string }>;
+  stopTask?: (taskId: string) => Promise<{ stopped: boolean; taskId: string; worktreeRemoved?: boolean; worktreeKeptReason?: string }>;
+  pickTaskFolder?: () => Promise<{ canceled: boolean; cwd?: string }>;
   restartBackend(): Promise<void>;
   chooseWorkspace(): Promise<{ cwd: string; changed: boolean }>;
   openWorkspace(cwd: string): Promise<{ cwd: string; changed: boolean }>;
   getWorkspace(): Promise<{ cwd: string; taskCwd: string }>;
-  getWorkspaceGitStatus(): Promise<WorkspaceGitStatus>;
-  getGitChanges(): Promise<GitChanges>;
-  commitAllGitChanges(message: string): Promise<{ committed: boolean; summary: string }>;
-  getGitBranches(): Promise<GitBranches>;
-  pushGitBranch(): Promise<GitPushResult>;
-  switchGitBranch(name: string, options?: { create?: boolean }): Promise<GitSwitchResult>;
-  getGitPrContext(): Promise<GitPrContext>;
-  createGitPullRequest(params: { title: string; body: string; base: string }): Promise<GitPrResult>;
-  listWorkspaceFiles(query?: string): Promise<{ files: string[] }>;
+  getWorkspaceGitStatus(taskId?: string): Promise<WorkspaceGitStatus>;
+  getGitChanges(taskId?: string): Promise<GitChanges>;
+  commitAllGitChanges(message: string, taskId?: string): Promise<{ committed: boolean; summary: string }>;
+  getGitBranches(taskId?: string): Promise<GitBranches>;
+  pushGitBranch(taskId?: string): Promise<GitPushResult>;
+  switchGitBranch(name: string, options?: { create?: boolean }, taskId?: string): Promise<GitSwitchResult>;
+  getGitPrContext(taskId?: string): Promise<GitPrContext>;
+  createGitPullRequest(params: { title: string; body: string; base: string }, taskId?: string): Promise<GitPrResult>;
+  listWorkspaceFiles(query?: string, taskId?: string): Promise<{ files: string[] }>;
   openWorkspaceLocation(cwd?: string): Promise<{ opened: boolean }>;
-  revealWorkspacePath(targetPath: string): Promise<{ revealed: boolean; path: string; insideWorkspace: boolean }>;
+  revealWorkspacePath(
+    targetPath: string,
+    taskId?: string,
+  ): Promise<{ revealed: boolean; path: string; insideWorkspace: boolean }>;
   revealSessionFile(sessionPath: string): Promise<{ revealed: boolean }>;
   trashSessionFile(sessionPath: string): Promise<{ trashed: boolean }>;
   exportSessionFile(sessionPath: string): Promise<{ exported: boolean; path?: string }>;
@@ -116,6 +120,9 @@ export interface TaskSnapshot {
   isPrimary: boolean;
   ready: boolean;
   starting: boolean;
+  /** Worktree tasks carry the branch they run on and the repo they came from. */
+  branch?: string;
+  sourceRepo?: string;
 }
 
 export async function createTask(cwd: string): Promise<TaskSnapshot> {
@@ -131,10 +138,18 @@ export async function listTasks(): Promise<TaskSnapshot[]> {
   return result.tasks ?? [];
 }
 
-export async function stopTask(taskId: string): Promise<void> {
+export async function stopTask(
+  taskId: string,
+): Promise<{ stopped: boolean; taskId: string; worktreeRemoved?: boolean; worktreeKeptReason?: string }> {
   const api = requireApi();
   if (!api.stopTask) throw new Error("Parallel tasks need a newer Pi Studio build");
-  await api.stopTask(taskId);
+  return api.stopTask(taskId);
+}
+
+export async function pickTaskFolder(): Promise<{ canceled: boolean; cwd?: string }> {
+  const api = requireApi();
+  if (!api.pickTaskFolder) throw new Error("Parallel tasks need a newer Pi Studio build");
+  return api.pickTaskFolder();
 }
 
 // --- State ---
@@ -446,39 +461,39 @@ export async function getWorkspace(): Promise<{ cwd: string; taskCwd: string }> 
 }
 
 export async function getWorkspaceGitStatus(): Promise<WorkspaceGitStatus> {
-  return requireApi().getWorkspaceGitStatus();
+  return requireApi().getWorkspaceGitStatus(activeBackendTaskId);
 }
 
 export async function getGitChanges(): Promise<GitChanges> {
-  return requireApi().getGitChanges();
+  return requireApi().getGitChanges(activeBackendTaskId);
 }
 
 export async function commitAllGitChanges(message: string): Promise<{ committed: boolean; summary: string }> {
-  return requireApi().commitAllGitChanges(message);
+  return requireApi().commitAllGitChanges(message, activeBackendTaskId);
 }
 
 export async function getGitBranches(): Promise<GitBranches> {
-  return requireApi().getGitBranches();
+  return requireApi().getGitBranches(activeBackendTaskId);
 }
 
 export async function pushGitBranch(): Promise<GitPushResult> {
-  return requireApi().pushGitBranch();
+  return requireApi().pushGitBranch(activeBackendTaskId);
 }
 
 export async function switchGitBranch(name: string, options?: { create?: boolean }): Promise<GitSwitchResult> {
-  return requireApi().switchGitBranch(name, options);
+  return requireApi().switchGitBranch(name, options, activeBackendTaskId);
 }
 
 export async function getGitPrContext(): Promise<GitPrContext> {
-  return requireApi().getGitPrContext();
+  return requireApi().getGitPrContext(activeBackendTaskId);
 }
 
 export async function createGitPullRequest(params: { title: string; body: string; base: string }): Promise<GitPrResult> {
-  return requireApi().createGitPullRequest(params);
+  return requireApi().createGitPullRequest(params, activeBackendTaskId);
 }
 
 export async function listWorkspaceFiles(query?: string): Promise<string[]> {
-  const result = await requireApi().listWorkspaceFiles(query);
+  const result = await requireApi().listWorkspaceFiles(query, activeBackendTaskId);
   return result.files ?? [];
 }
 
@@ -489,7 +504,7 @@ export async function openWorkspaceLocation(cwd?: string): Promise<void> {
 export async function revealWorkspacePath(
   targetPath: string,
 ): Promise<{ revealed: boolean; path: string; insideWorkspace: boolean }> {
-  return requireApi().revealWorkspacePath(targetPath);
+  return requireApi().revealWorkspacePath(targetPath, activeBackendTaskId);
 }
 
 export async function revealSessionFile(sessionPath: string): Promise<void> {

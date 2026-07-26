@@ -16,6 +16,7 @@ export interface ParallelTaskRow {
   unread: number;
   completed: boolean;
   canStop: boolean;
+  branch?: string;
 }
 
 function toRow(summary: TaskSummary, activeTaskId: string): ParallelTaskRow {
@@ -31,6 +32,7 @@ function toRow(summary: TaskSummary, activeTaskId: string): ParallelTaskRow {
     unread: summary.unread,
     completed: summary.completed,
     canStop: !summary.isPrimary,
+    ...(summary.branch ? { branch: summary.branch } : {}),
   };
 }
 
