@@ -8,6 +8,7 @@ client (Electron main process and the `renderer-next` React renderer).
 
 ### Added
 
+- Arrow-key navigation across the sidebar's row lists: with focus on a project, parallel-task, or thread row, ArrowUp/ArrowDown move between visible rows (wrapping) and Home/End jump to the ends — the same listbox keyboard pattern the sidebar menus already follow, now shared through one roving-focus helper.
 - A drag narration overlay: while an OS file drag is over the window, a pointer-transparent card says what releasing will do — attach to the message over the composer, open as a workspace elsewhere. Enter/leave depth counting keeps it stable across child elements; window blur resets it.
 - Drop a folder anywhere in the window (outside the composer, which keeps its image-attachment drop zone) to open it as the workspace — resolved sandbox-safely through `webUtils.getPathForFile` in the preload; files and unreadable drops surface the normal open-workspace error.
 - "What's New" in About: an in-app changelog viewer. The packaged app now ships `CHANGELOG.md` inside the asar; a new `app:get-changelog` IPC reads it (512 KB cap) and a dialog renders it with the same markdown stack the conversation uses.

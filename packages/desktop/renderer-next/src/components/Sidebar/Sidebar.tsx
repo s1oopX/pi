@@ -10,6 +10,7 @@ import { BranchNavigator } from "../BranchNavigator";
 import { Dialog } from "../Dialog";
 import { showToast } from "../Toast";
 import { ParallelTasks } from "./ParallelTasks";
+import { nextRovingIndex } from "./sidebarFocus";
 import {
   addWorkspace,
   clearOtherWorkspaces,
@@ -457,6 +458,24 @@ export function Sidebar({ collapsed, onToggle }: SidebarProps) {
     if (restoreFocus) requestAnimationFrame(() => menuTriggerRef.current?.focus());
   }
 
+  // Arrow-key roving focus across the sidebar's row lists (project tree,
+  // parallel tasks, thread rows) - the listbox keyboard pattern the menus
+  // already follow. Rows are buttons, so focus itself is the cursor.
+  const LIST_ROW_SELECTOR =
+    ".project-tree-main:not(:disabled), .parallel-task-main:not(:disabled), .agent-row:not(:disabled)";
+  function handleListKeyDown(event: KeyboardEvent<HTMLElement>) {
+    if (!["ArrowDown", "ArrowUp", "Home", "End"].includes(event.key)) return;
+    const target = event.target;
+    if (!(target instanceof HTMLElement) || !target.matches(LIST_ROW_SELECTOR)) return;
+    const rows = Array.from(
+      event.currentTarget.querySelectorAll<HTMLButtonElement>(LIST_ROW_SELECTOR),
+    ).filter((row) => row.offsetParent !== null);
+    const nextIndex = nextRovingIndex(rows.length, rows.indexOf(target as HTMLButtonElement), event.key);
+    if (nextIndex === null) return;
+    event.preventDefault();
+    rows[nextIndex]?.focus();
+  }
+
   function handleSessionMenuKeyDown(event: KeyboardEvent<HTMLDivElement>) {
     if (event.key === "Escape") {
       event.preventDefault();
@@ -471,14 +490,9 @@ export function Sidebar({ collapsed, onToggle }: SidebarProps) {
     if (!["ArrowDown", "ArrowUp", "Home", "End"].includes(event.key)) return;
     event.preventDefault();
     const items = Array.from(menuRef.current?.querySelectorAll<HTMLButtonElement>("[role='menuitem']:not(:disabled)") ?? []);
-    if (items.length === 0) return;
     const currentIndex = items.indexOf(document.activeElement as HTMLButtonElement);
-    let nextIndex: number;
-    if (event.key === "Home") nextIndex = 0;
-    else if (event.key === "End") nextIndex = items.length - 1;
-    else if (event.key === "ArrowDown") nextIndex = (currentIndex + 1 + items.length) % items.length;
-    else nextIndex = (currentIndex - 1 + items.length) % items.length;
-    items[nextIndex]?.focus();
+    const nextIndex = nextRovingIndex(items.length, currentIndex, event.key);
+    if (nextIndex !== null) items[nextIndex]?.focus();
   }
 
   async function handleRevealSession(candidate: SessionInfo) {
@@ -688,14 +702,9 @@ export function Sidebar({ collapsed, onToggle }: SidebarProps) {
     const items = Array.from(
       workspaceMenuRef.current?.querySelectorAll<HTMLButtonElement>("[role='menuitem']:not(:disabled)") ?? [],
     );
-    if (items.length === 0) return;
     const currentIndex = items.indexOf(document.activeElement as HTMLButtonElement);
-    let nextIndex: number;
-    if (event.key === "Home") nextIndex = 0;
-    else if (event.key === "End") nextIndex = items.length - 1;
-    else if (event.key === "ArrowDown") nextIndex = (currentIndex + 1 + items.length) % items.length;
-    else nextIndex = (currentIndex - 1 + items.length) % items.length;
-    items[nextIndex]?.focus();
+    const nextIndex = nextRovingIndex(items.length, currentIndex, event.key);
+    if (nextIndex !== null) items[nextIndex]?.focus();
   }
 
   function handleRemoveWorkspace(cwd: string) {
@@ -805,7 +814,11 @@ export function Sidebar({ collapsed, onToggle }: SidebarProps) {
 
   return (
     <>
-      <aside className={`sidebar ${collapsed ? "collapsed" : ""}`} aria-label={t("Sidebar", "侧边栏")}>
+      <aside
+        className={`sidebar ${collapsed ? "collapsed" : ""}`}
+        aria-label={t("Sidebar", "侧边栏")}
+        onKeyDown={handleListKeyDown}
+      >
       <div className="sidebar-header">
         {!collapsed && (
           <div className="brand-lockup">
