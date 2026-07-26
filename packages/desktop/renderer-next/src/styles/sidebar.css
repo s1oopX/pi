@@ -622,3 +622,111 @@
   padding: 7px 8px;
   text-align: left;
 }
+
+/* Parallel tasks (multi-backend pool) */
+
+.parallel-task-list {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+
+.parallel-task-row {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  border-radius: var(--radius-xs);
+}
+
+.parallel-task-row.active .parallel-task-main {
+  background: var(--control-active, var(--control-hover));
+  color: var(--text);
+}
+
+.parallel-task-main {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  padding: 5px 8px;
+  border-radius: var(--radius-xs);
+  color: var(--text-soft);
+  font-size: 12.5px;
+  text-align: left;
+}
+
+.parallel-task-main:hover:not(:disabled) {
+  background: var(--control-hover);
+}
+
+.parallel-task-main:disabled {
+  opacity: 0.55;
+}
+
+.parallel-task-dot {
+  width: 6px;
+  height: 6px;
+  flex-shrink: 0;
+  border-radius: 50%;
+  background: var(--faint);
+}
+
+.parallel-task-dot.ready {
+  background: var(--success);
+}
+
+.parallel-task-dot.streaming {
+  background: var(--accent);
+  animation: parallel-task-pulse 1.2s ease-in-out infinite;
+}
+
+@keyframes parallel-task-pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.35; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .parallel-task-dot.streaming {
+    animation: none;
+  }
+}
+
+.parallel-task-label {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.parallel-task-kind {
+  flex: none;
+  color: var(--muted);
+  font-size: 11px;
+}
+
+.parallel-task-unread {
+  flex: none;
+  min-width: 16px;
+  padding: 0 4px;
+  border-radius: var(--radius-pill);
+  background: var(--accent);
+  color: var(--accent-contrast);
+  font-size: 10.5px;
+  line-height: 16px;
+  text-align: center;
+  font-variant-numeric: tabular-nums;
+}
+
+.parallel-task-stop {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  padding: 4px;
+  border-radius: var(--radius-xs);
+  color: var(--muted);
+}
+
+.parallel-task-stop:hover:not(:disabled) {
+  background: var(--control-hover);
+  color: var(--danger);
+}

@@ -33,10 +33,13 @@ import type {
 } from "./types";
 
 export interface PiDesktopApi {
-  request(command: BackendCommand): Promise<unknown>;
-  send(command: BackendSendCommand): Promise<void>;
-  getBackendStatus(): Promise<BackendStatus>;
-  getPendingExtensionUIRequests?: () => Promise<ExtensionUIRequestEvent[]>;
+  request(command: BackendCommand, taskId?: string): Promise<unknown>;
+  send(command: BackendSendCommand, taskId?: string): Promise<void>;
+  getBackendStatus(taskId?: string): Promise<BackendStatus>;
+  getPendingExtensionUIRequests?: (taskId?: string) => Promise<ExtensionUIRequestEvent[]>;
+  createTask?: (cwd: string) => Promise<TaskSnapshot>;
+  listTasks?: () => Promise<{ tasks: TaskSnapshot[] }>;
+  stopTask?: (taskId: string) => Promise<{ stopped: boolean; taskId: string }>;
   restartBackend(): Promise<void>;
   chooseWorkspace(): Promise<{ cwd: string; changed: boolean }>;
   openWorkspace(cwd: string): Promise<{ cwd: string; changed: boolean }>;
@@ -89,38 +92,83 @@ function requireApi(): PiDesktopApi {
   return api;
 }
 
+// --- Active-task routing (parallel tasks M2) ---
+// Backend traffic implicitly targets the active task so the dozens of
+// call sites below stay unchanged. undefined routes to the primary.
+
+let activeBackendTaskId: string | undefined;
+
+export function setActiveBackendTask(taskId: string | undefined): void {
+  activeBackendTaskId = taskId;
+}
+
+export function getActiveBackendTask(): string | undefined {
+  return activeBackendTaskId;
+}
+
+function backendRequest(command: BackendCommand): Promise<unknown> {
+  return requireApi().request(command, activeBackendTaskId);
+}
+
+export interface TaskSnapshot {
+  taskId: string;
+  cwd: string;
+  isPrimary: boolean;
+  ready: boolean;
+  starting: boolean;
+}
+
+export async function createTask(cwd: string): Promise<TaskSnapshot> {
+  const api = requireApi();
+  if (!api.createTask) throw new Error("Parallel tasks need a newer Pi Studio build");
+  return api.createTask(cwd);
+}
+
+export async function listTasks(): Promise<TaskSnapshot[]> {
+  const api = getApi();
+  if (!api?.listTasks) return [];
+  const result = await api.listTasks();
+  return result.tasks ?? [];
+}
+
+export async function stopTask(taskId: string): Promise<void> {
+  const api = requireApi();
+  if (!api.stopTask) throw new Error("Parallel tasks need a newer Pi Studio build");
+  await api.stopTask(taskId);
+}
+
 // --- State ---
 
 export async function getState(): Promise<SessionState> {
-  return (await requireApi().request({ type: "get_state" })) as SessionState;
+  return (await backendRequest({ type: "get_state" })) as SessionState;
 }
 
 export async function getMessages(): Promise<Message[]> {
-  const result = (await requireApi().request({ type: "get_messages" })) as { messages: Message[] };
+  const result = (await backendRequest({ type: "get_messages" })) as { messages: Message[] };
   return result.messages ?? [];
 }
 
 // --- Models ---
 
 export async function getAvailableModels(): Promise<Model[]> {
-  const result = (await requireApi().request({ type: "get_available_models" })) as { models: Model[] };
+  const result = (await backendRequest({ type: "get_available_models" })) as { models: Model[] };
   return result.models ?? [];
 }
 
 export async function getCustomModels(): Promise<CustomModelsConfig> {
-  return (await requireApi().request({ type: "get_custom_models" })) as CustomModelsConfig;
+  return (await backendRequest({ type: "get_custom_models" })) as CustomModelsConfig;
 }
 
 export async function setModel(provider: string, modelId: string): Promise<void> {
-  await requireApi().request({ type: "set_model", provider, modelId });
+  await backendRequest({ type: "set_model", provider, modelId });
 }
 
 export async function cycleModel(): Promise<void> {
-  await requireApi().request({ type: "cycle_model" });
+  await backendRequest({ type: "cycle_model" });
 }
 
 export async function getAuthStatus(providers?: string[]): Promise<Record<string, AuthStatus>> {
-  const result = (await requireApi().request({
+  const result = (await backendRequest({
     type: "get_auth_status",
     ...(providers ? { providers } : {}),
   })) as {
@@ -130,21 +178,21 @@ export async function getAuthStatus(providers?: string[]): Promise<Record<string
 }
 
 export async function setApiKey(provider: string, apiKey: string): Promise<{ provider: string; status: AuthStatus }> {
-  return (await requireApi().request({ type: "set_api_key", provider, apiKey })) as {
+  return (await backendRequest({ type: "set_api_key", provider, apiKey })) as {
     provider: string;
     status: AuthStatus;
   };
 }
 
 export async function removeApiKey(provider: string): Promise<{ provider: string; status: AuthStatus }> {
-  return (await requireApi().request({ type: "remove_api_key", provider })) as {
+  return (await backendRequest({ type: "remove_api_key", provider })) as {
     provider: string;
     status: AuthStatus;
   };
 }
 
 export async function testModel(provider: string, modelId: string): Promise<unknown> {
-  return requireApi().request({ type: "test_model", provider, modelId });
+  return backendRequest({ type: "test_model", provider, modelId });
 }
 
 export async function testCustomModel(params: {
@@ -158,7 +206,7 @@ export async function testCustomModel(params: {
   preserveHeadersFromProvider?: string;
   proxyUrl?: string;
 }): Promise<unknown> {
-  return requireApi().request({ type: "test_custom_model", ...params });
+  return backendRequest({ type: "test_custom_model", ...params });
 }
 
 export async function fetchProviderModels(params: {
@@ -171,7 +219,7 @@ export async function fetchProviderModels(params: {
   preserveHeadersFromProvider?: string;
   proxyUrl?: string;
 }): Promise<{ models: { id: string; name?: string }[] }> {
-  const result = (await requireApi().request({ type: "fetch_provider_models", ...params })) as {
+  const result = (await backendRequest({ type: "fetch_provider_models", ...params })) as {
     models: { id: string; name?: string }[];
   };
   return { models: result.models ?? [] };
@@ -195,106 +243,106 @@ export async function upsertCustomModel(params: {
     maxTokens?: number;
   };
 }): Promise<void> {
-  await requireApi().request({ type: "upsert_custom_model", ...params });
+  await backendRequest({ type: "upsert_custom_model", ...params });
 }
 
 export async function removeCustomModel(provider: string, modelId: string, removeAuthWhenEmpty?: boolean): Promise<void> {
-  await requireApi().request({ type: "remove_custom_model", provider, modelId, removeAuthWhenEmpty });
+  await backendRequest({ type: "remove_custom_model", provider, modelId, removeAuthWhenEmpty });
 }
 
 export async function removeCustomProvider(provider: string, removeAuth?: boolean): Promise<void> {
-  await requireApi().request({ type: "remove_custom_provider", provider, removeAuth });
+  await backendRequest({ type: "remove_custom_provider", provider, removeAuth });
 }
 
 export async function replaceCustomModels(
   providers: Record<string, unknown>,
   options: { removeOrphanStoredAuth?: boolean } = {},
 ): Promise<void> {
-  await requireApi().request({ type: "replace_custom_models", providers, ...options });
+  await backendRequest({ type: "replace_custom_models", providers, ...options });
 }
 
 // --- Thinking ---
 
 export async function setThinkingLevel(level: ThinkingLevel): Promise<void> {
-  await requireApi().request({ type: "set_thinking_level", level });
+  await backendRequest({ type: "set_thinking_level", level });
 }
 
 export async function cycleThinkingLevel(): Promise<void> {
-  await requireApi().request({ type: "cycle_thinking_level" });
+  await backendRequest({ type: "cycle_thinking_level" });
 }
 
 // --- Queue modes ---
 
 export async function setSteeringMode(mode: QueueMode): Promise<void> {
-  await requireApi().request({ type: "set_steering_mode", mode });
+  await backendRequest({ type: "set_steering_mode", mode });
 }
 
 export async function setFollowUpMode(mode: QueueMode): Promise<void> {
-  await requireApi().request({ type: "set_follow_up_mode", mode });
+  await backendRequest({ type: "set_follow_up_mode", mode });
 }
 
 // --- Compaction & retry ---
 
 export async function compact(customInstructions?: string): Promise<void> {
-  await requireApi().request({ type: "compact", customInstructions });
+  await backendRequest({ type: "compact", customInstructions });
 }
 
 export async function setAutoCompaction(enabled: boolean): Promise<void> {
-  await requireApi().request({ type: "set_auto_compaction", enabled });
+  await backendRequest({ type: "set_auto_compaction", enabled });
 }
 
 export async function setAutoRetry(enabled: boolean): Promise<void> {
-  await requireApi().request({ type: "set_auto_retry", enabled });
+  await backendRequest({ type: "set_auto_retry", enabled });
 }
 
 export async function abortRetry(): Promise<void> {
-  await requireApi().request({ type: "abort_retry" });
+  await backendRequest({ type: "abort_retry" });
 }
 
 // --- Sessions ---
 
 export async function getSessionStats(): Promise<SessionStats | undefined> {
-  return (await requireApi().request({ type: "get_session_stats" })) as SessionStats | undefined;
+  return (await backendRequest({ type: "get_session_stats" })) as SessionStats | undefined;
 }
 
 export async function getCommands(): Promise<SlashCommand[]> {
-  const result = (await requireApi().request({ type: "get_commands" })) as { commands: SlashCommand[] };
+  const result = (await backendRequest({ type: "get_commands" })) as { commands: SlashCommand[] };
   return result.commands ?? [];
 }
 
 export type GetSessionsOptions = Omit<GetSessionsCommand, "type">;
 
 export async function getSessions(options: GetSessionsOptions = {}): Promise<SessionListPage> {
-  return (await requireApi().request({ type: "get_sessions", ...options })) as SessionListPage;
+  return (await backendRequest({ type: "get_sessions", ...options })) as SessionListPage;
 }
 
 export async function getResources(options: { reload?: boolean } = {}): Promise<ResourcesData> {
-  return (await requireApi().request({ type: "get_resources", ...options })) as ResourcesData;
+  return (await backendRequest({ type: "get_resources", ...options })) as ResourcesData;
 }
 
 export async function setSessionName(name: string): Promise<void> {
-  await requireApi().request({ type: "set_session_name", name });
+  await backendRequest({ type: "set_session_name", name });
 }
 
 export async function exportHtml(outputPath?: string): Promise<unknown> {
-  return requireApi().request({ type: "export_html", outputPath });
+  return backendRequest({ type: "export_html", outputPath });
 }
 
 export async function forkSession(entryId: string): Promise<ForkResult> {
-  return (await requireApi().request({ type: "fork", entryId })) as ForkResult;
+  return (await backendRequest({ type: "fork", entryId })) as ForkResult;
 }
 
 export async function cloneSession(): Promise<{ cancelled: boolean }> {
-  return (await requireApi().request({ type: "clone" })) as { cancelled: boolean };
+  return (await backendRequest({ type: "clone" })) as { cancelled: boolean };
 }
 
 export async function getForkMessages(): Promise<ForkMessage[]> {
-  const result = (await requireApi().request({ type: "get_fork_messages" })) as { messages: ForkMessage[] };
+  const result = (await backendRequest({ type: "get_fork_messages" })) as { messages: ForkMessage[] };
   return result.messages ?? [];
 }
 
 export async function getSessionTree(): Promise<SessionTreeData> {
-  return (await requireApi().request({ type: "get_tree" })) as SessionTreeData;
+  return (await backendRequest({ type: "get_tree" })) as SessionTreeData;
 }
 
 // --- Prompting ---
@@ -304,49 +352,49 @@ export async function sendPrompt(
   images?: ImageContent[],
   streamingBehavior?: "followUp" | "steer",
 ): Promise<void> {
-  await requireApi().request({ type: "prompt", message, images, streamingBehavior });
+  await backendRequest({ type: "prompt", message, images, streamingBehavior });
 }
 
 export async function steer(message: string, images?: ImageContent[]): Promise<void> {
-  await requireApi().request({ type: "steer", message, images });
+  await backendRequest({ type: "steer", message, images });
 }
 
 export async function followUp(message: string, images?: ImageContent[]): Promise<void> {
-  await requireApi().request({ type: "follow_up", message, images });
+  await backendRequest({ type: "follow_up", message, images });
 }
 
 export async function abort(): Promise<void> {
-  await requireApi().request({ type: "abort" });
+  await backendRequest({ type: "abort" });
 }
 
 export async function newSession(cwd?: string): Promise<{ cancelled: boolean; cwd: string }> {
-  return (await requireApi().request({ type: "new_session", cwd })) as { cancelled: boolean; cwd: string };
+  return (await backendRequest({ type: "new_session", cwd })) as { cancelled: boolean; cwd: string };
 }
 
 export async function switchSession(sessionPath: string): Promise<{ cancelled: boolean; cwd: string }> {
-  return (await requireApi().request({ type: "switch_session", sessionPath })) as { cancelled: boolean; cwd: string };
+  return (await backendRequest({ type: "switch_session", sessionPath })) as { cancelled: boolean; cwd: string };
 }
 
 // --- Bash ---
 
 export async function bash(command: string, excludeFromContext?: boolean, id?: string): Promise<unknown> {
-  return requireApi().request({ type: "bash", command, excludeFromContext, ...(id ? { id } : {}) });
+  return backendRequest({ type: "bash", command, excludeFromContext, ...(id ? { id } : {}) });
 }
 
 export async function abortBash(): Promise<void> {
-  await requireApi().request({ type: "abort_bash" });
+  await backendRequest({ type: "abort_bash" });
 }
 
 // --- Fire-and-forget ---
 
 export async function sendExtensionUIResponse(id: string, response: Record<string, unknown>): Promise<void> {
-  await requireApi().send({ type: "extension_ui_response", id, ...response });
+  await requireApi().send({ type: "extension_ui_response", id, ...response }, activeBackendTaskId);
 }
 
 // --- Extension flags (e.g. permission mode) ---
 
 export async function setExtensionFlag(name: string, value: boolean | string): Promise<void> {
-  await requireApi().request({ type: "set_extension_flag", name, value });
+  await backendRequest({ type: "set_extension_flag", name, value });
 }
 
 // --- Project trust ---
@@ -354,30 +402,30 @@ export async function setExtensionFlag(name: string, value: boolean | string): P
 export async function setProjectTrust(
   trusted: boolean,
 ): Promise<{ trusted: boolean; projectTrustRequired: boolean }> {
-  return (await requireApi().request({ type: "set_project_trust", trusted })) as {
+  return (await backendRequest({ type: "set_project_trust", trusted })) as {
     trusted: boolean;
     projectTrustRequired: boolean;
   };
 }
 
 export async function getProjectTrustEntries(): Promise<ProjectTrustEntries> {
-  return (await requireApi().request({ type: "get_project_trust_entries" })) as ProjectTrustEntries;
+  return (await backendRequest({ type: "get_project_trust_entries" })) as ProjectTrustEntries;
 }
 
 export async function setProjectTrustEntry(path: string, decision: boolean | null): Promise<ProjectTrustEntryUpdate> {
-  return (await requireApi().request({ type: "set_project_trust_entry", path, decision })) as ProjectTrustEntryUpdate;
+  return (await backendRequest({ type: "set_project_trust_entry", path, decision })) as ProjectTrustEntryUpdate;
 }
 
 // --- Desktop-level APIs (not routed through backend) ---
 
 export async function getBackendStatus(): Promise<BackendStatus> {
-  return requireApi().getBackendStatus();
+  return requireApi().getBackendStatus(activeBackendTaskId);
 }
 
 export async function getPendingExtensionUIRequests(): Promise<ExtensionUIRequestEvent[]> {
   const api = getApi();
   if (!api?.getPendingExtensionUIRequests) return [];
-  const requests = await api.getPendingExtensionUIRequests();
+  const requests = await api.getPendingExtensionUIRequests(activeBackendTaskId);
   return Array.isArray(requests) ? requests : [];
 }
 

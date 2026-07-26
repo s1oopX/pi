@@ -5,6 +5,7 @@ import { isInteractiveExtensionUIRequest, parseExtensionUIEffect } from "./exten
 import { createExtensionUIRequestTimeoutManager } from "./extensionUIRequestTimeouts";
 import type { BackendEvent, ExtensionUIRequestClosedEvent, ExtensionUIRequestEvent, LogEntry } from "./types";
 import { useStore } from "../store";
+import { applyTaskStatus, describeTask, PRIMARY_TASK_ID, routeBackendEvent } from "../store/taskRegistry";
 import { showToast } from "../components/Toast";
 import { isSameWorkspace } from "../components/Sidebar/sidebarState";
 import { t } from "../i18n";
@@ -214,7 +215,32 @@ export function useBackendEvents(): void {
     const unsubEvent = onEvent((raw) => {
       const event = raw as BackendEvent;
       const store = useStore.getState();
+
+      // Parallel tasks: settle which task the event belongs to first. A
+      // background task's events only update its summary (badge, dot, toast);
+      // the full ingestion below is reserved for the active task.
+      const routed = routeBackendEvent(store.taskRegistry, event as Record<string, unknown>);
+      if (routed.state !== store.taskRegistry) {
+        useStore.setState({ taskRegistry: routed.state });
+      }
+      if (routed.notify) {
+        showToast(
+          t("Task {task} finished responding.", "任务 {task} 已完成响应。", {
+            task: describeTask(routed.state.tasks[routed.taskId], routed.taskId),
+          }),
+          "success",
+        );
+      }
+      if (!routed.forward) return;
+      const poolTaskActive = routed.state.activeTaskId !== PRIMARY_TASK_ID;
+
       if (event.type === "session_changed") {
+        if (poolTaskActive) {
+          // A pool task switched or renamed its own session; its backend never
+          // changes the primary workspace, so a refresh is all that is needed.
+          void store.refreshAsync();
+          return;
+        }
         const action = resolveSessionChangedWorkspaceAction(store.workspaceCwd, event.cwd);
         if (!store.backendStatus.ready || !action) return;
         if (action.type === "refresh") {
@@ -224,7 +250,9 @@ export function useBackendEvents(): void {
         }
         return;
       }
-      if (!isBackendEventCurrent(store.backendStatus.cwd, store.workspaceCwd)) return;
+      // The staleness guard compares the primary backend's cwd; an active pool
+      // task is guarded by its backendId match instead.
+      if (!poolTaskActive && !isBackendEventCurrent(store.backendStatus.cwd, store.workspaceCwd)) return;
 
       switch (event.type) {
         case "message_start":
@@ -329,6 +357,14 @@ export function useBackendEvents(): void {
 
     const unsubStatus = onStatus((payload) => {
       const store = useStore.getState();
+      // Pool-member statuses only refresh their registry summary; the primary
+      // (tagged "main" or untagged from an older main process) drives the
+      // whole connection state machine below.
+      const statusBackendId = typeof payload.backendId === "string" ? payload.backendId : undefined;
+      if (statusBackendId && statusBackendId !== PRIMARY_TASK_ID) {
+        useStore.setState({ taskRegistry: applyTaskStatus(store.taskRegistry, payload) });
+        return;
+      }
       const ready = Boolean(payload.ready);
       const cwd = String(payload.cwd ?? "");
       if (shouldAdvanceBackendConnectionGeneration(ready, store.backendStatus.cwd, cwd)) {

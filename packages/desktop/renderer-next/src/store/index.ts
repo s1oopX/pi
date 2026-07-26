@@ -29,6 +29,13 @@ import {
   type ApprovalHistoryEntry,
 } from "./approvalHistory";
 import { shouldApplyMessageRefresh } from "./messageRefreshGuard";
+import {
+  createInitialTaskRegistryState,
+  mergeTaskList,
+  PRIMARY_TASK_ID,
+  switchTask,
+  type TaskRegistryState,
+} from "./taskRegistry";
 
 export type Theme = "light" | "dark" | "system";
 export type ResolvedTheme = Exclude<Theme, "system">;
@@ -143,6 +150,11 @@ export interface AppState {
   // localStorage and re-pushed to the backend whenever it (re)connects.
   permissionMode: PermissionMode;
 
+  // Parallel tasks (M2): per-task summaries and the active selection. The
+  // active task renders through the single-conversation fields above;
+  // background tasks only update these summaries until switched to.
+  taskRegistry: TaskRegistryState;
+
   // Actions
   updateBackendStatus: (status: BackendStatus) => void;
   addLog: (entry: LogEntry) => void;
@@ -165,8 +177,11 @@ export interface AppState {
   openSettings: (route: SettingsRoute) => void;
   closeSettings: () => void;
   setComposerDraft: (text: ComposerDraft | null) => void;
-  resetForWorkspace: (cwd: string) => Promise<void>;
+  resetForWorkspace: (cwd: string, options?: { gitRefresh?: boolean; ready?: boolean }) => Promise<void>;
   refreshWorkspaceGitStatus: () => void;
+  setTaskRegistry: (taskRegistry: TaskRegistryState) => void;
+  refreshTasks: () => Promise<void>;
+  switchActiveTask: (taskId: string) => Promise<void>;
   setSessionsQuery: (query: string) => Promise<void>;
   refreshSessions: () => Promise<void>;
   loadMoreSessions: () => Promise<void>;
@@ -331,6 +346,7 @@ export const useStore = create<AppState>((set, get) => ({
   appInfo: null,
   settingsRoute: null,
   permissionMode: loadSavedPermissionMode(),
+  taskRegistry: createInitialTaskRegistryState(),
 
   updateBackendStatus(status) {
     const wasReady = get().backendStatus.ready;
@@ -536,7 +552,7 @@ export const useStore = create<AppState>((set, get) => ({
     set({ composerDraft: text });
   },
 
-  resetForWorkspace(cwd) {
+  resetForWorkspace(cwd, options) {
     invalidateStateRefreshScope();
     nextExtensionWidgetOrder = 0;
     if (typeof document !== "undefined") document.title = get().appInfo?.name ?? "Pi Studio";
@@ -568,12 +584,46 @@ export const useStore = create<AppState>((set, get) => ({
       composerDraft: null,
       activeMessageIndex: null,
     });
-    void refreshWorkspaceGitStatus();
-    return get().backendStatus.ready ? get().refreshAsync() : Promise.resolve();
+    // Pool tasks skip the git refresh: the workspace git IPC is primary-only
+    // in M2 and would report the wrong folder.
+    if (options?.gitRefresh !== false) void refreshWorkspaceGitStatus();
+    const ready = options?.ready ?? get().backendStatus.ready;
+    return ready ? get().refreshAsync() : Promise.resolve();
   },
 
   refreshWorkspaceGitStatus() {
     void refreshWorkspaceGitStatus();
+  },
+
+  setTaskRegistry(taskRegistry) {
+    set({ taskRegistry });
+  },
+
+  async refreshTasks() {
+    try {
+      const tasks = await api.listTasks();
+      if (tasks.length > 0) {
+        set({ taskRegistry: mergeTaskList(get().taskRegistry, tasks) });
+      }
+    } catch {
+      // The task list is auxiliary; never let a failed poll break the UI.
+    }
+  },
+
+  async switchActiveTask(taskId) {
+    const registry = get().taskRegistry;
+    const target = registry.tasks[taskId];
+    if (!target || registry.activeTaskId === taskId) return;
+    const isPrimary = taskId === PRIMARY_TASK_ID;
+    // All backend traffic from here on targets the switched-to task; the
+    // conversation then rehydrates through the existing workspace-reset path
+    // without restarting any backend process.
+    api.setActiveBackendTask(isPrimary ? undefined : taskId);
+    set({ taskRegistry: switchTask(registry, taskId) });
+    await get().resetForWorkspace(target.cwd || get().workspaceCwd, {
+      gitRefresh: isPrimary,
+      ready: isPrimary ? get().backendStatus.ready : target.ready,
+    });
   },
 
   async setSessionsQuery(query) {
@@ -612,6 +662,8 @@ export const useStore = create<AppState>((set, get) => ({
     api.getBackendStatus().then((status) => {
       get().updateBackendStatus(status);
     }).catch(() => {});
+
+    void get().refreshTasks();
 
     api.getWorkspace().then(({ cwd, taskCwd }) => {
       set({ taskCwd });

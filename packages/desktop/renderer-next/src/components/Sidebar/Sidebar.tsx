@@ -9,6 +9,7 @@ import { Icon } from "../Icon";
 import { BranchNavigator } from "../BranchNavigator";
 import { Dialog } from "../Dialog";
 import { showToast } from "../Toast";
+import { ParallelTasks } from "./ParallelTasks";
 import {
   addWorkspace,
   clearOtherWorkspaces,
@@ -1003,6 +1004,8 @@ export function Sidebar({ collapsed, onToggle }: SidebarProps) {
                   </div>
                 )}
               </section>
+
+              <ParallelTasks />
 
               <section className="ownership-section task-tree" aria-labelledby="task-tree-title">
                 <div className="ownership-section-header">

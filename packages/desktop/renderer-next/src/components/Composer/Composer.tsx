@@ -22,6 +22,7 @@ import { ExtensionWidgets } from "../ExtensionWidgets";
 import { InlineApproval, isInteractiveExtensionUIRequest } from "../Message/InlineApproval";
 import { showToast } from "../Toast";
 import { approvalHistoryLabel } from "../../store/approvalHistory";
+import { isActiveBackendReady } from "../../store/taskRegistry";
 import {
   MAX_ATTACHMENT_COUNT,
   MAX_ATTACHMENT_MEGABYTES,
@@ -90,6 +91,7 @@ export function Composer() {
   const retrying = useStore((s) => s.retryActivity !== null || Boolean(s.session?.isRetrying));
   const compacting = useStore((s) => s.compactionActivity !== null || Boolean(s.session?.isCompacting));
   const backendStatus = useStore((s) => s.backendStatus);
+  const activeBackendReady = useStore((s) => isActiveBackendReady(s.taskRegistry, s.backendStatus.ready));
   const workspaceLoading = useStore((s) => s.workspaceLoading);
   const commands = useStore((s) => s.commands);
   const extensionWidgets = useStore((s) => s.extensionWidgets);
@@ -337,7 +339,7 @@ export function Composer() {
 
   async function handleSubmit(e?: FormEvent) {
     e?.preventDefault();
-    if (!backendStatus.ready) {
+    if (!activeBackendReady) {
       showToast(
         backendStatus.error
           ? t("Agent unavailable: {error}", "智能体不可用：{error}", { error: backendStatus.error })
@@ -437,7 +439,7 @@ export function Composer() {
     : streamingSubmitMode === "steer"
       ? t("Steer current run", "引导当前运行")
       : t("Queue follow-up", "加入跟进队列");
-  const inputPlaceholder = backendStatus.ready
+  const inputPlaceholder = activeBackendReady
     ? t("Send a message...", "发送消息…")
     : backendStatus.starting || backendStatus.restarting
       ? t("Write while the agent starts...", "智能体启动中，可先输入…")
@@ -639,14 +641,14 @@ export function Composer() {
                 disabled={
                   submitting ||
                   readingAttachments ||
-                  !backendStatus.ready ||
+                  !activeBackendReady ||
                   isPromptSubmissionBlocked(retrying, compacting) ||
                   (!input.trim() && attachments.length === 0) ||
                   (attachments.length > 0 && !modelSupportsImages)
                 }
                 aria-label={isStreaming ? streamingSubmitLabel : t("Send message", "发送消息")}
                 title={
-                  !backendStatus.ready
+                  !activeBackendReady
                     ? t("The agent backend is not ready", "智能体后端尚未就绪")
                     : retrying
                       ? t("Wait for the automatic retry to finish or cancel it", "请等待自动重试完成或取消重试")
