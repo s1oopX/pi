@@ -157,7 +157,9 @@ export type RpcCommand =
 	| { id?: string; type: "set_extension_flag"; name: string; value: boolean | string }
 
 	// Project trust (load project-local extensions/settings for this cwd)
-	| { id?: string; type: "set_project_trust"; trusted: boolean };
+	| { id?: string; type: "set_project_trust"; trusted: boolean }
+	| { id?: string; type: "get_project_trust_entries" }
+	| { id?: string; type: "set_project_trust_entry"; path: string; decision: boolean | null };
 
 // ============================================================================
 // RPC Slash Command (for get_commands response)
@@ -439,6 +441,32 @@ export type RpcResponse =
 			command: "set_project_trust";
 			success: true;
 			data: { trusted: boolean; projectTrustRequired: boolean };
+	  }
+	| {
+			id?: string;
+			type: "response";
+			command: "get_project_trust_entries";
+			success: true;
+			data: {
+				entries: Array<{ path: string; decision: boolean }>;
+				currentPath: string;
+				/** Store entry that covers the current workspace, if any. */
+				currentEntryPath: string | null;
+				currentTrusted: boolean;
+			};
+	  }
+	| {
+			id?: string;
+			type: "response";
+			command: "set_project_trust_entry";
+			success: true;
+			data: {
+				entries: Array<{ path: string; decision: boolean }>;
+				currentEntryPath: string | null;
+				trusted: boolean;
+				/** True when the change affected the current workspace and the session reloaded. */
+				reloaded: boolean;
+			};
 	  }
 
 	// Error response (any command can fail)

@@ -19,6 +19,8 @@ import type {
   LogEntry,
   Message,
   Model,
+  ProjectTrustEntries,
+  ProjectTrustEntryUpdate,
   QueueMode,
   ResourcesData,
   SessionListPage,
@@ -354,6 +356,14 @@ export async function setProjectTrust(
     trusted: boolean;
     projectTrustRequired: boolean;
   };
+}
+
+export async function getProjectTrustEntries(): Promise<ProjectTrustEntries> {
+  return (await requireApi().request({ type: "get_project_trust_entries" })) as ProjectTrustEntries;
+}
+
+export async function setProjectTrustEntry(path: string, decision: boolean | null): Promise<ProjectTrustEntryUpdate> {
+  return (await requireApi().request({ type: "set_project_trust_entry", path, decision })) as ProjectTrustEntryUpdate;
 }
 
 // --- Desktop-level APIs (not routed through backend) ---

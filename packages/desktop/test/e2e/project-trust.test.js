@@ -58,6 +58,18 @@ test("project trust: an untrusted project's extension does not run until trusted
 
 		// The banner clears once trusted.
 		await banner.waitFor({ state: "hidden", timeout: LAUNCH_TIMEOUT_MS });
+
+		// Revoke from Settings -> Resources -> Trusted folders: the stored
+		// decision disappears and the workspace drops back to untrusted, so the
+		// banner returns after the hot-reload.
+		await studio.page.locator(".sidebar-footer .sidebar-action-btn").click();
+		await studio.page.locator('.settings-nav-item[data-route="resources"]').click();
+		const trustRow = studio.page.locator(".trust-folder-row");
+		await trustRow.waitFor({ state: "visible", timeout: LAUNCH_TIMEOUT_MS });
+		await trustRow.locator(".trust-folder-forget").click();
+		await trustRow.waitFor({ state: "detached", timeout: LAUNCH_TIMEOUT_MS });
+		await studio.page.locator(".settings-back-btn").click();
+		await banner.waitFor({ state: "visible", timeout: LAUNCH_TIMEOUT_MS });
 	} catch (error) {
 		await studio.dumpDiagnostics();
 		throw error;

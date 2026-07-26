@@ -1718,6 +1718,56 @@ export async function runRpcMode(runtimeHost: AgentSessionRuntime): Promise<neve
 				});
 			}
 
+			case "get_project_trust_entries": {
+				const store = new ProjectTrustStore(getAgentDir());
+				const cwd = session.sessionManager.getCwd();
+				return success(id, "get_project_trust_entries", {
+					entries: store.list(),
+					currentPath: cwd,
+					currentEntryPath: store.getEntry(cwd)?.path ?? null,
+					currentTrusted: session.settingsManager.isProjectTrusted(),
+				});
+			}
+
+			case "set_project_trust_entry": {
+				if (session.isStreaming) {
+					return error(
+						id,
+						"set_project_trust_entry",
+						"Wait for the current response to finish before changing trust",
+					);
+				}
+				if (session.isCompacting) {
+					return error(id, "set_project_trust_entry", "Wait for compaction to finish before changing trust");
+				}
+				const path = typeof command.path === "string" ? command.path.trim() : "";
+				if (!path) {
+					return error(id, "set_project_trust_entry", "A folder path is required");
+				}
+				if (command.decision !== true && command.decision !== false && command.decision !== null) {
+					return error(id, "set_project_trust_entry", "Decision must be true, false, or null");
+				}
+				const store = new ProjectTrustStore(getAgentDir());
+				store.set(path, command.decision);
+				// The edited entry may cover the current workspace (it, or an
+				// ancestor). Recompute effective trust with the same rule the
+				// desktop backend boots with, and hot-reload on a change.
+				const cwd = session.sessionManager.getCwd();
+				const effective = !hasTrustRequiringProjectResources(cwd) || store.get(cwd) === true;
+				let reloaded = false;
+				if (effective !== session.settingsManager.isProjectTrusted()) {
+					session.settingsManager.setProjectTrusted(effective);
+					await session.reload();
+					reloaded = true;
+				}
+				return success(id, "set_project_trust_entry", {
+					entries: store.list(),
+					currentEntryPath: store.getEntry(cwd)?.path ?? null,
+					trusted: session.settingsManager.isProjectTrusted(),
+					reloaded,
+				});
+			}
+
 			default: {
 				const unknownCommand = command as { type: string };
 				return error(id, unknownCommand.type, `Unknown command: ${unknownCommand.type}`);

@@ -5,6 +5,7 @@ import * as api from "../../ipc/api";
 import type { ResourcesData } from "../../ipc/types";
 import { useStore } from "../../store";
 import { getResourceSourceLabel } from "./resourceLabels";
+import { TrustedFoldersSettings } from "./TrustedFoldersSettings";
 
 interface ResourceGroupProps {
   title: string;
@@ -203,6 +204,8 @@ export function ResourcesSettings() {
           />
         </>
       )}
+
+      <TrustedFoldersSettings />
     </div>
   );
 }

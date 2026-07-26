@@ -317,6 +317,35 @@ export interface SetProjectTrustCommand {
   trusted: boolean;
 }
 
+export interface GetProjectTrustEntriesCommand {
+  type: "get_project_trust_entries";
+}
+
+export interface SetProjectTrustEntryCommand {
+  type: "set_project_trust_entry";
+  path: string;
+  decision: boolean | null;
+}
+
+export interface ProjectTrustEntry {
+  path: string;
+  decision: boolean;
+}
+
+export interface ProjectTrustEntries {
+  entries: ProjectTrustEntry[];
+  currentPath: string;
+  currentEntryPath: string | null;
+  currentTrusted: boolean;
+}
+
+export interface ProjectTrustEntryUpdate {
+  entries: ProjectTrustEntry[];
+  currentEntryPath: string | null;
+  trusted: boolean;
+  reloaded: boolean;
+}
+
 export type BackendCommand =
   | GetStateCommand
   | GetMessagesCommand
@@ -363,7 +392,9 @@ export type BackendCommand =
   | SteerCommand
   | FollowUpCommand
   | SetExtensionFlagCommand
-  | SetProjectTrustCommand;
+  | SetProjectTrustCommand
+  | GetProjectTrustEntriesCommand
+  | SetProjectTrustEntryCommand;
 
 // Fire-and-forget commands (sent via window.piDesktop.send)
 

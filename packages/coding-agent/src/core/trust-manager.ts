@@ -227,6 +227,15 @@ export class ProjectTrustStore {
 		this.setMany([{ path: cwd, decision }]);
 	}
 
+	list(): ProjectTrustStoreEntry[] {
+		return withTrustFileLock(this.trustPath, () => {
+			const data = readTrustFile(this.trustPath);
+			return Object.entries(data)
+				.filter((entry): entry is [string, boolean] => entry[1] === true || entry[1] === false)
+				.map(([path, decision]) => ({ path, decision }));
+		});
+	}
+
 	setMany(decisions: ProjectTrustUpdate[]): void {
 		withTrustFileLock(this.trustPath, () => {
 			const data = readTrustFile(this.trustPath);

@@ -738,6 +738,30 @@
   line-height: var(--line-height-badge);
 }
 
+.trust-folder-path {
+  font-family: var(--font-mono);
+  font-size: var(--font-size-meta);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.trust-folder-state.trusted {
+  color: var(--success);
+}
+
+.trust-folder-state.blocked {
+  color: var(--danger);
+}
+
+.trust-folder-current {
+  color: var(--muted);
+}
+
+.trust-folder-forget {
+  flex: 0 0 auto;
+}
+
 .resource-loading,
 .resource-stale {
   margin-top: 8px;

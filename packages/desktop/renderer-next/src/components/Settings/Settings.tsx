@@ -158,6 +158,7 @@ export function Settings() {
                 key={item.route}
                 className={`settings-nav-item ${settingsRoute === item.route ? "active" : ""}`}
                 type="button"
+                data-route={item.route}
                 onClick={() => requestOpenSettings(item.route)}
               >
                 {item.label}
