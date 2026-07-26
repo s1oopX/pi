@@ -29,6 +29,7 @@ import {
   type ApprovalHistoryEntry,
 } from "./approvalHistory";
 import { shouldApplyMessageRefresh } from "./messageRefreshGuard";
+import { composeWindowTitle } from "./windowTitle";
 import {
   createInitialTaskRegistryState,
   mergeTaskList,
@@ -357,8 +358,7 @@ export const useStore = create<AppState>((set, get) => ({
       // responses may still arrive after a restart and belong to the old run.
       invalidateStateRefreshScope();
       nextExtensionWidgetOrder = 0;
-      if (typeof document !== "undefined") document.title = get().appInfo?.name ?? "Pi Studio";
-      // Release the silent-loading hold once the backend settles into a terminal
+        // Release the silent-loading hold once the backend settles into a terminal
       // offline state (not starting/restarting/retrying) so the empty state can
       // surface its retry affordance instead of spinning forever.
       const settledOffline = !status.starting && !status.restarting && status.retryInMs <= 0;
@@ -524,7 +524,6 @@ export const useStore = create<AppState>((set, get) => ({
 
   setExtensionTitle(title) {
     set({ extensionTitle: title });
-    if (typeof document !== "undefined") document.title = title ?? get().appInfo?.name ?? "Pi Studio";
   },
 
   updateAgentActivity(event) {
@@ -555,7 +554,6 @@ export const useStore = create<AppState>((set, get) => ({
   resetForWorkspace(cwd, options) {
     invalidateStateRefreshScope();
     nextExtensionWidgetOrder = 0;
-    if (typeof document !== "undefined") document.title = get().appInfo?.name ?? "Pi Studio";
     set({
       workspaceCwd: cwd,
       workspaceLoading: true,
@@ -655,6 +653,18 @@ export const useStore = create<AppState>((set, get) => ({
 
   initialize() {
     ensureSystemThemeListener();
+    // Single owner of the window title: recompute on any relevant change.
+    if (typeof document !== "undefined") {
+      useStore.subscribe((state) => {
+        const title = composeWindowTitle({
+          extensionTitle: state.extensionTitle,
+          sessionName: state.session?.sessionName,
+          workspaceCwd: state.workspaceCwd,
+          appName: state.appInfo?.name ?? "Pi Studio",
+        });
+        if (document.title !== title) document.title = title;
+      });
+    }
     const resolvedTheme = applyThemeToDocument(get().theme);
     if (resolvedTheme !== get().resolvedTheme) {
       set({ resolvedTheme });
@@ -678,7 +688,6 @@ export const useStore = create<AppState>((set, get) => ({
 
     api.getAppInfo().then((info) => {
       set({ appInfo: info });
-      if (get().extensionTitle === null && typeof document !== "undefined") document.title = info.name;
     }).catch(() => {});
   },
 }));

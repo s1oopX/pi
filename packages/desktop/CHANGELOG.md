@@ -8,6 +8,7 @@ client (Electron main process and the `renderer-next` React renderer).
 
 ### Added
 
+- The window title now carries the current context — "session — Pi Studio", falling back to the workspace folder — so the taskbar and Alt-Tab stay identifiable; an extension-set title still wins verbatim. The four scattered `document.title` writes collapsed into one store subscription with a pure, unit-tested compose function.
 - Arrow-key navigation across the sidebar's row lists: with focus on a project, parallel-task, or thread row, ArrowUp/ArrowDown move between visible rows (wrapping) and Home/End jump to the ends — the same listbox keyboard pattern the sidebar menus already follow, now shared through one roving-focus helper.
 - A drag narration overlay: while an OS file drag is over the window, a pointer-transparent card says what releasing will do — attach to the message over the composer, open as a workspace elsewhere. Enter/leave depth counting keeps it stable across child elements; window blur resets it.
 - Drop a folder anywhere in the window (outside the composer, which keeps its image-attachment drop zone) to open it as the workspace — resolved sandbox-safely through `webUtils.getPathForFile` in the preload; files and unreadable drops surface the normal open-workspace error.
