@@ -946,6 +946,12 @@ ipcMain.handle("app:get-info", () => ({
 	version: app.getVersion(),
 }));
 
+ipcMain.handle("app:get-changelog", () => {
+	// Lives next to src/ both in development and inside the packaged asar.
+	const markdown = readFileSync(join(__dirname, "..", "CHANGELOG.md"), "utf8");
+	return { markdown: markdown.slice(0, 512 * 1024) };
+});
+
 ipcMain.handle("app:check-for-updates", async () => checkDesktopUpdate(app.getVersion()));
 
 ipcMain.handle("diagnostics:save", async (_event, rendererDiagnostics) => {

@@ -1,7 +1,9 @@
 import { useState } from "react";
+import Markdown from "react-markdown";
 import { useStore } from "../../store";
 import * as api from "../../ipc/api";
 import { useI18n } from "../../i18n";
+import { Dialog } from "../Dialog";
 import { showToast } from "../Toast";
 import { SettingsSectionIcon } from "./SettingsSectionIcon";
 
@@ -13,6 +15,8 @@ export function AboutSettings() {
   const session = useStore((s) => s.session);
   const { t } = useI18n();
   const [updateUrl, setUpdateUrl] = useState<string | null>(null);
+  const [changelog, setChangelog] = useState<string | null>(null);
+  const [changelogOpen, setChangelogOpen] = useState(false);
 
   async function handleCheckUpdates() {
     setUpdateUrl(null);
@@ -86,6 +90,16 @@ export function AboutSettings() {
     }
   }
 
+  async function handleWhatsNew() {
+    try {
+      setChangelog(await api.getChangelog());
+      setChangelogOpen(true);
+    } catch (e) {
+      const message = e instanceof Error ? e.message : String(e);
+      showToast(t("Could not load the changelog: {message}", "无法加载更新日志：{message}", { message }), "error");
+    }
+  }
+
   async function handleOpenLogs() {
     try {
       await api.openLogsFolder();
@@ -143,6 +157,9 @@ export function AboutSettings() {
         <button className="settings-btn" type="button" onClick={handleExportDiagnostics}>
           {t("Export Diagnostics", "导出诊断信息")}
         </button>
+        <button className="settings-btn" type="button" onClick={handleWhatsNew}>
+          {t("What's New", "更新日志")}
+        </button>
         <button className="settings-btn" type="button" onClick={handleOpenLogs}>
           {t("Open Logs Folder", "打开日志文件夹")}
         </button>
@@ -150,6 +167,17 @@ export function AboutSettings() {
           {t("Restart Backend", "重启后端")}
         </button>
       </div>
+
+      <Dialog
+        open={changelogOpen}
+        title={t("What's New", "更新日志")}
+        className="changelog-dialog"
+        onClose={() => setChangelogOpen(false)}
+      >
+        <div className="changelog-content">
+          {changelog !== null && <Markdown>{changelog}</Markdown>}
+        </div>
+      </Dialog>
     </div>
   );
 }

@@ -35,6 +35,7 @@
 			"src/**/*",
 			"renderer-next/dist/**/*",
 			"assets/**/*",
+			"CHANGELOG.md",
 			"package.json"
 		],
 		"extraResources": [

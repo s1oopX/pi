@@ -77,6 +77,7 @@ export interface PiDesktopApi {
   }): Promise<{ models: { id: string; name?: string }[] }>;
   writeClipboardText(text: string): Promise<void>;
   getAppInfo(): Promise<{ name: string; version: string }>;
+  getChangelog?: () => Promise<{ markdown: string }>;
   checkForUpdates(): Promise<unknown>;
   saveDiagnostics(diagnostics: unknown): Promise<{ saved: boolean; path?: string }>;
   openLogsFolder?: () => Promise<{ opened: boolean }>;
@@ -591,6 +592,13 @@ export async function writeClipboardText(text: string): Promise<void> {
 
 export async function getAppInfo(): Promise<{ name: string; version: string }> {
   return requireApi().getAppInfo();
+}
+
+export async function getChangelog(): Promise<string> {
+  const api = requireApi();
+  if (!api.getChangelog) throw new Error("The changelog needs a newer Pi Studio build");
+  const result = await api.getChangelog();
+  return result.markdown ?? "";
 }
 
 export async function checkForUpdates(): Promise<unknown> {

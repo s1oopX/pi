@@ -132,6 +132,9 @@ contextBridge.exposeInMainWorld("piDesktop", {
 	getAppInfo() {
 		return ipcRenderer.invoke("app:get-info");
 	},
+	getChangelog() {
+		return ipcRenderer.invoke("app:get-changelog");
+	},
 	checkForUpdates() {
 		return ipcRenderer.invoke("app:check-for-updates");
 	},

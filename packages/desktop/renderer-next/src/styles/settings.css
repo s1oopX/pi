@@ -1782,3 +1782,48 @@
 .worktree-leftover-delete {
   flex: none;
 }
+
+/* Changelog dialog */
+
+.changelog-dialog {
+  width: min(640px, calc(100vw - 48px));
+}
+
+.changelog-content {
+  max-height: min(480px, calc(100vh - 220px));
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding-right: 6px;
+  font-size: calc(12.5px * var(--font-scale));
+  line-height: 1.6;
+  color: var(--text-soft);
+}
+
+.changelog-content h1,
+.changelog-content h2,
+.changelog-content h3 {
+  margin: 14px 0 6px;
+  color: var(--text);
+  font-size: calc(13.5px * var(--font-scale));
+}
+
+.changelog-content h1 {
+  font-size: calc(15px * var(--font-scale));
+}
+
+.changelog-content ul {
+  margin: 6px 0;
+  padding-left: 18px;
+}
+
+.changelog-content li {
+  margin: 4px 0;
+}
+
+.changelog-content code {
+  padding: 0 4px;
+  border-radius: var(--radius-xs);
+  background: var(--control-hover);
+  font-family: var(--font-mono);
+  font-size: 0.92em;
+}
