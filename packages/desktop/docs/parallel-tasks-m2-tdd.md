@@ -1,7 +1,27 @@
 # Parallel Tasks M2 — TDD Implementation Plan
 
-Status: plan of record for M2 · Prereq: M1 landed (`BackendHandle`, commit 753e32f7)
+Status: **LANDED 2026-07-26** (phases A `b2e73f1f`, B `7d2c1573`, C `a0d993c1`)
+· Prereq: M1 landed (`BackendHandle`, commit 753e32f7)
 · Companion: `parallel-tasks-design.md`
+
+Deviations from the plan as written, decided during implementation:
+
+- **B5 used the repo-native test pattern, not @testing-library.** The repo has
+  no jsdom/RTL and deliberately keeps the dev-dependency surface small; the
+  sidebar section's logic lives in a pure `parallelTasksState.ts` with vitest,
+  and interaction coverage went to the C-phase e2e (real app > jsdom).
+- **The C-phase e2e found a real bug the plan did not predict**: switching to
+  a still-booting pool task set `workspaceLoading` but skipped the refresh
+  that clears it, wedging the sidebar busy-state until an unrelated refresh
+  landed. Fixed by letting the pool ready status complete the deferred
+  hydration (events.ts), mirroring the primary's connection-generation
+  retrigger.
+- Unknown *tagged* backend ids self-heal into a registry summary instead of
+  being treated as the primary (refines decision 5; untagged still routes to
+  the primary).
+- Phase D agentDir audit: models.json read-only ✔, trust.json lockfile ✔,
+  settings.json/auth.json writes are rare, user-initiated, last-write-wins —
+  accepted.
 
 Every step below is a red → green increment: write the listed tests first,
 watch them fail, implement the minimal change, and keep the standing invariant

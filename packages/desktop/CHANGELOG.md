@@ -6,6 +6,11 @@ client (Electron main process and the `renderer-next` React renderer).
 
 ## [Unreleased]
 
+### Added
+
+- Parallel running tasks: several agent backends run side by side, one per workspace. A "Parallel tasks" sidebar section starts a task in another folder (bounded pool, default 3, one running task per folder), shows a live streaming dot and an unread badge per task, and switches between them by rehydrating the conversation from the task's backend — no process restarts, background runs continue uninterrupted and finish into a badge, a toast, and a named OS notification. Backend traffic, statuses, and events are routed by a `backendId` tag end to end (main-process task registry → tagged `BackendHandle` events → renderer task-registry slice); the composer gates on the active task's readiness. Covered by unit suites on both sides of the IPC boundary and an e2e that streams in two backends at once, switches mid-stream, and proves nothing is lost (`test/e2e/parallel-tasks.test.js`); the e2e also caught and pinned a deferred-hydration bug where switching to a still-booting task left the UI busy. E2e infrastructure grew content-matched faux-provider steps with held-open streams and an Electron-level folder-picker stub.
+- A package README (`packages/desktop/README.md`) documenting the product invariants, three-process architecture, security model, parallel-task design, testing strategy, upstream policy, and roadmap.
+
 ### Changed
 
 - Extracted the backend child process and all of its per-process state (stdout JSONL reassembly, request correlation, restart backoff, the session mutation queue, the pending extension-UI store) from `main.js` module singletons into a `BackendHandle` class (`src/backend-handle.js`) — milestone M1 of the parallel-tasks design (`docs/parallel-tasks-design.md`). `main.js` now holds a registry with the single primary handle; behavior is a verbatim port and the whole e2e suite passes unchanged. Renderer-facing `backend:event`/`backend:status`/`backend:log` payloads now carry a `backendId` tag (ignored by the current renderer) so pool members can be routed in M2. The handle is unit-tested with a fake spawn: ready handshake, request lifecycle and timeouts, split-chunk stdout reassembly, event tagging, restart backoff and budget, stop semantics, and init-failure paths.
