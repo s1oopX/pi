@@ -3,6 +3,7 @@ import * as api from "../../ipc/api";
 import { useStore } from "../../store";
 import { showToast } from "../Toast";
 import type { PaletteCommandId } from "./commandPaletteState";
+import { findLastReplyCopyText } from "./copyLastReply";
 
 let newThreadPending = false;
 
@@ -89,6 +90,18 @@ function openWorkspaceSwitcher(): void {
   });
 }
 
+function copyLastReply(): void {
+  const text = findLastReplyCopyText(useStore.getState().messages);
+  if (!text) {
+    showToast(t("No assistant reply to copy yet", "还没有可复制的回复"), "info");
+    return;
+  }
+  navigator.clipboard
+    ?.writeText(text)
+    .then(() => showToast(t("Last reply copied", "已复制最后回复"), "success"))
+    .catch(() => showToast(t("Could not copy the reply", "复制回复失败"), "error"));
+}
+
 export function runAppCommand(commandId: PaletteCommandId): void {
   switch (commandId) {
     case "open-settings":
@@ -108,6 +121,9 @@ export function runAppCommand(commandId: PaletteCommandId): void {
       return;
     case "switch-workspace":
       openWorkspaceSwitcher();
+      return;
+    case "copy-last-reply":
+      copyLastReply();
       return;
   }
 }

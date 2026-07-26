@@ -74,6 +74,11 @@ const SIMPLIFIED_CHINESE_COMMANDS: Record<PaletteCommandId, CommandPaletteTransl
     description: "从工作台创建任务",
     keywords: ["任务", "后台", "新建"],
   },
+  "copy-last-reply": {
+    label: "复制最后回复",
+    description: "将智能体最近一次回复复制为纯文本",
+    keywords: ["剪贴板", "复制", "回复", "回答"],
+  },
 };
 
 export const COMMAND_PALETTE_ENTRIES: readonly CommandPaletteEntry[] = [
@@ -142,6 +147,12 @@ export const COMMAND_PALETTE_ENTRIES: readonly CommandPaletteEntry[] = [
     label: "Open Side Task",
     description: "Create a task from the workbench",
     keywords: ["task", "background", "new"],
+  },
+  {
+    id: "copy-last-reply",
+    label: "Copy Last Reply",
+    description: "Copy the assistant's latest reply as plain text",
+    keywords: ["clipboard", "copy", "response", "answer"],
   },
 ];
 

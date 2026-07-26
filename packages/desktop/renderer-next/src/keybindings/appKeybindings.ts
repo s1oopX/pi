@@ -11,6 +11,7 @@ export const APP_COMMAND_IDS = [
   "open-workbench-browser",
   "open-workbench-files",
   "open-workbench-side-task",
+  "copy-last-reply",
 ] as const;
 
 export type AppCommandId = (typeof APP_COMMAND_IDS)[number];
@@ -70,6 +71,10 @@ export const APP_COMMAND_METADATA: Record<AppCommandId, AppCommandMetadata> = {
   "open-workbench-side-task": {
     label: "Open Side Task",
     description: "Create a task from the workbench.",
+  },
+  "copy-last-reply": {
+    label: "Copy Last Reply",
+    description: "Copy the assistant's latest reply as plain text.",
   },
 };
 
@@ -143,6 +148,7 @@ export const DEFAULT_APP_KEYBINDINGS: AppKeybindings = {
   "open-workbench-browser": "Ctrl+T",
   "open-workbench-files": "Ctrl+P",
   "open-workbench-side-task": "Ctrl+Alt+S",
+  "copy-last-reply": "Mod+Shift+C",
 };
 
 const COMMAND_ID_SET = new Set<string>(APP_COMMAND_IDS);
