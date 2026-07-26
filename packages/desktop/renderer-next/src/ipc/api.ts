@@ -38,9 +38,13 @@ export interface PiDesktopApi {
   getBackendStatus(taskId?: string): Promise<BackendStatus>;
   getPendingExtensionUIRequests?: (taskId?: string) => Promise<ExtensionUIRequestEvent[]>;
   createTask?: (cwd: string) => Promise<TaskSnapshot>;
-  listTasks?: () => Promise<{ tasks: TaskSnapshot[] }>;
+  listTasks?: () => Promise<{ tasks: TaskSnapshot[]; maxTasks?: number }>;
   stopTask?: (taskId: string) => Promise<{ stopped: boolean; taskId: string; worktreeRemoved?: boolean; worktreeKeptReason?: string }>;
   pickTaskFolder?: () => Promise<{ canceled: boolean; cwd?: string }>;
+  notifyActiveTask?: (taskId: string) => void;
+  getTaskSettings?: () => Promise<TaskPoolSettings>;
+  configureTasks?: (settings: Partial<TaskPoolSettings>) => Promise<TaskPoolSettings>;
+  onTaskChanged?: (listener: (payload: TaskChangedEvent) => void) => () => void;
   restartBackend(): Promise<void>;
   chooseWorkspace(): Promise<{ cwd: string; changed: boolean }>;
   openWorkspace(cwd: string): Promise<{ cwd: string; changed: boolean }>;
@@ -104,6 +108,8 @@ let activeBackendTaskId: string | undefined;
 
 export function setActiveBackendTask(taskId: string | undefined): void {
   activeBackendTaskId = taskId;
+  // The main process protects the viewed task from idle reaping.
+  getApi()?.notifyActiveTask?.(taskId ?? "main");
 }
 
 export function getActiveBackendTask(): string | undefined {
@@ -131,11 +137,41 @@ export async function createTask(cwd: string): Promise<TaskSnapshot> {
   return api.createTask(cwd);
 }
 
-export async function listTasks(): Promise<TaskSnapshot[]> {
+export interface TaskPoolSettings {
+  maxTasks: number;
+  idleMinutes: number;
+}
+
+export interface TaskChangedEvent {
+  taskId: string;
+  reason: string;
+  worktreeRemoved?: boolean;
+  worktreeKeptReason?: string;
+}
+
+export async function listTasks(): Promise<{ tasks: TaskSnapshot[]; maxTasks?: number }> {
   const api = getApi();
-  if (!api?.listTasks) return [];
+  if (!api?.listTasks) return { tasks: [] };
   const result = await api.listTasks();
-  return result.tasks ?? [];
+  return { tasks: result.tasks ?? [], maxTasks: (result as { maxTasks?: number }).maxTasks };
+}
+
+export async function getTaskSettings(): Promise<TaskPoolSettings | null> {
+  const api = getApi();
+  if (!api?.getTaskSettings) return null;
+  return api.getTaskSettings();
+}
+
+export async function configureTasks(settings: Partial<TaskPoolSettings>): Promise<TaskPoolSettings> {
+  const api = requireApi();
+  if (!api.configureTasks) throw new Error("Parallel tasks need a newer Pi Studio build");
+  return api.configureTasks(settings);
+}
+
+export function onTaskChanged(listener: (payload: TaskChangedEvent) => void): () => void {
+  const api = getApi();
+  if (!api?.onTaskChanged) return () => {};
+  return api.onTaskChanged(listener);
 }
 
 export async function stopTask(

@@ -33,6 +33,8 @@ export interface TaskListSnapshot {
 export interface TaskRegistryState {
   tasks: Record<string, TaskSummary>;
   activeTaskId: string;
+  /** Live pool cap from the main process; undefined until the first task:list. */
+  maxTasks?: number;
 }
 
 export interface RouteResult {
@@ -167,7 +169,7 @@ export function mergeTaskList(state: TaskRegistryState, snapshots: TaskListSnaps
     tasks[PRIMARY_TASK_ID] = state.tasks[PRIMARY_TASK_ID] ?? emptySummary(PRIMARY_TASK_ID);
   }
   const activeTaskId = tasks[state.activeTaskId] ? state.activeTaskId : PRIMARY_TASK_ID;
-  return { tasks, activeTaskId };
+  return { ...state, tasks, activeTaskId };
 }
 
 export function applyTaskStatus(

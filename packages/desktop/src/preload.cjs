@@ -22,6 +22,20 @@ contextBridge.exposeInMainWorld("piDesktop", {
 	stopTask(taskId) {
 		return ipcRenderer.invoke("task:stop", taskId);
 	},
+	notifyActiveTask(taskId) {
+		ipcRenderer.send("task:activate", taskId);
+	},
+	getTaskSettings() {
+		return ipcRenderer.invoke("task:get-settings");
+	},
+	configureTasks(settings) {
+		return ipcRenderer.invoke("task:configure", settings);
+	},
+	onTaskChanged(listener) {
+		const handler = (_event, payload) => listener(payload);
+		ipcRenderer.on("task:changed", handler);
+		return () => ipcRenderer.off("task:changed", handler);
+	},
 	restartBackend() {
 		return ipcRenderer.invoke("backend:restart");
 	},

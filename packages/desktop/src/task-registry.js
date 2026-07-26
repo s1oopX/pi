@@ -8,6 +8,8 @@
 import { resolve } from "node:path";
 
 const DEFAULT_MAX_TASKS = 3;
+const MIN_MAX_TASKS = 1;
+const MAX_MAX_TASKS = 5;
 
 function canonicalCwd(cwd) {
 	const resolved = resolve(String(cwd ?? ""));
@@ -19,6 +21,7 @@ export function createTaskRegistry({ primary, createHandle, maxTasks = DEFAULT_M
 	/** @type {Map<string, {taskId: string, cwd: () => string, handle: object, isPrimary: boolean}>} */
 	const pool = new Map();
 	let taskCounter = 0;
+	let poolCap = Math.min(MAX_MAX_TASKS, Math.max(MIN_MAX_TASKS, maxTasks));
 
 	function snapshot(entry) {
 		return {
@@ -50,16 +53,16 @@ export function createTaskRegistry({ primary, createHandle, maxTasks = DEFAULT_M
 
 		/** Throws the cap error early, before any expensive provisioning. */
 		assertCapacity() {
-			if (pool.size >= maxTasks) {
+			if (pool.size >= poolCap) {
 				const running = [...pool.values()].map((entry) => `${entry.taskId} (${entry.cwd()})`).join(", ");
-				throw new Error(`Task limit reached (${maxTasks}). Stop one first — running: ${running}`);
+				throw new Error(`Task limit reached (${poolCap}). Stop one first — running: ${running}`);
 			}
 		},
 
 		create(cwd, meta) {
-			if (pool.size >= maxTasks) {
+			if (pool.size >= poolCap) {
 				const running = [...pool.values()].map((entry) => `${entry.taskId} (${entry.cwd()})`).join(", ");
-				throw new Error(`Task limit reached (${maxTasks}). Stop one first — running: ${running}`);
+				throw new Error(`Task limit reached (${poolCap}). Stop one first — running: ${running}`);
 			}
 			const claim = findClaim(cwd);
 			if (claim) {
@@ -112,6 +115,32 @@ export function createTaskRegistry({ primary, createHandle, maxTasks = DEFAULT_M
 				entry.handle.stop();
 			}
 			pool.clear();
+		},
+
+		getMaxTasks() {
+			return poolCap;
+		},
+
+		setMaxTasks(next) {
+			const parsed = Number(next);
+			if (Number.isFinite(parsed)) {
+				poolCap = Math.min(MAX_MAX_TASKS, Math.max(MIN_MAX_TASKS, Math.round(parsed)));
+			}
+			return poolCap;
+		},
+
+		/**
+		 * Pool tasks whose backend has been silent past the idle window. The
+		 * primary and the renderer's active task are never candidates.
+		 */
+		listIdle(nowMs, idleMs, { skipTaskId } = {}) {
+			const idle = [];
+			for (const entry of pool.values()) {
+				if (entry.taskId === skipTaskId) continue;
+				const last = Number(entry.handle.lastActivityAt ?? 0);
+				if (nowMs - last >= idleMs) idle.push(entry.taskId);
+			}
+			return idle;
 		},
 	};
 }

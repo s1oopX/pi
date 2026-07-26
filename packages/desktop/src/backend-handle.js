@@ -46,6 +46,7 @@ export class BackendHandle {
 		isQuitting = () => false,
 		spawnImpl = spawn,
 		existsSyncImpl = existsSync,
+		nowImpl = Date.now,
 	}) {
 		this.id = id;
 		this.getCwd = getCwd;
@@ -56,6 +57,9 @@ export class BackendHandle {
 		this.isQuitting = isQuitting;
 		this.spawnImpl = spawnImpl;
 		this.existsSyncImpl = existsSyncImpl;
+		this.nowImpl = nowImpl;
+		/** Last backend traffic (outgoing request or parsed stdout) for idle reaping. */
+		this.lastActivityAt = nowImpl();
 
 		this.child = undefined;
 		this.buffer = "";
@@ -94,6 +98,7 @@ export class BackendHandle {
 		if (!line.trim()) {
 			return;
 		}
+		this.lastActivityAt = this.nowImpl();
 		let payload;
 		try {
 			payload = JSON.parse(line);
@@ -297,6 +302,7 @@ export class BackendHandle {
 			return Promise.reject(new Error(this.starting ? "Pi backend is starting" : "Pi backend is not running"));
 		}
 
+		this.lastActivityAt = this.nowImpl();
 		// Callers may supply their own request id (bash runs correlate streamed
 		// bash_execution_update events by it); otherwise assign one.
 		const id = typeof command?.id === "string" && command.id ? command.id : `desktop_${++this.requestCounter}`;

@@ -1,7 +1,7 @@
 import type { TaskRegistryState, TaskSummary } from "../../store/taskRegistry";
 import { describeTask, PRIMARY_TASK_ID } from "../../store/taskRegistry";
 
-/** Mirrors DEFAULT_MAX_TASKS in src/task-registry.js. */
+/** Fallback before the first task:list reports the live cap. */
 export const MAX_POOL_TASKS = 3;
 
 export interface ParallelTaskRow {
@@ -55,6 +55,10 @@ export function poolTaskCount(registry: TaskRegistryState): number {
   return Object.keys(registry.tasks).filter((taskId) => taskId !== PRIMARY_TASK_ID).length;
 }
 
+export function poolCap(registry: TaskRegistryState): number {
+  return registry.maxTasks ?? MAX_POOL_TASKS;
+}
+
 export function isPoolFull(registry: TaskRegistryState): boolean {
-  return poolTaskCount(registry) >= MAX_POOL_TASKS;
+  return poolTaskCount(registry) >= poolCap(registry);
 }

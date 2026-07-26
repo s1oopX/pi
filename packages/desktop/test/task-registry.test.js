@@ -140,6 +140,34 @@ test("passes worktree metadata through to snapshots and list entries", () => {
 	assert.equal(plain.branch, undefined);
 });
 
+test("lists idle pool tasks but never the primary or the protected task", () => {
+	const { registry, primary, created } = createFixture();
+	registry.create(poolCwd("a"));
+	registry.create(poolCwd("b"));
+	primary.lastActivityAt = 0;
+	created[0].lastActivityAt = 1000;
+	created[1].lastActivityAt = 90_000;
+
+	assert.deepEqual(registry.listIdle(100_000, 30_000), ["task_1"]);
+	assert.deepEqual(registry.listIdle(100_000, 30_000, { skipTaskId: "task_1" }), []);
+	assert.deepEqual(registry.listIdle(100_000, 5_000), ["task_1", "task_2"]);
+	assert.deepEqual(registry.listIdle(100_000, 200_000), []);
+});
+
+test("the pool cap is adjustable within bounds and reported", () => {
+	const { registry } = createFixture();
+	assert.equal(registry.getMaxTasks(), 3);
+	registry.setMaxTasks(1);
+	assert.equal(registry.getMaxTasks(), 1);
+	registry.create(poolCwd("a"));
+	assert.throws(() => registry.assertCapacity(), /task limit/iu);
+	registry.setMaxTasks(99);
+	assert.equal(registry.getMaxTasks(), 5, "the cap clamps to the supported maximum");
+	assert.doesNotThrow(() => registry.assertCapacity());
+	registry.setMaxTasks(0);
+	assert.equal(registry.getMaxTasks(), 1, "the cap clamps to at least one");
+});
+
 test("stopAll stops the primary and every pool member", () => {
 	const { registry, primary, created } = createFixture();
 	registry.create(poolCwd("a"));

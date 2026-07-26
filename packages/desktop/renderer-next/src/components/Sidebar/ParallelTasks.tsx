@@ -5,7 +5,7 @@ import { useStore } from "../../store";
 import { PRIMARY_TASK_ID } from "../../store/taskRegistry";
 import { Icon } from "../Icon";
 import { showToast } from "../Toast";
-import { buildParallelTaskRows, isPoolFull, MAX_POOL_TASKS } from "./parallelTasksState";
+import { buildParallelTaskRows, isPoolFull, poolCap } from "./parallelTasksState";
 
 function errorText(error: unknown): string {
   const raw = error instanceof Error ? error.message : String(error);
@@ -99,7 +99,7 @@ export function ParallelTasks() {
           aria-label={t("Start a parallel task in another folder", "在其他文件夹启动并行任务")}
           title={poolFull
             ? t("Task limit reached ({max}); stop one first", "已达任务上限（{max}），请先停止一个", {
-                max: MAX_POOL_TASKS,
+                max: poolCap(taskRegistry),
               })
             : t("Start a parallel task in another folder", "在其他文件夹启动并行任务")}
           disabled={busy || poolFull}

@@ -42,6 +42,7 @@ function createHandle(overrides = {}) {
 			return child;
 		},
 		existsSyncImpl: overrides.existsSyncImpl ?? (() => true),
+		...(overrides.nowImpl ? { nowImpl: overrides.nowImpl } : {}),
 	});
 	return { handle, events, children, notified, sessionCwds };
 }
@@ -196,6 +197,28 @@ test("a failed init ping reports the failure and kills the child", async (t) => 
 	const status = context.events.findLast((event) => event.channel === "backend:status");
 	assert.match(status.payload.error, /failed to initialize: EPIPE/);
 	assert.equal(child.killed, true);
+});
+
+test("tracks backend activity for idle detection", async (t) => {
+	let now = 1000;
+	const context = createHandle({ nowImpl: () => now });
+	t.after(() => context.handle.stop());
+	const child = await startReady(context);
+	const readyActivity = context.handle.lastActivityAt;
+	assert.ok(readyActivity >= 1000, "the ready handshake counts as activity");
+
+	now = 5000;
+	const pending = context.handle.request({ type: "get_messages" });
+	assert.equal(context.handle.lastActivityAt, 5000, "an outgoing request bumps activity");
+
+	now = 9000;
+	replyTo(child, child.written.at(-1));
+	await pending;
+	assert.equal(context.handle.lastActivityAt, 9000, "a parsed stdout line bumps activity");
+
+	now = 12000;
+	child.stdout.emit("data", Buffer.from('{"type":"agent_start"}\n'));
+	assert.equal(context.handle.lastActivityAt, 12000, "streamed events bump activity");
 });
 
 test("a missing executable reports a tagged error without spawning", (t) => {

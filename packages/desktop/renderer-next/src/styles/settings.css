@@ -1712,3 +1712,24 @@
     transition-duration: 0.01ms !important;
   }
 }
+
+/* Parallel-task pool settings */
+
+.settings-pool-fields {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 14px;
+}
+
+.settings-pool-field {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: var(--font-size-meta);
+  color: var(--text-soft);
+}
+
+.settings-pool-field .form-select {
+  width: auto;
+  min-width: 110px;
+}

@@ -1,5 +1,5 @@
 import { useEffect } from "react";
-import { getPendingExtensionUIRequests, onEvent, onLog, onStatus } from "./api";
+import { getPendingExtensionUIRequests, onEvent, onLog, onStatus, onTaskChanged } from "./api";
 import { emitBashExecutionDelta } from "./bashExecutionStream";
 import { isInteractiveExtensionUIRequest, parseExtensionUIEffect } from "./extensionUIEffects";
 import { createExtensionUIRequestTimeoutManager } from "./extensionUIRequestTimeouts";
@@ -393,6 +393,16 @@ export function useBackendEvents(): void {
     const unsubLog = onLog((entry: LogEntry) => {
       useStore.getState().addLog(entry);
     });
+    // Main-process pool changes (idle reaping) that no renderer action caused.
+    const unsubTaskChanged = onTaskChanged((payload) => {
+      void useStore.getState().refreshTasks();
+      if (payload.reason === "idle") {
+        showToast(
+          t("Task {task} stopped after being idle.", "任务 {task} 因空闲已停止。", { task: payload.taskId }),
+          "info",
+        );
+      }
+    });
     const unsubHydration = useStore.subscribe(hydratePendingExtensionUIRequestsWhenReady);
     hydratePendingExtensionUIRequestsWhenReady();
 
@@ -404,6 +414,7 @@ export function useBackendEvents(): void {
       unsubEvent();
       unsubStatus();
       unsubLog();
+      unsubTaskChanged();
       unsubHydration();
       unsubExtensionUIRequests();
       extensionUIRequestTimeouts.dispose();

@@ -114,7 +114,7 @@ time for a cwd that is already claimed by a running task:
 
 Non-git folders: refuse a second concurrent task with a clear message.
 
-### 3.4 Limits and hygiene
+### 3.4 Limits and hygiene — LANDED 2026-07-26 (see parallel-tasks-m4-tdd.md)
 
 - Pool cap (default 3, max 5) — each Bun backend is ~100-200 MB RSS; the
   deferred "replace 105 MB Bun exe" size work multiplies in value here.

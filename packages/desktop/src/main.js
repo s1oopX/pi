@@ -32,6 +32,9 @@ if (process.env.PI_STUDIO_USER_DATA_DIR) {
 const WINDOW_STATE_FILE = "window-state.json";
 const WORKSPACE_STATE_FILE = "workspace-state.json";
 const TASK_WORKSPACE_DIRECTORY = "tasks";
+const TASK_SETTINGS_FILE = "task-settings.json";
+const MAX_IDLE_MINUTES = 240;
+const DEFAULT_TASK_SETTINGS = { maxTasks: 3, idleMinutes: 30 };
 
 let mainWindow;
 let windowCreationPromise;
@@ -442,6 +445,7 @@ async function createWindow() {
 
 function ensureWindow() {
 	initializeBackendCwd();
+	initializeTaskSettings();
 	if (mainWindow && !mainWindow.isDestroyed()) return Promise.resolve(mainWindow);
 	if (windowCreationPromise) return windowCreationPromise;
 	windowCreationPromise = createWindow().finally(() => {
@@ -578,6 +582,106 @@ function getWorktreesRoot() {
 	return join(app.getPath("userData"), "worktrees");
 }
 
+// --- Pool lifecycle (M4): settings + idle reaping ---
+
+let taskSettings = { ...DEFAULT_TASK_SETTINGS };
+let taskSettingsInitialized = false;
+// The renderer's currently displayed task; the reaper never touches it.
+let rendererActiveTaskId;
+
+function getTaskSettingsPath() {
+	return join(app.getPath("userData"), TASK_SETTINGS_FILE);
+}
+
+function clampIdleMinutes(value) {
+	const parsed = Number(value);
+	if (!Number.isFinite(parsed)) return taskSettings.idleMinutes;
+	return Math.min(MAX_IDLE_MINUTES, Math.max(0, Math.round(parsed)));
+}
+
+function initializeTaskSettings() {
+	if (taskSettingsInitialized) return;
+	taskSettingsInitialized = true;
+	try {
+		const parsed = JSON.parse(readFileSync(getTaskSettingsPath(), "utf8"));
+		if (parsed && typeof parsed === "object") {
+			if (parsed.maxTasks !== undefined) taskSettings.maxTasks = Number(parsed.maxTasks);
+			if (parsed.idleMinutes !== undefined) taskSettings.idleMinutes = clampIdleMinutes(parsed.idleMinutes);
+		}
+	} catch {
+		// Missing or invalid settings file: defaults apply.
+	}
+	taskSettings.maxTasks = taskRegistry.setMaxTasks(taskSettings.maxTasks);
+}
+
+function persistTaskSettings() {
+	try {
+		mkdirSync(app.getPath("userData"), { recursive: true });
+		writeFileSync(getTaskSettingsPath(), `${JSON.stringify(taskSettings, null, 2)}\n`, {
+			encoding: "utf8",
+			mode: 0o600,
+		});
+	} catch (error) {
+		sendToRenderer("backend:log", {
+			level: "warn",
+			message: `Could not save task settings: ${error instanceof Error ? error.message : String(error)}`,
+		});
+	}
+}
+
+async function stopTaskAndCleanup(taskId) {
+	const entry = taskRegistry.get(taskId);
+	const child = entry.handle.child;
+	const result = taskRegistry.stop(entry.taskId);
+	if (entry.meta?.worktreePath && entry.meta?.sourceRepo) {
+		// The backend process holds the worktree cwd open on Windows; give it a
+		// moment to exit, then remove — never forced, a dirty worktree stays.
+		await waitForChildExit(child, 5000);
+		const removal = await removeTaskWorktree(entry.meta.sourceRepo, entry.meta.worktreePath);
+		return {
+			...result,
+			worktreeRemoved: removal.removed,
+			...(removal.removed ? {} : { worktreeKeptReason: removal.reason }),
+		};
+	}
+	return result;
+}
+
+// Idle sweep: a pool backend with no traffic past the window stops itself;
+// session files make resume cheap. PI_STUDIO_IDLE_REAP_MS shortens the window
+// and the sweep cadence so tests can observe a reap in seconds.
+const idleReapOverrideMs = Number(process.env.PI_STUDIO_IDLE_REAP_MS);
+const idleSweepIntervalMs =
+	Number.isFinite(idleReapOverrideMs) && idleReapOverrideMs > 0
+		? Math.max(1000, Math.round(idleReapOverrideMs / 2))
+		: 60_000;
+
+function idleWindowMs() {
+	if (Number.isFinite(idleReapOverrideMs) && idleReapOverrideMs > 0) return idleReapOverrideMs;
+	return taskSettings.idleMinutes > 0 ? taskSettings.idleMinutes * 60_000 : 0;
+}
+
+let idleSweepRunning = false;
+setInterval(() => {
+	const windowMs = idleWindowMs();
+	if (!windowMs || idleSweepRunning || isQuitting) return;
+	const idle = taskRegistry.listIdle(Date.now(), windowMs, { skipTaskId: rendererActiveTaskId });
+	if (idle.length === 0) return;
+	idleSweepRunning = true;
+	void (async () => {
+		for (const taskId of idle) {
+			try {
+				const outcome = await stopTaskAndCleanup(taskId);
+				sendToRenderer("task:changed", { taskId, reason: "idle", ...outcome });
+			} catch {
+				// The task may have been stopped concurrently; the next sweep settles it.
+			}
+		}
+	})().finally(() => {
+		idleSweepRunning = false;
+	});
+}, idleSweepIntervalMs);
+
 function waitForChildExit(child, timeoutMs) {
 	if (!child || child.exitCode !== null || child.signalCode) {
 		return Promise.resolve();
@@ -615,24 +719,36 @@ ipcMain.handle("task:create", async (_event, cwd) => {
 	});
 });
 
-ipcMain.handle("task:list", async () => ({ tasks: taskRegistry.list() }));
+ipcMain.handle("task:list", async () => ({ tasks: taskRegistry.list(), maxTasks: taskRegistry.getMaxTasks() }));
 
-ipcMain.handle("task:stop", async (_event, taskId) => {
-	const entry = taskRegistry.get(String(taskId ?? ""));
-	const child = entry.handle.child;
-	const result = taskRegistry.stop(entry.taskId);
-	if (entry.meta?.worktreePath && entry.meta?.sourceRepo) {
-		// The backend process holds the worktree cwd open on Windows; give it a
-		// moment to exit, then remove — never forced, a dirty worktree stays.
-		await waitForChildExit(child, 5000);
-		const removal = await removeTaskWorktree(entry.meta.sourceRepo, entry.meta.worktreePath);
-		return {
-			...result,
-			worktreeRemoved: removal.removed,
-			...(removal.removed ? {} : { worktreeKeptReason: removal.reason }),
-		};
+ipcMain.handle("task:stop", async (_event, taskId) => stopTaskAndCleanup(String(taskId ?? "")));
+
+ipcMain.handle("task:get-settings", async () => ({ ...taskSettings, maxTasks: taskRegistry.getMaxTasks() }));
+
+ipcMain.handle("task:configure", async (_event, settings) => {
+	if (settings && typeof settings === "object") {
+		if (settings.maxTasks !== undefined) {
+			taskSettings.maxTasks = taskRegistry.setMaxTasks(settings.maxTasks);
+		}
+		if (settings.idleMinutes !== undefined) {
+			taskSettings.idleMinutes = clampIdleMinutes(settings.idleMinutes);
+		}
+		persistTaskSettings();
 	}
-	return result;
+	return { ...taskSettings, maxTasks: taskRegistry.getMaxTasks() };
+});
+
+ipcMain.on("task:activate", (_event, taskId) => {
+	rendererActiveTaskId = typeof taskId === "string" && taskId && taskId !== "main" ? taskId : undefined;
+	// Switching to a task counts as touching it, so a just-opened quiet task
+	// is not reaped out from under the user on the next sweep.
+	if (rendererActiveTaskId) {
+		try {
+			taskRegistry.get(rendererActiveTaskId).handle.lastActivityAt = Date.now();
+		} catch {
+			rendererActiveTaskId = undefined;
+		}
+	}
 });
 
 ipcMain.handle("backend:open-external", async (_event, url) => {

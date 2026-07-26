@@ -24,6 +24,9 @@ export function AgentSettings() {
   const [permissionExtensionStatus, setPermissionExtensionStatus] = useState<
     "unknown" | "available" | "missing"
   >("unknown");
+  const [poolSettings, setPoolSettings] = useState<api.TaskPoolSettings | null>(null);
+  const [poolSettingsSaving, setPoolSettingsSaving] = useState(false);
+  const refreshTasks = useStore((state) => state.refreshTasks);
   const thinkingLevel = (session?.thinkingLevel ?? "medium") as ThinkingLevel;
   // Match SettingsManager defaults: queue modes are one-at-a-time unless configured.
   const steeringMode = (session?.steeringMode ?? "one-at-a-time") as QueueMode;
@@ -79,6 +82,31 @@ export function AgentSettings() {
   async function refreshAuthoritativeSession(): Promise<void> {
     const nextSession = await api.getState();
     useStore.setState({ session: nextSession, isStreaming: nextSession.isStreaming });
+  }
+
+  useEffect(() => {
+    let cancelled = false;
+    void api.getTaskSettings().then((settings) => {
+      if (!cancelled && settings) setPoolSettings(settings);
+    }).catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  async function handlePoolSettings(update: Partial<api.TaskPoolSettings>) {
+    setPoolSettingsSaving(true);
+    try {
+      const applied = await api.configureTasks(update);
+      setPoolSettings(applied);
+      // The sidebar's full-pool state follows the live cap.
+      await refreshTasks();
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      showToast(t("Failed: {message}", "失败：{message}", { message }), "error");
+    } finally {
+      setPoolSettingsSaving(false);
+    }
   }
 
   async function handleThinking(level: ThinkingLevel) {
@@ -297,6 +325,46 @@ export function AgentSettings() {
         <button className="settings-btn" type="button" disabled={manualCompactDisabled} onClick={handleManualCompact}>
           {compacting ? t("Compacting…", "压缩中…") : t("Compact now", "立即压缩")}
         </button>
+      </div>
+
+      <div className="settings-group">
+        <span className="settings-group-label">{t("Parallel Tasks", "并行任务")}</span>
+        <p className="settings-group-desc">
+          {t(
+            "Each parallel task runs its own backend process. Idle tasks stop themselves; their sessions reopen instantly.",
+            "每个并行任务运行独立的后端进程。空闲任务会自行停止，其会话可随时重新打开。",
+          )}
+        </p>
+        <div className="settings-pool-fields">
+          <label className="settings-pool-field">
+            <span>{t("Task limit", "任务上限")}</span>
+            <select
+              className="form-select"
+              value={String(poolSettings?.maxTasks ?? 3)}
+              disabled={!poolSettings || poolSettingsSaving}
+              onChange={(event) => void handlePoolSettings({ maxTasks: Number(event.target.value) })}
+            >
+              {[1, 2, 3, 4, 5].map((count) => (
+                <option key={count} value={String(count)}>{count}</option>
+              ))}
+            </select>
+          </label>
+          <label className="settings-pool-field">
+            <span>{t("Stop idle tasks after", "空闲多久后停止")}</span>
+            <select
+              className="form-select"
+              value={String(poolSettings?.idleMinutes ?? 30)}
+              disabled={!poolSettings || poolSettingsSaving}
+              onChange={(event) => void handlePoolSettings({ idleMinutes: Number(event.target.value) })}
+            >
+              <option value="15">{t("15 minutes", "15 分钟")}</option>
+              <option value="30">{t("30 minutes", "30 分钟")}</option>
+              <option value="60">{t("1 hour", "1 小时")}</option>
+              <option value="120">{t("2 hours", "2 小时")}</option>
+              <option value="0">{t("Never", "从不")}</option>
+            </select>
+          </label>
+        </div>
       </div>
     </div>
   );

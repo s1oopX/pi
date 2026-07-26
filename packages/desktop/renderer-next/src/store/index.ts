@@ -601,9 +601,10 @@ export const useStore = create<AppState>((set, get) => ({
 
   async refreshTasks() {
     try {
-      const tasks = await api.listTasks();
+      const { tasks, maxTasks } = await api.listTasks();
       if (tasks.length > 0) {
-        set({ taskRegistry: mergeTaskList(get().taskRegistry, tasks) });
+        const merged = mergeTaskList(get().taskRegistry, tasks);
+        set({ taskRegistry: maxTasks === undefined ? merged : { ...merged, maxTasks } });
       }
     } catch {
       // The task list is auxiliary; never let a failed poll break the UI.

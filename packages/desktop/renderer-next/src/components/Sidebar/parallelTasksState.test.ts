@@ -52,7 +52,7 @@ describe("buildParallelTaskRows", () => {
 });
 
 describe("pool capacity", () => {
-  it("counts only pool members and reports fullness at three", () => {
+  it("counts only pool members and reports fullness at the default cap", () => {
     let state = registryWithPool();
     expect(poolTaskCount(state)).toBe(2);
     expect(isPoolFull(state)).toBe(false);
@@ -63,5 +63,12 @@ describe("pool capacity", () => {
       { taskId: "task_3", cwd: "C:\\repos\\gamma", isPrimary: false, ready: true, starting: false },
     ]);
     expect(isPoolFull(state)).toBe(true);
+  });
+
+  it("follows the live cap reported by the main process", () => {
+    const state = { ...registryWithPool(), maxTasks: 2 };
+    expect(isPoolFull(state)).toBe(true);
+    const raised = { ...state, maxTasks: 5 };
+    expect(isPoolFull(raised)).toBe(false);
   });
 });

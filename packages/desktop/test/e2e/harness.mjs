@@ -43,7 +43,7 @@ export function assertPrerequisites() {
 	assertPrerequisite(backendExe, "npm run build:backend (in packages/desktop)");
 }
 
-export async function launchStudio({ reply, script, setupWorkspace, extraWorkspaces = 0 } = {}) {
+export async function launchStudio({ reply, script, setupWorkspace, extraWorkspaces = 0, extraEnv = {} } = {}) {
 	const tempRoot = mkdtempSync(join(tmpdir(), "pi-studio-e2e-"));
 	const workspaceDir = join(tempRoot, "workspace");
 	const agentDir = join(tempRoot, "agent");
@@ -89,6 +89,7 @@ export async function launchStudio({ reply, script, setupWorkspace, extraWorkspa
 			PI_CODING_AGENT_DIR: agentDir,
 			PI_STUDIO_USER_DATA_DIR: userDataDir,
 			PI_DEV: "",
+			...extraEnv,
 		},
 		timeout: LAUNCH_TIMEOUT_MS,
 	});
