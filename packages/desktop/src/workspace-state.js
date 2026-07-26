@@ -5,6 +5,7 @@ const WORKSPACE_STATE_VERSION = 1;
 const MAX_WORKSPACE_STATE_BYTES = 16 * 1024;
 let temporaryFileCounter = 0;
 
+/** @param {string} contents */
 export function parseWorkspaceState(contents) {
 	try {
 		const state = JSON.parse(contents);
@@ -24,11 +25,16 @@ export function parseWorkspaceState(contents) {
 	}
 }
 
+/**
+ * @param {string} contents
+ * @param {(path: string) => boolean} isDirectory
+ */
 export function resolveStoredWorkspace(contents, isDirectory) {
 	const cwd = parseWorkspaceState(contents);
 	return cwd && isDirectory(cwd) ? cwd : undefined;
 }
 
+/** @param {string} path */
 function isDirectory(path) {
 	try {
 		return statSync(path).isDirectory();
@@ -37,6 +43,7 @@ function isDirectory(path) {
 	}
 }
 
+/** @param {string} statePath */
 export function loadStoredWorkspace(statePath) {
 	try {
 		const stateStats = statSync(statePath);
@@ -47,6 +54,10 @@ export function loadStoredWorkspace(statePath) {
 	}
 }
 
+/**
+ * @param {string} statePath
+ * @param {string} cwd
+ */
 export function saveStoredWorkspace(statePath, cwd) {
 	if (typeof cwd !== "string" || !cwd.trim() || !isDirectory(cwd)) {
 		throw new Error(`Workspace not found: ${cwd}`);

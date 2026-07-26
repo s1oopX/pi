@@ -4,10 +4,12 @@ export function createPendingExtensionUIRequestStore() {
 	const requests = new Map();
 
 	return {
+		/** @param {{ type?: string, id?: string, method?: string } | null | undefined} payload */
 		track(payload) {
 			if (
 				payload?.type === "extension_ui_request" &&
 				typeof payload.id === "string" &&
+				typeof payload.method === "string" &&
 				INTERACTIVE_METHODS.has(payload.method)
 			) {
 				requests.set(payload.id, payload);
@@ -17,6 +19,7 @@ export function createPendingExtensionUIRequestStore() {
 				requests.delete(payload.id);
 			}
 		},
+		/** @param {string} id */
 		remove(id) {
 			requests.delete(id);
 		},

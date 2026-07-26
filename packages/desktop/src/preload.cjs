@@ -1,46 +1,60 @@
 const { contextBridge, ipcRenderer } = require("electron");
 
+// Pure pass-through bridge: every argument is forwarded verbatim and
+// validated on the main-process side, so parameters are typed `unknown`
+// (and `string`/functions where the renderer contract is that specific).
+
+/** @typedef {(payload: any) => void} PayloadListener */
+
+/**
+ * @param {string} channel
+ * @param {PayloadListener} listener
+ */
+function subscribe(channel, listener) {
+	const handler = (/** @type {unknown} */ _event, /** @type {any} */ payload) => listener(payload);
+	ipcRenderer.on(channel, handler);
+	return () => ipcRenderer.off(channel, handler);
+}
+
 contextBridge.exposeInMainWorld("piDesktop", {
-	request(command, taskId) {
+	request(/** @type {unknown} */ command, /** @type {string | undefined} */ taskId) {
 		return ipcRenderer.invoke("backend:request", command, taskId);
 	},
-	send(command, taskId) {
+	send(/** @type {unknown} */ command, /** @type {string | undefined} */ taskId) {
 		return ipcRenderer.invoke("backend:send", command, taskId);
 	},
-	getBackendStatus(taskId) {
+	getBackendStatus(/** @type {string | undefined} */ taskId) {
 		return ipcRenderer.invoke("backend:get-status", taskId);
 	},
-	getPendingExtensionUIRequests(taskId) {
+	getPendingExtensionUIRequests(/** @type {string | undefined} */ taskId) {
 		return ipcRenderer.invoke("backend:get-pending-extension-ui-requests", taskId);
 	},
-	createTask(cwd) {
+	createTask(/** @type {unknown} */ cwd) {
 		return ipcRenderer.invoke("task:create", cwd);
 	},
 	listTasks() {
 		return ipcRenderer.invoke("task:list");
 	},
-	stopTask(taskId) {
+	stopTask(/** @type {unknown} */ taskId) {
 		return ipcRenderer.invoke("task:stop", taskId);
 	},
-	notifyActiveTask(taskId) {
+	notifyActiveTask(/** @type {unknown} */ taskId) {
 		ipcRenderer.send("task:activate", taskId);
 	},
 	getTaskSettings() {
 		return ipcRenderer.invoke("task:get-settings");
 	},
-	configureTasks(settings) {
+	configureTasks(/** @type {unknown} */ settings) {
 		return ipcRenderer.invoke("task:configure", settings);
 	},
 	listWorktreeLeftovers() {
 		return ipcRenderer.invoke("worktrees:list-leftovers");
 	},
-	deleteWorktreeLeftover(targetPath) {
+	deleteWorktreeLeftover(/** @type {unknown} */ targetPath) {
 		return ipcRenderer.invoke("worktrees:delete", targetPath);
 	},
-	onTaskChanged(listener) {
-		const handler = (_event, payload) => listener(payload);
-		ipcRenderer.on("task:changed", handler);
-		return () => ipcRenderer.off("task:changed", handler);
+	onTaskChanged(/** @type {PayloadListener} */ listener) {
+		return subscribe("task:changed", listener);
 	},
 	restartBackend() {
 		return ipcRenderer.invoke("backend:restart");
@@ -51,64 +65,68 @@ contextBridge.exposeInMainWorld("piDesktop", {
 	pickTaskFolder() {
 		return ipcRenderer.invoke("dialog:pick-folder");
 	},
-	openWorkspace(cwd) {
+	openWorkspace(/** @type {unknown} */ cwd) {
 		return ipcRenderer.invoke("workspace:open", cwd);
 	},
 	getWorkspace() {
 		return ipcRenderer.invoke("workspace:get");
 	},
-	getWorkspaceGitStatus(taskId) {
+	getWorkspaceGitStatus(/** @type {string | undefined} */ taskId) {
 		return ipcRenderer.invoke("workspace:get-git-status", taskId);
 	},
-	getGitChanges(taskId) {
+	getGitChanges(/** @type {string | undefined} */ taskId) {
 		return ipcRenderer.invoke("git:changes", taskId);
 	},
-	commitAllGitChanges(message, taskId) {
+	commitAllGitChanges(/** @type {unknown} */ message, /** @type {string | undefined} */ taskId) {
 		return ipcRenderer.invoke("git:commit-all", message, taskId);
 	},
-	getGitBranches(taskId) {
+	getGitBranches(/** @type {string | undefined} */ taskId) {
 		return ipcRenderer.invoke("git:branches", taskId);
 	},
-	pushGitBranch(taskId) {
+	pushGitBranch(/** @type {string | undefined} */ taskId) {
 		return ipcRenderer.invoke("git:push", taskId);
 	},
-	switchGitBranch(name, options, taskId) {
+	switchGitBranch(
+		/** @type {unknown} */ name,
+		/** @type {unknown} */ options,
+		/** @type {string | undefined} */ taskId,
+	) {
 		return ipcRenderer.invoke("git:switch-branch", name, options, taskId);
 	},
-	getGitPrContext(taskId) {
+	getGitPrContext(/** @type {string | undefined} */ taskId) {
 		return ipcRenderer.invoke("git:pr-context", taskId);
 	},
-	createGitPullRequest(params, taskId) {
+	createGitPullRequest(/** @type {unknown} */ params, /** @type {string | undefined} */ taskId) {
 		return ipcRenderer.invoke("git:create-pr", params, taskId);
 	},
-	listWorkspaceFiles(query, taskId) {
+	listWorkspaceFiles(/** @type {unknown} */ query, /** @type {string | undefined} */ taskId) {
 		return ipcRenderer.invoke("workspace:list-files", query, taskId);
 	},
-	openWorkspaceLocation(cwd) {
+	openWorkspaceLocation(/** @type {unknown} */ cwd) {
 		return ipcRenderer.invoke("workspace:reveal", cwd);
 	},
-	revealWorkspacePath(targetPath, taskId) {
+	revealWorkspacePath(/** @type {unknown} */ targetPath, /** @type {string | undefined} */ taskId) {
 		return ipcRenderer.invoke("workspace:reveal-path", targetPath, taskId);
 	},
-	revealSessionFile(sessionPath) {
+	revealSessionFile(/** @type {unknown} */ sessionPath) {
 		return ipcRenderer.invoke("session:reveal", sessionPath);
 	},
-	trashSessionFile(sessionPath) {
+	trashSessionFile(/** @type {unknown} */ sessionPath) {
 		return ipcRenderer.invoke("session:trash", sessionPath);
 	},
-	exportSessionFile(sessionPath) {
+	exportSessionFile(/** @type {unknown} */ sessionPath) {
 		return ipcRenderer.invoke("session:export", sessionPath);
 	},
 	importSessionFile() {
 		return ipcRenderer.invoke("session:import");
 	},
-	openExternal(url) {
+	openExternal(/** @type {unknown} */ url) {
 		return ipcRenderer.invoke("backend:open-external", url);
 	},
-	fetchProviderModels(params) {
+	fetchProviderModels(/** @type {unknown} */ params) {
 		return ipcRenderer.invoke("provider:fetch-models", params);
 	},
-	writeClipboardText(text) {
+	writeClipboardText(/** @type {unknown} */ text) {
 		return ipcRenderer.invoke("clipboard:write-text", text);
 	},
 	getAppInfo() {
@@ -117,31 +135,25 @@ contextBridge.exposeInMainWorld("piDesktop", {
 	checkForUpdates() {
 		return ipcRenderer.invoke("app:check-for-updates");
 	},
-	saveDiagnostics(diagnostics) {
+	saveDiagnostics(/** @type {unknown} */ diagnostics) {
 		return ipcRenderer.invoke("diagnostics:save", diagnostics);
 	},
 	openLogsFolder() {
 		return ipcRenderer.invoke("logs:reveal");
 	},
-	saveModelBackup(backup) {
+	saveModelBackup(/** @type {unknown} */ backup) {
 		return ipcRenderer.invoke("model-config:save", backup);
 	},
 	openModelBackup() {
 		return ipcRenderer.invoke("model-config:open");
 	},
-	onEvent(listener) {
-		const handler = (_event, payload) => listener(payload);
-		ipcRenderer.on("backend:event", handler);
-		return () => ipcRenderer.off("backend:event", handler);
+	onEvent(/** @type {PayloadListener} */ listener) {
+		return subscribe("backend:event", listener);
 	},
-	onStatus(listener) {
-		const handler = (_event, payload) => listener(payload);
-		ipcRenderer.on("backend:status", handler);
-		return () => ipcRenderer.off("backend:status", handler);
+	onStatus(/** @type {PayloadListener} */ listener) {
+		return subscribe("backend:status", listener);
 	},
-	onLog(listener) {
-		const handler = (_event, payload) => listener(payload);
-		ipcRenderer.on("backend:log", handler);
-		return () => ipcRenderer.off("backend:log", handler);
+	onLog(/** @type {PayloadListener} */ listener) {
+		return subscribe("backend:log", listener);
 	},
 });

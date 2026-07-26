@@ -12,6 +12,7 @@ const GIT_STATUS_ARGS = [
 	"--untracked-files=normal",
 ];
 
+/** @param {"repository" | "not-repository" | "unavailable"} kind */
 function emptyStatus(kind) {
 	return {
 		kind,
@@ -24,6 +25,7 @@ function emptyStatus(kind) {
 	};
 }
 
+/** @param {string} output */
 export function parseGitStatusOutput(output) {
 	let branch = null;
 	let detached = false;
@@ -63,9 +65,15 @@ export function parseGitStatusOutput(output) {
 	};
 }
 
+/**
+ * @param {string} cwd
+ * @param {import("node:child_process").execFile} execFileImpl
+ * @param {number} timeoutMs
+ * @returns {Promise<{error: unknown, stdout: string, stderr: string}>}
+ */
 function runGitStatus(cwd, execFileImpl, timeoutMs) {
 	return new Promise((resolve) => {
-		const complete = (error, stdout = "", stderr = "") => {
+		const complete = (/** @type {unknown} */ error, stdout = "", stderr = "") => {
 			resolve({
 				error,
 				stdout: String(stdout ?? ""),
@@ -99,10 +107,15 @@ function runGitStatus(cwd, execFileImpl, timeoutMs) {
 	});
 }
 
+/**
+ * @param {unknown} error
+ * @param {string} stderr
+ */
 function isNotRepositoryFailure(error, stderr) {
 	return Boolean(error) && /(?:^|\n)fatal: not a git repository(?:\s|:|$)/iu.test(stderr);
 }
 
+/** @param {string} workspace */
 export async function getGitWorkspaceStatus(
 	workspace,
 	{

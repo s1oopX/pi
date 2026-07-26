@@ -14,6 +14,13 @@ const MAX_COMMIT_MESSAGE_LENGTH = 5000;
 
 const GIT_BASE_ARGS = ["-c", "color.status=false", "-c", "core.quotepath=false"];
 
+/**
+ * @typedef {{ error: unknown, stdout: string, stderr: string }} GitRunResult
+ * @typedef {(path: string) => Promise<string>} RealpathImpl
+ * @typedef {(path: string) => Promise<{ isDirectory: () => boolean }>} StatImpl
+ */
+
+/** @param {string} output */
 export function parseGitPorcelainChanges(output) {
 	const files = [];
 	let truncated = false;
@@ -32,6 +39,10 @@ export function parseGitPorcelainChanges(output) {
 	return { files, truncated };
 }
 
+/**
+ * @param {unknown} message
+ * @returns {{ ok: false, reason: string } | { ok: true, message: string }}
+ */
 export function validateCommitMessage(message) {
 	const trimmed = String(message ?? "").trim();
 	if (!trimmed) return { ok: false, reason: "Commit message is required" };
@@ -43,6 +54,10 @@ export function validateCommitMessage(message) {
  * Validate a branch name before it becomes a git argument. Rejects anything
  * that could be mistaken for a flag or that git itself refuses, so a name can
  * never inject options into the execFile argv.
+ */
+/**
+ * @param {unknown} name
+ * @returns {{ ok: false, reason: string } | { ok: true, name: string }}
  */
 export function validateBranchName(name) {
 	const trimmed = String(name ?? "").trim();
@@ -57,9 +72,16 @@ export function validateBranchName(name) {
 	return { ok: true, name: trimmed };
 }
 
+/**
+ * @param {string} cwd
+ * @param {string[]} args
+ * @param {import("node:child_process").execFile} execFileImpl
+ * @param {number} timeoutMs
+ * @returns {Promise<GitRunResult>}
+ */
 export function runGit(cwd, args, execFileImpl, timeoutMs) {
 	return new Promise((resolve) => {
-		const complete = (error, stdout = "", stderr = "") => {
+		const complete = (/** @type {unknown} */ error, stdout = "", stderr = "") => {
 			resolve({ error, stdout: String(stdout ?? ""), stderr: String(stderr ?? "") });
 		};
 		try {
@@ -88,13 +110,25 @@ export function runGit(cwd, args, execFileImpl, timeoutMs) {
 	});
 }
 
+/**
+ * @param {string} action
+ * @param {GitRunResult} result
+ */
 export function describeGitFailure(action, result) {
 	const stderr = result.stderr.trim();
 	const stdout = result.stdout.trim();
-	const detail = (stderr || stdout || String(result.error?.message ?? "unknown error")).slice(0, 500);
+	const detail = (stderr || stdout || (result.error instanceof Error ? result.error.message : "unknown error")).slice(
+		0,
+		500,
+	);
 	return new Error(`${action}: ${detail}`);
 }
 
+/**
+ * @param {unknown} workspace
+ * @param {RealpathImpl} realpathImpl
+ * @param {StatImpl} statImpl
+ */
 export async function resolveWorkspaceDir(workspace, realpathImpl, statImpl) {
 	if (typeof workspace !== "string" || !workspace.trim()) {
 		throw new Error("Workspace not set");
@@ -106,6 +140,7 @@ export async function resolveWorkspaceDir(workspace, realpathImpl, statImpl) {
 	return cwd;
 }
 
+/** @param {string} workspace */
 export async function listGitChanges(
 	workspace,
 	{ execFileImpl = execFile, realpathImpl = realpath, statImpl = stat, timeoutMs = GIT_TIMEOUT_MS } = {},
@@ -116,6 +151,10 @@ export async function listGitChanges(
 	return parseGitPorcelainChanges(result.stdout);
 }
 
+/**
+ * @param {string} workspace
+ * @param {string} message
+ */
 export async function commitAllChanges(
 	workspace,
 	message,
@@ -136,10 +175,11 @@ export async function commitAllChanges(
 		}
 		throw describeGitFailure("Commit failed", commitResult);
 	}
-	const summary = commitResult.stdout.split(/\r?\n/u).find((line) => line.trim()) ?? "Committed";
+	const summary = commitResult.stdout.split(/\r?\n/u).find((/** @type {string} */ line) => line.trim()) ?? "Committed";
 	return { committed: true, summary: summary.trim() };
 }
 
+/** @param {string} workspace */
 export async function listGitBranches(
 	workspace,
 	{ execFileImpl = execFile, realpathImpl = realpath, statImpl = stat, timeoutMs = GIT_TIMEOUT_MS } = {},
@@ -166,6 +206,7 @@ export async function listGitBranches(
 	return { branches, current };
 }
 
+/** @param {string} workspace */
 export async function pushCurrentBranch(
 	workspace,
 	{ execFileImpl = execFile, realpathImpl = realpath, statImpl = stat, timeoutMs = GIT_TIMEOUT_MS } = {},
@@ -197,6 +238,10 @@ export async function pushCurrentBranch(
 	return { pushed: true, branch, setUpstream: !hasUpstream, summary };
 }
 
+/**
+ * @param {string} workspace
+ * @param {string} name
+ */
 export async function switchGitBranch(
 	workspace,
 	name,

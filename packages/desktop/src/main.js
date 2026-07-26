@@ -43,7 +43,9 @@ const TASK_SETTINGS_FILE = "task-settings.json";
 const MAX_IDLE_MINUTES = 240;
 const DEFAULT_TASK_SETTINGS = { maxTasks: 3, idleMinutes: 30 };
 
+/** @type {import("electron").BrowserWindow | undefined} */
 let mainWindow;
+/** @type {Promise<void> | undefined} */
 let windowCreationPromise;
 let backendCwd = process.env.PI_DESKTOP_CWD || process.cwd();
 let isQuitting = false;
@@ -109,6 +111,7 @@ function persistBackendCwd() {
 	}
 }
 
+/** @param {string} cwd */
 function syncBackendCwd(cwd) {
 	if (typeof cwd !== "string" || !cwd.trim() || backendCwd === cwd) return;
 	backendCwd = cwd;
@@ -140,6 +143,7 @@ function loadWindowState() {
 	}
 }
 
+/** @param {import("electron").BrowserWindow | undefined} window */
 function saveWindowState(window) {
 	if (!window || window.isDestroyed()) return;
 	try {
@@ -201,16 +205,21 @@ function getWindowIconPath() {
 	return candidates.find((candidate) => existsSync(candidate));
 }
 
+/**
+ * @param {string} root
+ * @param {string} [query]
+ */
 function listWorkspaceFiles(root, query = "") {
 	if (!root || !existsSync(root)) {
 		return [];
 	}
 	const normalizedQuery = query.trim().toLowerCase();
+	/** @type {string[]} */
 	const files = [];
 	const maxFiles = 180;
 	const maxDepth = 4;
 
-	const walk = (directory, depth) => {
+	const walk = (/** @type {string} */ directory, /** @type {number} */ depth) => {
 		if (files.length >= maxFiles || depth > maxDepth) {
 			return;
 		}
@@ -247,6 +256,7 @@ function listWorkspaceFiles(root, query = "") {
 
 // Rolling file log (<userData>/logs): backend output, status transitions, and
 // main-process faults survive crashes that the in-memory renderer log cannot.
+/** @type {ReturnType<typeof createRollingLog> | undefined} */
 let fileLog;
 function getFileLog() {
 	if (!fileLog) {
@@ -260,6 +270,10 @@ function getFileLog() {
 	return fileLog;
 }
 
+/**
+ * @param {string} channel
+ * @param {Record<string, any> | undefined} payload
+ */
 function mirrorToFileLog(channel, payload) {
 	if (channel === "backend:log") {
 		getFileLog().append(
@@ -291,9 +305,13 @@ function mirrorToFileLog(channel, payload) {
 	}
 }
 
+/**
+ * @param {string} channel
+ * @param {object} payload
+ */
 function sendToRenderer(channel, payload) {
 	// File first: early backend failures matter most when no window exists yet.
-	mirrorToFileLog(channel, payload);
+	mirrorToFileLog(channel, /** @type {Record<string, any>} */ (payload));
 	if (!mainWindow || mainWindow.isDestroyed()) {
 		return;
 	}
@@ -305,6 +323,17 @@ process.on("uncaughtExceptionMonitor", (error) => {
 	getFileLog().append("error", "main", `uncaught exception: ${error?.stack ?? String(error)}`);
 });
 
+/**
+ * Electron's dialog API tolerates a missing parent at runtime (the dialog
+ * just opens unowned), but its types require a window. Funnel the cast
+ * through one place instead of sprinkling it at every call site.
+ * @returns {import("electron").BrowserWindow}
+ */
+function dialogParent() {
+	return /** @type {import("electron").BrowserWindow} */ (mainWindow);
+}
+
+/** @param {unknown} url */
 async function openExternalSafely(url) {
 	const target = new URL(String(url));
 	if (!new Set(["https:", "http:", "mailto:"]).has(target.protocol)) {
@@ -316,6 +345,7 @@ async function openExternalSafely(url) {
 // Fetch the model catalog from an OpenAI/Anthropic-compatible endpoint. Runs in
 // the main process so the API key never touches the renderer origin and CORS
 // does not apply. Sends both auth header styles since compatible gateways vary.
+/** @param {{ baseUrl?: unknown, apiKey?: unknown, api?: unknown }} params */
 async function fetchProviderModels({ baseUrl, apiKey, api }) {
 	const trimmedBase = String(baseUrl ?? "").trim().replace(/\/+$/, "");
 	if (!trimmedBase) {
@@ -326,6 +356,7 @@ async function fetchProviderModels({ baseUrl, apiKey, api }) {
 		throw new Error("Base URL must use HTTP or HTTPS");
 	}
 	const key = String(apiKey ?? "").trim();
+	/** @type {Record<string, string>} */
 	const headers = { Accept: "application/json" };
 	if (key) {
 		if (api === "anthropic-messages") {
@@ -383,7 +414,7 @@ async function fetchProviderModels({ baseUrl, apiKey, api }) {
 			continue;
 		}
 		const models = rawList
-			.map((entry) => {
+			.map((/** @type {any} */ entry) => {
 				if (typeof entry === "string") return { id: entry };
 				if (entry && typeof entry === "object" && typeof entry.id === "string") {
 					return {
@@ -393,7 +424,7 @@ async function fetchProviderModels({ baseUrl, apiKey, api }) {
 				}
 				return undefined;
 			})
-			.filter((m) => m && m.id)
+			.filter((/** @type {{ id?: unknown } | undefined} */ m) => m && m.id)
 			.slice(0, 500);
 
 		return { models };
@@ -405,6 +436,10 @@ async function fetchProviderModels({ baseUrl, apiKey, api }) {
 // Surface a desktop notification when a run finishes while the window is not
 // focused, so the user can look away during long agent runs. Focused-window
 // completions are the renderer's job (toast); pool tasks name themselves.
+/**
+ * @param {{ type?: string, willRetry?: boolean } | undefined} payload
+ * @param {string} [taskLabel]
+ */
 function maybeNotify(payload, taskLabel) {
 	if (payload?.type !== "agent_end" || payload.willRetry) {
 		return;
@@ -536,16 +571,21 @@ const SESSION_MUTATION_COMMAND_TYPES = new Set([
 	"switch_session",
 ]);
 
+/** @param {{ type?: string } | undefined} command */
 function getRequestTimeoutMs(command) {
 	if (command?.type === "bash") return 0;
 	if (command?.type === "prompt") return PROMPT_REQUEST_TIMEOUT_MS;
-	return LONG_REQUEST_COMMAND_TYPES.has(command?.type) ? LONG_REQUEST_COMMAND_TIMEOUT_MS : undefined;
+	return command?.type !== undefined && LONG_REQUEST_COMMAND_TYPES.has(command.type)
+		? LONG_REQUEST_COMMAND_TIMEOUT_MS
+		: undefined;
 }
 
+/** @param {() => any} operation */
 function serializeSessionMutation(operation) {
 	return primaryBackend.mutationQueue.serialize(operation);
 }
 
+/** @param {unknown} sessionPath */
 async function getKnownSessionFile(sessionPath) {
 	const [firstPageResponse, stateResponse] = await Promise.all([
 		primaryBackend.request({ type: "get_sessions", all: true, offset: 0, limit: 200 }),
@@ -647,12 +687,14 @@ function getWorktreesRoot() {
 let taskSettings = { ...DEFAULT_TASK_SETTINGS };
 let taskSettingsInitialized = false;
 // The renderer's currently displayed task; the reaper never touches it.
+/** @type {string | undefined} */
 let rendererActiveTaskId;
 
 function getTaskSettingsPath() {
 	return join(app.getPath("userData"), TASK_SETTINGS_FILE);
 }
 
+/** @param {unknown} value */
 function clampIdleMinutes(value) {
 	const parsed = Number(value);
 	if (!Number.isFinite(parsed)) return taskSettings.idleMinutes;
@@ -689,6 +731,7 @@ function persistTaskSettings() {
 	}
 }
 
+/** @param {string} taskId */
 async function stopTaskAndCleanup(taskId) {
 	const entry = taskRegistry.get(taskId);
 	const child = entry.handle.child;
@@ -742,7 +785,11 @@ setInterval(() => {
 	});
 }, idleSweepIntervalMs);
 
-/** @returns {Promise<void>} */
+/**
+ * @param {import("node:child_process").ChildProcess | undefined} child
+ * @param {number} timeoutMs
+ * @returns {Promise<void>}
+ */
 function waitForChildExit(child, timeoutMs) {
 	if (!child || child.exitCode !== null || child.signalCode) {
 		return Promise.resolve();
@@ -847,7 +894,7 @@ ipcMain.handle("session:trash", async (_event, sessionPath) => {
 
 ipcMain.handle("session:export", async (_event, sessionPath) => {
 	const session = await getKnownSessionFile(sessionPath);
-	const result = await dialog.showSaveDialog(mainWindow, {
+	const result = await dialog.showSaveDialog(dialogParent(), {
 		title: "Export Session JSONL",
 		defaultPath: basename(session.path),
 		filters: [{ name: "JSONL", extensions: ["jsonl"] }],
@@ -869,7 +916,7 @@ ipcMain.handle("session:import", async () => {
 		if (typeof activeSessionFile !== "string" || !activeSessionFile) {
 			throw new Error("The sessions folder is not available yet");
 		}
-		const picked = await dialog.showOpenDialog(mainWindow, {
+		const picked = await dialog.showOpenDialog(dialogParent(), {
 			title: "Import Session JSONL",
 			filters: [{ name: "JSONL", extensions: ["jsonl"] }],
 			properties: ["openFile"],
@@ -922,7 +969,7 @@ ipcMain.handle("diagnostics:save", async (_event, rendererDiagnostics) => {
 		throw new Error("Diagnostics exceed the 1 MB size limit");
 	}
 	const date = new Date().toISOString().slice(0, 10);
-	const result = await dialog.showSaveDialog(mainWindow, {
+	const result = await dialog.showSaveDialog(dialogParent(), {
 		title: "Export Pi Studio diagnostics",
 		defaultPath: join(app.getPath("documents"), `pi-studio-diagnostics-${date}.json`),
 		filters: [{ name: "JSON", extensions: ["json"] }],
@@ -941,7 +988,7 @@ ipcMain.handle("model-config:save", async (_event, backup) => {
 	if (/"[^"]*(?:api[-_]?key|authorization|token|secret|password|cookie)[^"]*"\s*:/i.test(contents)) {
 		throw new Error("Model backups cannot contain credentials");
 	}
-	const result = await dialog.showSaveDialog(mainWindow, {
+	const result = await dialog.showSaveDialog(dialogParent(), {
 		title: "Export Pi Studio model configuration",
 		defaultPath: join(app.getPath("documents"), "pi-studio-models.json"),
 		filters: [{ name: "JSON", extensions: ["json"] }],
@@ -952,7 +999,7 @@ ipcMain.handle("model-config:save", async (_event, backup) => {
 });
 
 ipcMain.handle("model-config:open", async () => {
-	const result = await dialog.showOpenDialog(mainWindow, {
+	const result = await dialog.showOpenDialog(dialogParent(), {
 		title: "Import Pi Studio model configuration",
 		properties: ["openFile"],
 		filters: [{ name: "JSON", extensions: ["json"] }],
@@ -984,7 +1031,7 @@ ipcMain.handle("backend:restart", async () => {
 // "changed:false" for both cancel and picking the current folder, which the
 // same-repo task flow must distinguish.
 ipcMain.handle("dialog:pick-folder", async () => {
-	const result = await dialog.showOpenDialog(mainWindow, {
+	const result = await dialog.showOpenDialog(dialogParent(), {
 		title: "Choose Task Folder",
 		defaultPath: backendCwd,
 		properties: ["openDirectory"],
@@ -996,7 +1043,7 @@ ipcMain.handle("dialog:pick-folder", async () => {
 });
 
 ipcMain.handle("workspace:choose", async () => {
-	const result = await dialog.showOpenDialog(mainWindow, {
+	const result = await dialog.showOpenDialog(dialogParent(), {
 		title: "Open Workspace",
 		defaultPath: backendCwd,
 		properties: ["openDirectory"],
@@ -1023,6 +1070,7 @@ ipcMain.handle("workspace:get", async () => ({ cwd: backendCwd, taskCwd: getTask
 
 // Git and workspace-scoped IPC follows the renderer's active task: a pool
 // task (worktree or plain) gets its own folder's git state, not the primary's.
+/** @param {unknown} taskId */
 function resolveTaskCwd(taskId) {
 	return taskRegistry.get(typeof taskId === "string" && taskId ? taskId : undefined).cwd();
 }

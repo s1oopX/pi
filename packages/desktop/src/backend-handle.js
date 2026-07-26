@@ -78,6 +78,10 @@ export class BackendHandle {
 		this.mutationQueue = createBackendMutationQueue();
 	}
 
+	/**
+	 * @param {string} channel
+	 * @param {object} payload
+	 */
 	send_(channel, payload) {
 		this.emitToRenderer(channel, { ...payload, backendId: this.id });
 	}
@@ -95,6 +99,7 @@ export class BackendHandle {
 		};
 	}
 
+	/** @param {string} line */
 	parseLine_(line) {
 		if (!line.trim()) {
 			return;
@@ -124,6 +129,7 @@ export class BackendHandle {
 		this.send_("backend:event", payload);
 	}
 
+	/** @param {Buffer | string} chunk */
 	handleStdout_(chunk) {
 		this.buffer += chunk.toString("utf8");
 		this.bufferBytes += chunk.length;
@@ -143,6 +149,7 @@ export class BackendHandle {
 		}
 	}
 
+	/** @param {Error} error */
 	rejectPendingRequests_(error) {
 		for (const pending of this.pendingRequests.values()) {
 			clearTimeout(pending.timeout);
@@ -159,6 +166,7 @@ export class BackendHandle {
 		this.retryAt = 0;
 	}
 
+	/** @param {string} reason */
 	scheduleRestart_(reason) {
 		clearTimeout(this.stableTimer);
 		this.stableTimer = undefined;
@@ -298,6 +306,11 @@ export class BackendHandle {
 		child.kill();
 	}
 
+	/**
+	 * @param {{ type?: string, id?: string } & Record<string, unknown>} command
+	 * @param {{ allowStarting?: boolean, timeoutMs?: number }} [options]
+	 * @returns {Promise<any>}
+	 */
 	request(command, { allowStarting = false, timeoutMs = 30000 } = {}) {
 		if ((!this.ready && !(allowStarting && this.starting)) || !this.child?.stdin?.writable) {
 			return Promise.reject(new Error(this.starting ? "Pi backend is starting" : "Pi backend is not running"));
@@ -330,7 +343,10 @@ export class BackendHandle {
 		});
 	}
 
-	/** @returns {Promise<void>} */
+	/**
+	 * @param {object} command
+	 * @returns {Promise<void>}
+	 */
 	send(command) {
 		if (!this.ready || !this.child?.stdin?.writable) {
 			return Promise.reject(new Error("Pi backend is not running"));

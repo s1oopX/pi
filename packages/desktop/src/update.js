@@ -3,6 +3,7 @@ const RELEASE_PAGE_PREFIX = "/s1oopX/pi/releases/";
 const RELEASE_DOWNLOAD_PREFIX = `${RELEASE_PAGE_PREFIX}download/`;
 const DEFAULT_TIMEOUT_MS = 10000;
 
+/** @param {unknown} value */
 function parseVersion(value) {
 	const match = /^v?(\d+)\.(\d+)\.(\d+)(?:-([0-9A-Za-z.-]+))?$/.exec(String(value).trim());
 	if (!match) return undefined;
@@ -14,16 +15,21 @@ function parseVersion(value) {
 	};
 }
 
+/**
+ * @param {unknown} candidateVersion
+ * @param {unknown} currentVersion
+ */
 export function isNewerDesktopVersion(candidateVersion, currentVersion) {
 	const candidate = parseVersion(candidateVersion);
 	const current = parseVersion(currentVersion);
 	if (!candidate || !current) return false;
-	for (const part of ["major", "minor", "patch"]) {
+	for (const part of /** @type {const} */ (["major", "minor", "patch"])) {
 		if (candidate[part] !== current[part]) return candidate[part] > current[part];
 	}
 	return Boolean(current.prerelease) && !candidate.prerelease;
 }
 
+/** @param {unknown} value */
 function validateReleaseUrl(value) {
 	const url = new URL(String(value));
 	if (
@@ -39,10 +45,18 @@ function validateReleaseUrl(value) {
 	return url.toString();
 }
 
+/**
+ * @param {{ assets?: unknown }} release
+ * @param {string} tagName
+ * @param {string} version
+ */
 function getDesktopDownloadUrl(release, tagName, version) {
 	const assetName = `PiStudio-${version}.exe`;
 	const asset = Array.isArray(release.assets)
-		? release.assets.find((candidate) => candidate && typeof candidate === "object" && candidate.name === assetName)
+		? release.assets.find(
+				(/** @type {{ name?: unknown, browser_download_url?: unknown }} */ candidate) =>
+					candidate && typeof candidate === "object" && candidate.name === assetName,
+			)
 		: undefined;
 	if (!asset) return null;
 
@@ -63,6 +77,10 @@ function getDesktopDownloadUrl(release, tagName, version) {
 	return url.toString();
 }
 
+/**
+ * @param {string} currentVersion
+ * @param {{ fetchImpl?: typeof fetch, timeoutMs?: number }} [options]
+ */
 export async function checkDesktopUpdate(currentVersion, options = {}) {
 	const fetchImpl = options.fetchImpl ?? fetch;
 	const response = await fetchImpl(RELEASE_API_URL, {

@@ -7,6 +7,7 @@ export function createBackendMutationQueue() {
 			generation += 1;
 		},
 
+		/** @param {() => any} operation */
 		serialize(operation) {
 			const operationGeneration = generation;
 			const run = () => {

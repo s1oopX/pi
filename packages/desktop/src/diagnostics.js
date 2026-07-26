@@ -1,3 +1,9 @@
+/**
+ * @param {unknown} value
+ * @param {string} homePath
+ * @param {number} [depth]
+ * @returns {unknown}
+ */
 export function sanitizeDiagnostics(value, homePath, depth = 0) {
 	if (depth > 10) return "<max-depth>";
 	if (Array.isArray(value)) return value.slice(0, 200).map((item) => sanitizeDiagnostics(item, homePath, depth + 1));

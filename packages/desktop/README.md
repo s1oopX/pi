@@ -113,9 +113,7 @@ The fork root is an upstream commit, so upstream releases merge as plain three-w
 
 ## Roadmap
 
-Near-term (in order):
-
-1. **Full `noImplicitAny` for the main process** — the checkJs baseline is strict except implicit-any; annotate the remaining parameters module by module.
+Near-term: none — the roadmap through pool lifecycle, worktree ergonomics, and full-strict main-process type checking has landed.
 
 Deliberately deferred: code signing and auto-update, installer distribution, backend size reduction (~100 MB Bun runtime), macOS/Linux, additional locales.
 

@@ -10,6 +10,7 @@ const forbiddenBackendInputs = [
 	{ label: "official provider header adapter", pattern: /[/\\]api[/\\]github-copilot-headers\.[cm]?[jt]s$/i },
 ];
 
+/** @param {string[]} inputs */
 export function findForbiddenBackendInputs(inputs) {
 	return inputs.flatMap((input) =>
 		forbiddenBackendInputs
@@ -18,6 +19,7 @@ export function findForbiddenBackendInputs(inputs) {
 	);
 }
 
+/** @param {string[]} inputs */
 export function assertCatalogFreeBackendInputs(inputs) {
 	const forbidden = findForbiddenBackendInputs(inputs);
 	if (forbidden.length === 0) return;

@@ -11,18 +11,33 @@ const DEFAULT_MAX_TASKS = 3;
 const MIN_MAX_TASKS = 1;
 const MAX_MAX_TASKS = 5;
 
+/** @param {string} cwd */
 function canonicalCwd(cwd) {
 	const resolved = resolve(String(cwd ?? ""));
 	return process.platform === "win32" ? resolved.toLowerCase() : resolved;
 }
 
+/**
+ * @typedef {import("./backend-handle.js").BackendHandle} RegistryHandle
+ * @typedef {{ branch?: string, sourceRepo?: string, worktreePath?: string }} TaskMeta
+ * @typedef {{ taskId: string, cwd: () => string, handle: RegistryHandle, isPrimary: boolean, meta?: TaskMeta }} RegistryEntry
+ */
+
+/**
+ * @param {object} options
+ * @param {RegistryHandle} options.primary
+ * @param {(id: string, cwd: string) => RegistryHandle} options.createHandle
+ * @param {number} [options.maxTasks]
+ */
 export function createTaskRegistry({ primary, createHandle, maxTasks = DEFAULT_MAX_TASKS }) {
+	/** @type {RegistryEntry} */
 	const primaryEntry = { taskId: primary.id, cwd: () => primary.getCwd(), handle: primary, isPrimary: true };
-	/** @type {Map<string, {taskId: string, cwd: () => string, handle: object, isPrimary: boolean}>} */
+	/** @type {Map<string, RegistryEntry>} */
 	const pool = new Map();
 	let taskCounter = 0;
 	let poolCap = Math.min(MAX_MAX_TASKS, Math.max(MIN_MAX_TASKS, maxTasks));
 
+	/** @param {RegistryEntry} entry */
 	function snapshot(entry) {
 		return {
 			taskId: entry.taskId,
@@ -36,6 +51,7 @@ export function createTaskRegistry({ primary, createHandle, maxTasks = DEFAULT_M
 		};
 	}
 
+	/** @param {string} cwd */
 	function findClaim(cwd) {
 		const wanted = canonicalCwd(cwd);
 		if (canonicalCwd(primaryEntry.cwd()) === wanted) return primaryEntry;
@@ -47,6 +63,7 @@ export function createTaskRegistry({ primary, createHandle, maxTasks = DEFAULT_M
 
 	return {
 		/** True when the folder is already running as the primary or a task. */
+		/** @param {string} cwd */
 		isClaimed(cwd) {
 			return Boolean(findClaim(cwd));
 		},
@@ -59,6 +76,10 @@ export function createTaskRegistry({ primary, createHandle, maxTasks = DEFAULT_M
 			}
 		},
 
+		/**
+		 * @param {string} cwd
+		 * @param {TaskMeta} [meta]
+		 */
 		create(cwd, meta) {
 			if (pool.size >= poolCap) {
 				const running = [...pool.values()].map((entry) => `${entry.taskId} (${entry.cwd()})`).join(", ");
@@ -81,6 +102,7 @@ export function createTaskRegistry({ primary, createHandle, maxTasks = DEFAULT_M
 			return snapshot(entry);
 		},
 
+		/** @param {string | undefined | null} [taskId] */
 		get(taskId) {
 			if (taskId === undefined || taskId === null || taskId === primaryEntry.taskId) {
 				return primaryEntry;
@@ -92,6 +114,7 @@ export function createTaskRegistry({ primary, createHandle, maxTasks = DEFAULT_M
 			return entry;
 		},
 
+		/** @param {string} taskId */
 		stop(taskId) {
 			if (taskId === primaryEntry.taskId) {
 				throw new Error("The primary workspace backend cannot be stopped as a task");
@@ -121,6 +144,7 @@ export function createTaskRegistry({ primary, createHandle, maxTasks = DEFAULT_M
 			return poolCap;
 		},
 
+		/** @param {unknown} next */
 		setMaxTasks(next) {
 			const parsed = Number(next);
 			if (Number.isFinite(parsed)) {
@@ -133,7 +157,12 @@ export function createTaskRegistry({ primary, createHandle, maxTasks = DEFAULT_M
 		 * Pool tasks whose backend has been silent past the idle window. The
 		 * primary and the renderer's active task are never candidates.
 		 */
+		/**
+		 * @param {number} nowMs
+		 * @param {number} idleMs
+		 */
 		listIdle(nowMs, idleMs, /** @type {{ skipTaskId?: string }} */ { skipTaskId } = {}) {
+			/** @type {string[]} */
 			const idle = [];
 			for (const entry of pool.values()) {
 				if (entry.taskId === skipTaskId) continue;

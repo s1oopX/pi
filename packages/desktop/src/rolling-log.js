@@ -40,7 +40,7 @@ export function createRollingLog({
 	mkdirSyncImpl = (path) => mkdirSync(path, { recursive: true }),
 }) {
 	const currentPath = join(directory, `${baseName}.log`);
-	const historyPath = (index) => join(directory, `${baseName}.${index}.log`);
+	const historyPath = (/** @type {number} */ index) => join(directory, `${baseName}.${index}.log`);
 
 	let ready = false;
 	let currentBytes = 0;

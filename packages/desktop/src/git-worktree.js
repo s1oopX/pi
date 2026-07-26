@@ -17,6 +17,10 @@ const GIT_TIMEOUT_MS = 15000;
 const MAX_NAME_ATTEMPTS = 100;
 
 /** Lowest free `<repo>-<n>` slot among the existing worktree directory names. */
+/**
+ * @param {string} repoBasename
+ * @param {string[]} existingNames
+ */
 export function pickWorktreeName(repoBasename, existingNames) {
 	const sanitized = String(repoBasename ?? "")
 		.toLowerCase()
@@ -31,11 +35,18 @@ export function pickWorktreeName(repoBasename, existingNames) {
 	throw new Error("Could not allocate a worktree name");
 }
 
+/** @param {string} cwd */
 export async function isGitRepository(cwd, { execFileImpl = execFile, timeoutMs = GIT_TIMEOUT_MS } = {}) {
 	const result = await runGit(cwd, ["rev-parse", "--git-dir"], execFileImpl, timeoutMs);
 	return !result.error;
 }
 
+/**
+ * @param {string} repoCwd
+ * @param {string} branch
+ * @param {import("node:child_process").execFile} execFileImpl
+ * @param {number} timeoutMs
+ */
 async function branchExists(repoCwd, branch, execFileImpl, timeoutMs) {
 	const result = await runGit(
 		repoCwd,
@@ -51,17 +62,22 @@ async function branchExists(repoCwd, branch, execFileImpl, timeoutMs) {
  * (suffix-bumped past leftover branches from earlier tasks). Returns
  * { worktreePath, branch }.
  */
+/**
+ * @param {string} repoCwd
+ * @param {string} worktreesRoot
+ */
 export async function createTaskWorktree(
 	repoCwd,
 	worktreesRoot,
 	{
 		execFileImpl = execFile,
-		mkdirImpl = (path) => mkdir(path, { recursive: true }),
+		mkdirImpl = (/** @type {string} */ path) => mkdir(path, { recursive: true }),
 		readdirImpl = readdir,
 		timeoutMs = GIT_TIMEOUT_MS,
 	} = {},
 ) {
 	await mkdirImpl(worktreesRoot);
+	/** @type {string[]} */
 	let existing = [];
 	try {
 		existing = await readdirImpl(worktreesRoot);
@@ -93,6 +109,7 @@ export async function createTaskWorktree(
 }
 
 /** Canonical comparison key, case-insensitive on Windows like the registry's. */
+/** @param {string} path */
 function pathKey(path) {
 	const resolved = resolve(String(path ?? ""));
 	return process.platform === "win32" ? resolved.toLowerCase() : resolved;
@@ -103,6 +120,10 @@ function pathKey(path) {
  * candidates for user-driven cleanup. Dirty state comes from a porcelain
  * status inside each worktree (null when git cannot answer).
  * @returns {Promise<Array<{path: string, sourceRepo: string | null, dirty: boolean | null}>>}
+ */
+/**
+ * @param {string} worktreesRoot
+ * @param {string[]} activeCwds
  */
 export async function listWorktreeLeftovers(
 	worktreesRoot,
@@ -135,6 +156,11 @@ export async function listWorktreeLeftovers(
  * task. Prefers `git worktree remove --force` through the source repo (keeps
  * git's bookkeeping consistent), falling back to removing the directory and
  * pruning.
+ */
+/**
+ * @param {string} worktreesRoot
+ * @param {string} targetPath
+ * @param {string[]} activeCwds
  */
 export async function deleteLeftoverWorktree(
 	worktreesRoot,
@@ -180,6 +206,10 @@ export async function deleteLeftoverWorktree(
  * Remove a task's worktree. Refuses to destroy local changes: a dirty or busy
  * worktree is left in place with the reason reported, never forced.
  */
+/**
+ * @param {string} repoCwd
+ * @param {string} worktreePath
+ */
 export async function removeTaskWorktree(
 	repoCwd,
 	worktreePath,
@@ -187,7 +217,8 @@ export async function removeTaskWorktree(
 ) {
 	const result = await runGit(repoCwd, ["worktree", "remove", worktreePath], execFileImpl, timeoutMs);
 	if (result.error) {
-		const detail = (result.stderr.trim() || result.stdout.trim() || String(result.error.message ?? "")).slice(0, 300);
+		const fallback = result.error instanceof Error ? result.error.message : "";
+		const detail = (result.stderr.trim() || result.stdout.trim() || fallback).slice(0, 300);
 		return { removed: false, reason: detail };
 	}
 	return { removed: true };

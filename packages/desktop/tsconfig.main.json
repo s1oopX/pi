@@ -4,7 +4,7 @@
 		"checkJs": true,
 		"noEmit": true,
 		"strict": true,
-		"noImplicitAny": false,
+		"noImplicitAny": true,
 		"target": "ES2023",
 		"module": "nodenext",
 		"moduleResolution": "nodenext",

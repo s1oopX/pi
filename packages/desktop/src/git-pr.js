@@ -21,6 +21,7 @@ const REPO_SEGMENT_PATTERN = /^[A-Za-z0-9_.-]+$/u;
  * and scp-like git@host:owner/repo forms. Returns null for anything else
  * (local paths, unparseable URLs) so callers can degrade gracefully.
  */
+/** @param {unknown} url */
 export function parseGitRemoteUrl(url) {
 	const raw = String(url ?? "").trim();
 	if (!raw) return null;
@@ -48,17 +49,27 @@ export function parseGitRemoteUrl(url) {
 }
 
 /** GitHub.com or a GitHub Enterprise style host ("github." as a component). */
+/** @param {unknown} host */
 export function isGitHubHost(host) {
 	const normalized = String(host ?? "").toLowerCase();
 	return normalized === "github.com" || /(^|\.)github\./u.test(normalized);
 }
 
+/**
+ * @param {{ host: string, owner: string, repo: string } | null} remote
+ * @param {string | null | undefined} base
+ * @param {string | null | undefined} head
+ */
 export function buildCompareUrl(remote, base, head) {
 	if (!remote || !base || !head) return null;
 	const range = `${encodeURIComponent(base)}...${encodeURIComponent(head)}`;
 	return `https://${remote.host}/${remote.owner}/${remote.repo}/compare/${range}?expand=1`;
 }
 
+/**
+ * @param {unknown} title
+ * @returns {{ ok: false, reason: string } | { ok: true, title: string }}
+ */
 export function validatePrTitle(title) {
 	const trimmed = String(title ?? "").trim();
 	if (!trimmed) return { ok: false, reason: "Pull request title is required" };
@@ -66,9 +77,16 @@ export function validatePrTitle(title) {
 	return { ok: true, title: trimmed };
 }
 
+/**
+ * @param {string} cwd
+ * @param {string[]} args
+ * @param {import("node:child_process").execFile} execFileImpl
+ * @param {number} timeoutMs
+ * @returns {Promise<{ error: unknown, stdout: string, stderr: string }>}
+ */
 function runGh(cwd, args, execFileImpl, timeoutMs) {
 	return new Promise((resolve) => {
-		const complete = (error, stdout = "", stderr = "") => {
+		const complete = (/** @type {unknown} */ error, stdout = "", stderr = "") => {
 			resolve({ error, stdout: String(stdout ?? ""), stderr: String(stderr ?? "") });
 		};
 		try {
@@ -97,22 +115,42 @@ function runGh(cwd, args, execFileImpl, timeoutMs) {
 	});
 }
 
+/** @param {{ error: unknown }} result */
 function isMissingExecutable(result) {
-	return result.error?.code === "ENOENT";
+	return Boolean(
+		result.error &&
+			typeof result.error === "object" &&
+			/** @type {{ code?: unknown }} */ (result.error).code === "ENOENT",
+	);
 }
 
+/**
+ * @param {string} cwd
+ * @param {import("node:child_process").execFile} execFileImpl
+ * @param {number} timeoutMs
+ */
 async function readBranch(cwd, execFileImpl, timeoutMs) {
 	const result = await runGit(cwd, ["symbolic-ref", "--quiet", "--short", "HEAD"], execFileImpl, timeoutMs);
 	const branch = result.error ? null : result.stdout.trim() || null;
 	return { branch, detached: !branch };
 }
 
+/**
+ * @param {string} cwd
+ * @param {import("node:child_process").execFile} execFileImpl
+ * @param {number} timeoutMs
+ */
 async function readRemote(cwd, execFileImpl, timeoutMs) {
 	const result = await runGit(cwd, ["remote", "get-url", "origin"], execFileImpl, timeoutMs);
 	if (result.error) return null;
 	return parseGitRemoteUrl(result.stdout.trim());
 }
 
+/**
+ * @param {string} cwd
+ * @param {import("node:child_process").execFile} execFileImpl
+ * @param {number} timeoutMs
+ */
 async function readBaseBranch(cwd, execFileImpl, timeoutMs) {
 	// Prefer the remote's default branch; clones record it as origin/HEAD.
 	const head = await runGit(
@@ -132,6 +170,11 @@ async function readBaseBranch(cwd, execFileImpl, timeoutMs) {
 	return null;
 }
 
+/**
+ * @param {string} cwd
+ * @param {import("node:child_process").execFile} execFileImpl
+ * @param {number} timeoutMs
+ */
 async function readHasUpstream(cwd, execFileImpl, timeoutMs) {
 	const result = await runGit(
 		cwd,
@@ -142,6 +185,7 @@ async function readHasUpstream(cwd, execFileImpl, timeoutMs) {
 	return !result.error && result.stdout.trim().length > 0;
 }
 
+/** @param {string} workspace */
 export async function getPullRequestContext(
 	workspace,
 	{ execFileImpl = execFile, realpathImpl = realpath, statImpl = stat, timeoutMs = GIT_TIMEOUT_MS } = {},
@@ -172,6 +216,7 @@ export async function getPullRequestContext(
  * URL instead so the caller can open it in a browser. Throws when the state
  * cannot produce a PR at all (detached, non-GitHub remote, unpushed branch).
  */
+/** @param {string} workspace */
 export async function createPullRequest(
 	workspace,
 	/** @type {{title?: string, body?: string, base?: string}} */ { title, body, base } = {},

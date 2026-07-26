@@ -6,10 +6,19 @@ const MAX_IMPORT_BYTES = 256 * 1024 * 1024;
 const FIRST_LINE_PROBE_BYTES = 64 * 1024;
 const MAX_COLLISION_ATTEMPTS = 100;
 
+/**
+ * @param {string} path
+ * @param {(path: string) => Promise<string>} realpathImpl
+ */
 async function canonicalize(path, realpathImpl) {
 	return realpathImpl(resolve(path));
 }
 
+/**
+ * @param {unknown} requestedPath
+ * @param {Array<{path?: unknown, cwd?: unknown}> | unknown} sessions
+ * @param {unknown} activeSessionPath
+ */
 export async function resolveKnownSessionFile(
 	requestedPath,
 	sessions,
@@ -56,6 +65,10 @@ export async function resolveKnownSessionFile(
 }
 
 /** First line of the file must parse as a JSON object for it to be a session. */
+/**
+ * @param {string} sourcePath
+ * @param {(path: string, flags: string) => Promise<import("node:fs/promises").FileHandle>} openImpl
+ */
 async function assertLooksLikeSessionJsonl(sourcePath, openImpl) {
 	const handle = await openImpl(sourcePath, "r");
 	let probe;
@@ -85,6 +98,10 @@ async function assertLooksLikeSessionJsonl(sourcePath, openImpl) {
 /**
  * Validate a picked JSONL file and copy it into the sessions directory under a
  * collision-free name. Returns the target path; never overwrites.
+ */
+/**
+ * @param {unknown} sourcePath
+ * @param {unknown} sessionsDir
  */
 export async function prepareSessionImport(
 	sourcePath,
