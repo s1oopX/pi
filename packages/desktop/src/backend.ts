@@ -18,6 +18,7 @@ import { SettingsManager } from "../../coding-agent/src/core/settings-manager.ts
 import { hasTrustRequiringProjectResources, ProjectTrustStore } from "../../coding-agent/src/core/trust-manager.ts";
 import { runRpcMode } from "../../coding-agent/src/modes/rpc/rpc-mode.ts";
 import { toolApprovalExtension } from "./tool-approval.ts";
+import { resolveWorktreeSourceRoot } from "./worktree-trust.js";
 
 process.title = `${APP_NAME}-studio-rpc`;
 process.env.PI_CODING_AGENT = "true";
@@ -49,7 +50,17 @@ const createRuntime: CreateAgentSessionRuntimeFactory = async ({
 	// folders with trust-requiring resources stay untrusted until the user
 	// explicitly trusts them (persisted in <agentDir>/trust.json). The
 	// set_project_trust RPC command updates the store and hot-reloads.
+	// Trust follows the repository identity: a linked worktree inherits its
+	// source repo's trusted decision (an explicit decision on the worktree
+	// path itself always wins, either way).
 	const trustStore = new ProjectTrustStore(runtimeAgentDir);
+	const resolveTrust = () => {
+		if (!hasTrustRequiringProjectResources(cwd)) return true;
+		const own = trustStore.get(cwd);
+		if (own !== null) return own === true;
+		const sourceRoot = resolveWorktreeSourceRoot(cwd);
+		return sourceRoot !== null && trustStore.get(sourceRoot) === true;
+	};
 	const services = await createAgentSessionServices({
 		cwd,
 		agentDir: runtimeAgentDir,
@@ -59,7 +70,7 @@ const createRuntime: CreateAgentSessionRuntimeFactory = async ({
 			extensionFactories: [{ name: "tool-approval", factory: toolApprovalExtension }],
 		},
 		resourceLoaderReloadOptions: {
-			resolveProjectTrust: async () => !hasTrustRequiringProjectResources(cwd) || trustStore.get(cwd) === true,
+			resolveProjectTrust: async () => resolveTrust(),
 		},
 	});
 	const created = await createAgentSessionFromServices({

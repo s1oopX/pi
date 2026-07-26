@@ -7,9 +7,11 @@
  */
 
 import { execFile } from "node:child_process";
+import { rmSync } from "node:fs";
 import { mkdir, readdir } from "node:fs/promises";
-import { basename, join } from "node:path";
+import { basename, join, resolve, sep } from "node:path";
 import { describeGitFailure, runGit, validateBranchName } from "./git-commit.js";
+import { resolveWorktreeSourceRoot } from "./worktree-trust.js";
 
 const GIT_TIMEOUT_MS = 15000;
 const MAX_NAME_ATTEMPTS = 100;
@@ -88,6 +90,90 @@ export async function createTaskWorktree(
 	);
 	if (added.error) throw describeGitFailure("Could not create the task worktree", added);
 	return { worktreePath, branch: validated.name };
+}
+
+/** Canonical comparison key, case-insensitive on Windows like the registry's. */
+function pathKey(path) {
+	const resolved = resolve(String(path ?? ""));
+	return process.platform === "win32" ? resolved.toLowerCase() : resolved;
+}
+
+/**
+ * Worktree directories under the app's root that no running task owns:
+ * candidates for user-driven cleanup. Dirty state comes from a porcelain
+ * status inside each worktree (null when git cannot answer).
+ * @returns {Promise<Array<{path: string, sourceRepo: string | null, dirty: boolean | null}>>}
+ */
+export async function listWorktreeLeftovers(
+	worktreesRoot,
+	activeCwds,
+	/** @type {{execFileImpl?: typeof execFile, readdirImpl?: typeof readdir, readFileImpl?: (path: string) => string, timeoutMs?: number}} */
+	{ execFileImpl = execFile, readdirImpl = readdir, readFileImpl, timeoutMs = GIT_TIMEOUT_MS } = {},
+) {
+	let names = [];
+	try {
+		names = await readdirImpl(worktreesRoot);
+	} catch {
+		return [];
+	}
+	const active = new Set((activeCwds ?? []).map(pathKey));
+	const leftovers = [];
+	for (const name of names) {
+		const path = join(worktreesRoot, name);
+		if (active.has(pathKey(path))) continue;
+		const sourceRepo = resolveWorktreeSourceRoot(path, readFileImpl);
+		const status = await runGit(path, ["status", "--porcelain"], execFileImpl, timeoutMs);
+		const dirty = status.error ? null : status.stdout.trim().length > 0;
+		leftovers.push({ path, sourceRepo, dirty });
+	}
+	return leftovers;
+}
+
+/**
+ * Delete a leftover worktree the user explicitly chose to discard. The path
+ * must live inside the app's worktrees root and must not belong to a running
+ * task. Prefers `git worktree remove --force` through the source repo (keeps
+ * git's bookkeeping consistent), falling back to removing the directory and
+ * pruning.
+ */
+export async function deleteLeftoverWorktree(
+	worktreesRoot,
+	targetPath,
+	activeCwds,
+	/** @type {{execFileImpl?: typeof execFile, readFileImpl?: (path: string) => string, rmImpl?: (path: string) => void, timeoutMs?: number}} */
+	{
+		execFileImpl = execFile,
+		readFileImpl,
+		rmImpl = (path) => rmSync(path, { recursive: true, force: true, maxRetries: 3 }),
+		timeoutMs = GIT_TIMEOUT_MS,
+	} = {},
+) {
+	const rootKey = pathKey(worktreesRoot);
+	const targetKey = pathKey(targetPath);
+	if (!targetKey.startsWith(rootKey + sep)) {
+		throw new Error("The path is outside the app's worktrees folder");
+	}
+	if ((activeCwds ?? []).some((cwd) => pathKey(cwd) === targetKey)) {
+		throw new Error("A task is still running in that worktree");
+	}
+
+	const sourceRepo = resolveWorktreeSourceRoot(targetPath, readFileImpl);
+	if (sourceRepo) {
+		const removed = await runGit(
+			sourceRepo,
+			["worktree", "remove", "--force", targetPath],
+			execFileImpl,
+			timeoutMs,
+		);
+		if (!removed.error) {
+			return { deleted: true };
+		}
+		rmImpl(targetPath);
+		await runGit(sourceRepo, ["worktree", "prune"], execFileImpl, timeoutMs);
+		return { deleted: true };
+	}
+	rmImpl(targetPath);
+	return { deleted: true };
 }
 
 /**

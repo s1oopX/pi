@@ -44,7 +44,7 @@ The flagship capability: several agent runs at once, each in its own workspace w
 - The **task registry** (main process) caps the pool (default 3), allocates stable ids, enforces one running task per folder, and lazily spawns `BackendHandle`s.
 - **Events are tagged** with their originating backend. The renderer routes them: the active task feeds the full conversation pipeline; background tasks only update summaries — a streaming indicator, an unread counter, a completion state with a toast and an OS notification.
 - **Switching is hydration, not restart.** Activating a task re-pulls its state over RPC (the same battle-tested path used for workspace switches); no process is stopped, and background runs continue uninterrupted. The backend session file remains the single source of truth, so nothing is lost mid-stream.
-- **Same-repository isolation:** picking a folder that is already running provisions a `git worktree` on a fresh `task/<name>` branch under the app's data directory — several agents work one repository without touching each other's files. Git and workspace IPC follows the active task, so a worktree task commits, pushes, and opens pull requests on its own branch from inside the app; stopping the task removes a clean worktree (a worktree with changes is kept, never forced) while the branch stays for review and landing. Non-git folders refuse a second concurrent task.
+- **Same-repository isolation:** picking a folder that is already running provisions a `git worktree` on a fresh `task/<name>` branch under the app's data directory — several agents work one repository without touching each other's files. Git and workspace IPC follows the active task, so a worktree task commits, pushes, and opens pull requests on its own branch from inside the app; stopping the task removes a clean worktree (a worktree with changes is kept, never forced) while the branch stays for review and landing. Trust follows the repository identity — a trusted repo's worktrees start trusted — and kept worktrees are listed and deletable under Settings → Agent. Non-git folders refuse a second concurrent task.
 - **Lifecycle:** the pool cap (1–5) and the idle window are settings; a task whose backend has been silent past the window stops itself — never the task being viewed, never the primary — and its session reopens instantly from the on-disk session file.
 
 ### Security model
@@ -115,8 +115,7 @@ The fork root is an upstream commit, so upstream releases merge as plain three-w
 
 Near-term (in order):
 
-1. **Worktree ergonomics** — trust inheritance from the source repository, worktree cleanup management for kept-dirty trees.
-2. **Full `noImplicitAny` for the main process** — the checkJs baseline is strict except implicit-any; annotate the remaining parameters module by module.
+1. **Full `noImplicitAny` for the main process** — the checkJs baseline is strict except implicit-any; annotate the remaining parameters module by module.
 
 Deliberately deferred: code signing and auto-update, installer distribution, backend size reduction (~100 MB Bun runtime), macOS/Linux, additional locales.
 

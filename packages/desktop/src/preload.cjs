@@ -31,6 +31,12 @@ contextBridge.exposeInMainWorld("piDesktop", {
 	configureTasks(settings) {
 		return ipcRenderer.invoke("task:configure", settings);
 	},
+	listWorktreeLeftovers() {
+		return ipcRenderer.invoke("worktrees:list-leftovers");
+	},
+	deleteWorktreeLeftover(targetPath) {
+		return ipcRenderer.invoke("worktrees:delete", targetPath);
+	},
 	onTaskChanged(listener) {
 		const handler = (_event, payload) => listener(payload);
 		ipcRenderer.on("task:changed", handler);

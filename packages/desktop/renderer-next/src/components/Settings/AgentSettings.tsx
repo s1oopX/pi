@@ -27,6 +27,9 @@ export function AgentSettings() {
   const [poolSettings, setPoolSettings] = useState<api.TaskPoolSettings | null>(null);
   const [poolSettingsSaving, setPoolSettingsSaving] = useState(false);
   const refreshTasks = useStore((state) => state.refreshTasks);
+  const [leftovers, setLeftovers] = useState<api.WorktreeLeftover[]>([]);
+  const [armedLeftover, setArmedLeftover] = useState<string | null>(null);
+  const [deletingLeftover, setDeletingLeftover] = useState<string | null>(null);
   const thinkingLevel = (session?.thinkingLevel ?? "medium") as ThinkingLevel;
   // Match SettingsManager defaults: queue modes are one-at-a-time unless configured.
   const steeringMode = (session?.steeringMode ?? "one-at-a-time") as QueueMode;
@@ -89,10 +92,32 @@ export function AgentSettings() {
     void api.getTaskSettings().then((settings) => {
       if (!cancelled && settings) setPoolSettings(settings);
     }).catch(() => {});
+    void api.listWorktreeLeftovers().then((entries) => {
+      if (!cancelled) setLeftovers(entries);
+    }).catch(() => {});
     return () => {
       cancelled = true;
     };
   }, []);
+
+  async function handleDeleteLeftover(path: string) {
+    if (armedLeftover !== path) {
+      setArmedLeftover(path);
+      return;
+    }
+    setArmedLeftover(null);
+    setDeletingLeftover(path);
+    try {
+      await api.deleteWorktreeLeftover(path);
+      setLeftovers(await api.listWorktreeLeftovers());
+      showToast(t("Worktree deleted", "工作树已删除"), "success");
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      showToast(t("Could not delete the worktree: {message}", "删除工作树失败：{message}", { message }), "error");
+    } finally {
+      setDeletingLeftover(null);
+    }
+  }
 
   async function handlePoolSettings(update: Partial<api.TaskPoolSettings>) {
     setPoolSettingsSaving(true);
@@ -365,6 +390,40 @@ export function AgentSettings() {
             </select>
           </label>
         </div>
+        {leftovers.length > 0 && (
+          <div className="worktree-leftovers">
+            <span className="worktree-leftovers-title">
+              {t("Leftover worktrees", "遗留的工作树")}
+            </span>
+            <p className="settings-group-desc">
+              {t(
+                "Worktrees kept from stopped tasks. Deleting one discards any uncommitted changes in it; the task branch stays.",
+                "已停止任务保留下来的工作树。删除会丢弃其中未提交的改动；任务分支会保留。",
+              )}
+            </p>
+            {leftovers.map((leftover) => (
+              <div className="worktree-leftover-row" key={leftover.path}>
+                <span className="worktree-leftover-path" title={leftover.path}>{leftover.path}</span>
+                {leftover.dirty === true && (
+                  <span className="worktree-leftover-dirty">{t("has changes", "有改动")}</span>
+                )}
+                <button
+                  className="settings-btn-sm worktree-leftover-delete"
+                  type="button"
+                  disabled={deletingLeftover === leftover.path}
+                  onClick={() => void handleDeleteLeftover(leftover.path)}
+                  onBlur={() => setArmedLeftover((current) => (current === leftover.path ? null : current))}
+                >
+                  {deletingLeftover === leftover.path
+                    ? t("Deleting...", "正在删除...")
+                    : armedLeftover === leftover.path
+                      ? t("Confirm delete", "确认删除")
+                      : t("Delete", "删除")}
+                </button>
+              </div>
+            ))}
+          </div>
+        )}
       </div>
     </div>
   );

@@ -45,6 +45,8 @@ export interface PiDesktopApi {
   getTaskSettings?: () => Promise<TaskPoolSettings>;
   configureTasks?: (settings: Partial<TaskPoolSettings>) => Promise<TaskPoolSettings>;
   onTaskChanged?: (listener: (payload: TaskChangedEvent) => void) => () => void;
+  listWorktreeLeftovers?: () => Promise<{ leftovers: WorktreeLeftover[] }>;
+  deleteWorktreeLeftover?: (targetPath: string) => Promise<{ deleted: boolean }>;
   restartBackend(): Promise<void>;
   chooseWorkspace(): Promise<{ cwd: string; changed: boolean }>;
   openWorkspace(cwd: string): Promise<{ cwd: string; changed: boolean }>;
@@ -173,6 +175,25 @@ export function onTaskChanged(listener: (payload: TaskChangedEvent) => void): ()
   const api = getApi();
   if (!api?.onTaskChanged) return () => {};
   return api.onTaskChanged(listener);
+}
+
+export interface WorktreeLeftover {
+  path: string;
+  sourceRepo: string | null;
+  dirty: boolean | null;
+}
+
+export async function listWorktreeLeftovers(): Promise<WorktreeLeftover[]> {
+  const api = getApi();
+  if (!api?.listWorktreeLeftovers) return [];
+  const result = await api.listWorktreeLeftovers();
+  return result.leftovers ?? [];
+}
+
+export async function deleteWorktreeLeftover(targetPath: string): Promise<void> {
+  const api = requireApi();
+  if (!api.deleteWorktreeLeftover) throw new Error("Worktree cleanup needs a newer Pi Studio build");
+  await api.deleteWorktreeLeftover(targetPath);
 }
 
 export async function stopTask(

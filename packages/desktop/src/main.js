@@ -13,7 +13,13 @@ import { sanitizeDiagnostics } from "./diagnostics.js";
 import { commitAllChanges, listGitBranches, listGitChanges, pushCurrentBranch, switchGitBranch } from "./git-commit.js";
 import { createPullRequest, getPullRequestContext } from "./git-pr.js";
 import { getGitWorkspaceStatus } from "./git-workspace-status.js";
-import { createTaskWorktree, isGitRepository, removeTaskWorktree } from "./git-worktree.js";
+import {
+	createTaskWorktree,
+	deleteLeftoverWorktree,
+	isGitRepository,
+	listWorktreeLeftovers,
+	removeTaskWorktree,
+} from "./git-worktree.js";
 import { describeRevealTarget, resolveWorkspacePath } from "./path-reveal.js";
 import { createRollingLog } from "./rolling-log.js";
 import { prepareSessionImport, resolveKnownSessionFile } from "./session-files.js";
@@ -791,6 +797,18 @@ ipcMain.handle("task:configure", async (_event, settings) => {
 		persistTaskSettings();
 	}
 	return { ...taskSettings, maxTasks: taskRegistry.getMaxTasks() };
+});
+
+ipcMain.handle("worktrees:list-leftovers", async () => {
+	const activeCwds = taskRegistry.list().map((entry) => entry.cwd);
+	return { leftovers: await listWorktreeLeftovers(getWorktreesRoot(), activeCwds) };
+});
+
+ipcMain.handle("worktrees:delete", async (_event, targetPath) => {
+	const activeCwds = taskRegistry.list().map((entry) => entry.cwd);
+	const result = await deleteLeftoverWorktree(getWorktreesRoot(), String(targetPath ?? ""), activeCwds);
+	getFileLog().append("info", "tasks", `leftover worktree deleted: ${targetPath}`);
+	return result;
 });
 
 ipcMain.on("task:activate", (_event, taskId) => {

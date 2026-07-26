@@ -1,5 +1,5 @@
-import { readdirSync, readFileSync } from "node:fs";
-import { join } from "node:path";
+import { existsSync, readdirSync, readFileSync } from "node:fs";
+import { dirname, join } from "node:path";
 import ts from "typescript";
 
 const ignoredDirectories = new Set([".git", "coverage", "dist", "node_modules"]);
@@ -40,6 +40,10 @@ for (const file of files.sort()) {
 
 	function checkSpecifier(node) {
 		if (!isRelativeJavaScriptSpecifier(node.text)) return;
+		// The rule exists to catch .js specifiers that point at files that are
+		// never emitted (sources here are .ts). A specifier that resolves to a
+		// real .js source file is the legitimate case and passes.
+		if (existsSync(join(dirname(file), node.text.split(/[?#]/)[0]))) return;
 		const { line, character } = sourceFile.getLineAndCharacterOfPosition(node.getStart(sourceFile));
 		failures.push(`${file}:${line + 1}:${character + 1}: ${node.text}`);
 	}

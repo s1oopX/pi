@@ -1733,3 +1733,52 @@
   width: auto;
   min-width: 110px;
 }
+
+/* Leftover worktrees */
+
+.worktree-leftovers {
+  margin-top: 14px;
+  padding-top: 12px;
+  border-top: 1px solid var(--border);
+}
+
+.worktree-leftovers-title {
+  display: block;
+  margin-bottom: 3px;
+  font-size: calc(12px * var(--font-scale));
+  font-weight: 600;
+  color: var(--text-soft);
+}
+
+.worktree-leftover-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 0;
+  min-width: 0;
+}
+
+.worktree-leftover-path {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-family: var(--font-mono);
+  font-size: var(--font-size-meta);
+  color: var(--text-soft);
+}
+
+.worktree-leftover-dirty {
+  flex: none;
+  padding: 0 6px;
+  border-radius: var(--radius-pill);
+  background: var(--warning-soft, var(--control-hover));
+  color: var(--warning, var(--muted));
+  font-size: var(--font-size-badge);
+  line-height: var(--line-height-badge);
+}
+
+.worktree-leftover-delete {
+  flex: none;
+}
