@@ -119,6 +119,7 @@ export function ParallelTasks() {
               {row.unread > 0 && (
                 <span
                   className="parallel-task-unread"
+                  role="img"
                   aria-label={t("{count} unread updates", "{count} 条未读更新", { count: row.unread })}
                 >
                   {row.unread}
