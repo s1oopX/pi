@@ -81,12 +81,15 @@ function fakeImportFs({ firstChunk, size = 100, isFile = true, existing = [] }) 
 }
 
 const sessionsDir = resolve("sessions");
+// Platform-native source path: string literals with backslashes parse
+// differently under posix basename() and would break the Linux CI run.
+const importSource = join(resolve("downloads"), "chat.jsonl");
 
 test("prepareSessionImport copies a valid JSONL under its own name", async () => {
 	const fs = fakeImportFs({ firstChunk: '{"type":"session"}\n{"type":"message"}\n' });
-	const target = await prepareSessionImport("C:\\downloads\\chat.jsonl", sessionsDir, fs.impls);
+	const target = await prepareSessionImport(importSource, sessionsDir, fs.impls);
 	assert.equal(target, join(sessionsDir, "chat.jsonl"));
-	assert.deepEqual(fs.copies, [{ source: "C:\\downloads\\chat.jsonl", target }]);
+	assert.deepEqual(fs.copies, [{ source: importSource, target }]);
 });
 
 test("prepareSessionImport suffixes the name when the target exists", async () => {
@@ -94,33 +97,38 @@ test("prepareSessionImport suffixes the name when the target exists", async () =
 		firstChunk: '{"type":"session"}\n',
 		existing: [join(sessionsDir, "chat.jsonl"), join(sessionsDir, "chat-imported-1.jsonl")],
 	});
-	const target = await prepareSessionImport("C:\\downloads\\chat.jsonl", sessionsDir, fs.impls);
+	const target = await prepareSessionImport(importSource, sessionsDir, fs.impls);
 	assert.equal(target, join(sessionsDir, "chat-imported-2.jsonl"));
 });
 
 test("prepareSessionImport rejects non-JSONL, empty, oversized, and non-file sources", async () => {
+	const badSource = join(resolve("downloads"), "x.jsonl");
 	await assert.rejects(
-		prepareSessionImport("C:\\x.jsonl", sessionsDir, fakeImportFs({ firstChunk: "plain text\n" }).impls),
+		prepareSessionImport(badSource, sessionsDir, fakeImportFs({ firstChunk: "plain text\n" }).impls),
 		/first line is not JSON/,
 	);
 	await assert.rejects(
-		prepareSessionImport("C:\\x.jsonl", sessionsDir, fakeImportFs({ firstChunk: "[1,2]\n" }).impls),
+		prepareSessionImport(badSource, sessionsDir, fakeImportFs({ firstChunk: "[1,2]\n" }).impls),
 		/not an object/,
 	);
 	await assert.rejects(
-		prepareSessionImport("C:\\x.jsonl", sessionsDir, fakeImportFs({ firstChunk: "", size: 0 }).impls),
+		prepareSessionImport(badSource, sessionsDir, fakeImportFs({ firstChunk: "", size: 0 }).impls),
 		/empty/,
 	);
 	await assert.rejects(
 		prepareSessionImport(
-			"C:\\x.jsonl",
+			badSource,
 			sessionsDir,
 			fakeImportFs({ firstChunk: "{}", size: 512 * 1024 * 1024 }).impls,
 		),
 		/too large/,
 	);
 	await assert.rejects(
-		prepareSessionImport("C:\\x", sessionsDir, fakeImportFs({ firstChunk: "{}", isFile: false }).impls),
+		prepareSessionImport(
+			join(resolve("downloads"), "x"),
+			sessionsDir,
+			fakeImportFs({ firstChunk: "{}", isFile: false }).impls,
+		),
 		/Not a session JSONL file/,
 	);
 });
