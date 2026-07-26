@@ -15,6 +15,7 @@ import { createPullRequest, getPullRequestContext } from "./git-pr.js";
 import { getGitWorkspaceStatus } from "./git-workspace-status.js";
 import { describeRevealTarget, resolveWorkspacePath } from "./path-reveal.js";
 import { prepareSessionImport, resolveKnownSessionFile } from "./session-files.js";
+import { createTaskRegistry } from "./task-registry.js";
 import { checkDesktopUpdate } from "./update.js";
 import { loadStoredWorkspace, saveStoredWorkspace } from "./workspace-state.js";
 
@@ -38,9 +39,9 @@ let isQuitting = false;
 let workspaceStateInitialized = false;
 
 // Every backend child and its per-process state lives in a BackendHandle
-// (src/backend-handle.js). M1 of the parallel-tasks design: the registry holds
-// only the primary workspace backend; pool members arrive in M2.
-const backends = new Map();
+// (src/backend-handle.js); the task registry owns the pool of them
+// (src/task-registry.js). The primary follows the workspace; pool members are
+// pinned to the folder they were created for.
 const primaryBackend = new BackendHandle({
 	id: "main",
 	getCwd: () => backendCwd,
@@ -50,13 +51,20 @@ const primaryBackend = new BackendHandle({
 	notify: maybeNotify,
 	isQuitting: () => isQuitting,
 });
-backends.set(primaryBackend.id, primaryBackend);
-
-function stopAllBackends() {
-	for (const handle of backends.values()) {
-		handle.stop();
-	}
-}
+const taskRegistry = createTaskRegistry({
+	primary: primaryBackend,
+	createHandle: (id, cwd) =>
+		new BackendHandle({
+			id,
+			getCwd: () => cwd,
+			getBackendPath,
+			sendToRenderer,
+			// No onSessionChanged: a pool task's session must never rewrite the
+			// primary workspace or its persisted state.
+			notify: (payload) => maybeNotify(payload, id),
+			isQuitting: () => isQuitting,
+		}),
+});
 
 function getWindowStatePath() {
 	return join(app.getPath("userData"), WINDOW_STATE_FILE);
@@ -331,8 +339,9 @@ async function fetchProviderModels({ baseUrl, apiKey, api }) {
 }
 
 // Surface a desktop notification when a run finishes while the window is not
-// focused, so the user can look away during long agent runs.
-function maybeNotify(payload) {
+// focused, so the user can look away during long agent runs. Focused-window
+// completions are the renderer's job (toast); pool tasks name themselves.
+function maybeNotify(payload, taskLabel) {
 	if (payload?.type !== "agent_end" || payload.willRetry) {
 		return;
 	}
@@ -345,7 +354,7 @@ function maybeNotify(payload) {
 	try {
 		const notification = new Notification({
 			title: PRODUCT_NAME,
-			body: "The agent finished responding.",
+			body: taskLabel ? `Task ${taskLabel} finished responding.` : "The agent finished responding.",
 			icon: getWindowIconPath(),
 			silent: false,
 		});
@@ -519,19 +528,21 @@ async function getKnownSessionFile(sessionPath) {
 	);
 }
 
-ipcMain.handle("backend:request", async (_event, command) => {
+ipcMain.handle("backend:request", async (_event, command, taskId) => {
 	const rejection = describeBackendCommandRejection(command, BACKEND_REQUEST_COMMAND_TYPES);
 	if (rejection) {
 		throw new Error(rejection);
 	}
+	const entry = taskRegistry.get(taskId);
 	const execute = async () => {
 		const timeoutMs = getRequestTimeoutMs(command);
-		const response = await primaryBackend.request(command, timeoutMs === undefined ? {} : { timeoutMs });
+		const response = await entry.handle.request(command, timeoutMs === undefined ? {} : { timeoutMs });
 		if (!response.success) {
 			throw new Error(response.error || `Command failed: ${response.command}`);
 		}
 		const data = response.data ?? null;
 		if (
+			entry.isPrimary &&
 			(command?.type === "new_session" || command?.type === "switch_session") &&
 			data &&
 			typeof data === "object" &&
@@ -541,21 +552,38 @@ ipcMain.handle("backend:request", async (_event, command) => {
 		}
 		return data;
 	};
-	return SESSION_MUTATION_COMMAND_TYPES.has(command?.type) ? serializeSessionMutation(execute) : execute();
+	return SESSION_MUTATION_COMMAND_TYPES.has(command?.type)
+		? entry.handle.mutationQueue.serialize(execute)
+		: execute();
 });
 
-ipcMain.handle("backend:send", async (_event, command) => {
+ipcMain.handle("backend:send", async (_event, command, taskId) => {
 	const rejection = describeBackendCommandRejection(command, BACKEND_SEND_COMMAND_TYPES);
 	if (rejection) {
 		throw new Error(rejection);
 	}
-	await primaryBackend.send(command);
-	if (command?.type === "extension_ui_response") primaryBackend.pendingExtensionUIRequests.remove(command.id);
+	const entry = taskRegistry.get(taskId);
+	await entry.handle.send(command);
+	if (command?.type === "extension_ui_response") entry.handle.pendingExtensionUIRequests.remove(command.id);
 });
 
-ipcMain.handle("backend:get-pending-extension-ui-requests", () => primaryBackend.pendingExtensionUIRequests.list());
+ipcMain.handle("backend:get-pending-extension-ui-requests", (_event, taskId) =>
+	taskRegistry.get(taskId).handle.pendingExtensionUIRequests.list(),
+);
 
-ipcMain.handle("backend:get-status", () => primaryBackend.statusSnapshot());
+ipcMain.handle("backend:get-status", (_event, taskId) => taskRegistry.get(taskId).handle.statusSnapshot());
+
+ipcMain.handle("task:create", async (_event, cwd) => {
+	const nextCwd = String(cwd ?? "");
+	if (!nextCwd || !existsSync(nextCwd) || !statSync(nextCwd).isDirectory()) {
+		throw new Error(`Workspace not found: ${nextCwd}`);
+	}
+	return taskRegistry.create(nextCwd);
+});
+
+ipcMain.handle("task:list", async () => ({ tasks: taskRegistry.list() }));
+
+ipcMain.handle("task:stop", async (_event, taskId) => taskRegistry.stop(String(taskId ?? "")));
 
 ipcMain.handle("backend:open-external", async (_event, url) => {
 	await openExternalSafely(url);
@@ -824,7 +852,7 @@ if (!hasSingleInstanceLock) {
 
 app.on("before-quit", () => {
 	isQuitting = true;
-	stopAllBackends();
+	taskRegistry.stopAll();
 });
 
 app.on("window-all-closed", () => {

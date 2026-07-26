@@ -1,17 +1,26 @@
 const { contextBridge, ipcRenderer } = require("electron");
 
 contextBridge.exposeInMainWorld("piDesktop", {
-	request(command) {
-		return ipcRenderer.invoke("backend:request", command);
+	request(command, taskId) {
+		return ipcRenderer.invoke("backend:request", command, taskId);
 	},
-	send(command) {
-		return ipcRenderer.invoke("backend:send", command);
+	send(command, taskId) {
+		return ipcRenderer.invoke("backend:send", command, taskId);
 	},
-	getBackendStatus() {
-		return ipcRenderer.invoke("backend:get-status");
+	getBackendStatus(taskId) {
+		return ipcRenderer.invoke("backend:get-status", taskId);
 	},
-	getPendingExtensionUIRequests() {
-		return ipcRenderer.invoke("backend:get-pending-extension-ui-requests");
+	getPendingExtensionUIRequests(taskId) {
+		return ipcRenderer.invoke("backend:get-pending-extension-ui-requests", taskId);
+	},
+	createTask(cwd) {
+		return ipcRenderer.invoke("task:create", cwd);
+	},
+	listTasks() {
+		return ipcRenderer.invoke("task:list");
+	},
+	stopTask(taskId) {
+		return ipcRenderer.invoke("task:stop", taskId);
 	},
 	restartBackend() {
 		return ipcRenderer.invoke("backend:restart");
