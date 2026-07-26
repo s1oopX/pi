@@ -13,6 +13,8 @@
  */
 
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
 import test from "node:test";
 import { assertPrerequisites, launchStudio, REPLY_TIMEOUT_MS } from "./harness.mjs";
 
@@ -38,6 +40,11 @@ test("smoke: prompt round-trip through the real backend", async (t) => {
 			userMessages.some((message) => JSON.stringify(message.content).includes("Say hello")),
 			"prompt text did not reach the faux provider",
 		);
+
+		// The rolling file log recorded the boot and the backend becoming ready.
+		const logContent = readFileSync(join(studio.tempRoot, "user-data", "logs", "pi-studio.log"), "utf8");
+		assert.match(logContent, /Pi Studio .* starting/u);
+		assert.match(logContent, /backend:main status ready/u);
 	} catch (error) {
 		await studio.dumpDiagnostics();
 		throw error;

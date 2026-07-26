@@ -65,6 +65,10 @@ jobs:
         run: npx tsc --noEmit
         working-directory: packages/desktop/renderer-next
 
+      - name: Type check main process
+        run: npx tsc -p tsconfig.main.json
+        working-directory: packages/desktop
+
       - name: Lint renderer
         run: npm run lint:desktop-renderer
 

@@ -15,6 +15,7 @@ import { createPullRequest, getPullRequestContext } from "./git-pr.js";
 import { getGitWorkspaceStatus } from "./git-workspace-status.js";
 import { createTaskWorktree, isGitRepository, removeTaskWorktree } from "./git-worktree.js";
 import { describeRevealTarget, resolveWorkspacePath } from "./path-reveal.js";
+import { createRollingLog } from "./rolling-log.js";
 import { prepareSessionImport, resolveKnownSessionFile } from "./session-files.js";
 import { createTaskRegistry } from "./task-registry.js";
 import { checkDesktopUpdate } from "./update.js";
@@ -238,12 +239,65 @@ function listWorkspaceFiles(root, query = "") {
 	return files;
 }
 
+// Rolling file log (<userData>/logs): backend output, status transitions, and
+// main-process faults survive crashes that the in-memory renderer log cannot.
+let fileLog;
+function getFileLog() {
+	if (!fileLog) {
+		fileLog = createRollingLog({ directory: join(app.getPath("userData"), "logs") });
+		fileLog.append(
+			"info",
+			"main",
+			`Pi Studio ${app.getVersion()} starting (electron ${process.versions.electron}, ${process.platform})`,
+		);
+	}
+	return fileLog;
+}
+
+function mirrorToFileLog(channel, payload) {
+	if (channel === "backend:log") {
+		getFileLog().append(
+			String(payload?.level ?? "info"),
+			`backend:${payload?.backendId ?? "main"}`,
+			String(payload?.message ?? ""),
+		);
+		return;
+	}
+	if (channel === "backend:status") {
+		const state = payload?.error
+			? `error: ${payload.error}`
+			: payload?.ready
+				? "ready"
+				: payload?.restarting
+					? `restarting in ${payload?.retryInMs ?? 0}ms`
+					: payload?.starting
+						? "starting"
+						: "stopped";
+		getFileLog().append(
+			payload?.error ? "error" : "info",
+			`backend:${payload?.backendId ?? "main"}`,
+			`status ${state}${payload?.cwd ? ` (cwd: ${payload.cwd})` : ""}`,
+		);
+		return;
+	}
+	if (channel === "task:changed") {
+		getFileLog().append("info", "tasks", `task ${payload?.taskId ?? "?"} stopped (${payload?.reason ?? "unknown"})`);
+	}
+}
+
 function sendToRenderer(channel, payload) {
+	// File first: early backend failures matter most when no window exists yet.
+	mirrorToFileLog(channel, payload);
 	if (!mainWindow || mainWindow.isDestroyed()) {
 		return;
 	}
 	mainWindow.webContents.send(channel, payload);
 }
+
+// Monitor-only: observes crashes without altering Electron's fault handling.
+process.on("uncaughtExceptionMonitor", (error) => {
+	getFileLog().append("error", "main", `uncaught exception: ${error?.stack ?? String(error)}`);
+});
 
 async function openExternalSafely(url) {
 	const target = new URL(String(url));
@@ -672,7 +726,7 @@ setInterval(() => {
 		for (const taskId of idle) {
 			try {
 				const outcome = await stopTaskAndCleanup(taskId);
-				sendToRenderer("task:changed", { taskId, reason: "idle", ...outcome });
+				sendToRenderer("task:changed", { ...outcome, taskId, reason: "idle" });
 			} catch {
 				// The task may have been stopped concurrently; the next sweep settles it.
 			}
@@ -682,6 +736,7 @@ setInterval(() => {
 	});
 }, idleSweepIntervalMs);
 
+/** @returns {Promise<void>} */
 function waitForChildExit(child, timeoutMs) {
 	if (!child || child.exitCode !== null || child.signalCode) {
 		return Promise.resolve();
@@ -1040,8 +1095,19 @@ if (!hasSingleInstanceLock) {
 	});
 }
 
+ipcMain.handle("logs:reveal", async () => {
+	const logsDir = join(app.getPath("userData"), "logs");
+	getFileLog(); // Ensure the directory and current file exist before opening.
+	const error = await shell.openPath(logsDir);
+	if (error) {
+		throw new Error(error);
+	}
+	return { opened: true };
+});
+
 app.on("before-quit", () => {
 	isQuitting = true;
+	getFileLog().append("info", "main", "quitting");
 	taskRegistry.stopAll();
 });
 

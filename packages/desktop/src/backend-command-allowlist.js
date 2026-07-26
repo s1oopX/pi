@@ -70,7 +70,7 @@ export function describeBackendCommandRejection(command, allowedTypes) {
 	if (!command || typeof command !== "object" || Array.isArray(command)) {
 		return "Backend command must be an object";
 	}
-	const { type } = command;
+	const { type } = /** @type {{ type?: unknown }} */ (command);
 	if (typeof type !== "string" || type.length === 0) {
 		return "Backend command requires a string type";
 	}

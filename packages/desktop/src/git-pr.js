@@ -174,7 +174,7 @@ export async function getPullRequestContext(
  */
 export async function createPullRequest(
 	workspace,
-	{ title, body, base } = {},
+	/** @type {{title?: string, body?: string, base?: string}} */ { title, body, base } = {},
 	{ execFileImpl = execFile, realpathImpl = realpath, statImpl = stat, timeoutMs = GIT_TIMEOUT_MS } = {},
 ) {
 	const validatedTitle = validatePrTitle(title);

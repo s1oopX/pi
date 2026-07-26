@@ -91,6 +91,7 @@ Verification (the bar for every change):
 ```sh
 npm run check            # repo root: biome + pinned-deps + shrinkwrap + tsgo
 npm test                 # packages/desktop: main-process unit suite (node:test)
+npm run check:main       # packages/desktop: type-check the main process (checkJs, strict)
 npx vitest run           # renderer-next: renderer suite
 npm run test:e2e         # packages/desktop: end-to-end suite
 ```
@@ -114,8 +115,8 @@ The fork root is an upstream commit, so upstream releases merge as plain three-w
 
 Near-term (in order):
 
-1. **Main-process TypeScript migration** and rolling file logs.
-2. **Worktree ergonomics** — trust inheritance from the source repository, worktree cleanup management for kept-dirty trees.
+1. **Worktree ergonomics** — trust inheritance from the source repository, worktree cleanup management for kept-dirty trees.
+2. **Full `noImplicitAny` for the main process** — the checkJs baseline is strict except implicit-any; annotate the remaining parameters module by module.
 
 Deliberately deferred: code signing and auto-update, installer distribution, backend size reduction (~100 MB Bun runtime), macOS/Linux, additional locales.
 

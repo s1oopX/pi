@@ -86,6 +86,15 @@ export function AboutSettings() {
     }
   }
 
+  async function handleOpenLogs() {
+    try {
+      await api.openLogsFolder();
+    } catch (e) {
+      const message = e instanceof Error ? e.message : String(e);
+      showToast(t("Could not open the logs folder: {message}", "无法打开日志文件夹：{message}", { message }), "error");
+    }
+  }
+
   async function handleRestartBackend() {
     try {
       await api.restartBackend();
@@ -133,6 +142,9 @@ export function AboutSettings() {
         )}
         <button className="settings-btn" type="button" onClick={handleExportDiagnostics}>
           {t("Export Diagnostics", "导出诊断信息")}
+        </button>
+        <button className="settings-btn" type="button" onClick={handleOpenLogs}>
+          {t("Open Logs Folder", "打开日志文件夹")}
         </button>
         <button className="settings-btn settings-btn-danger" type="button" onClick={handleRestartBackend}>
           {t("Restart Backend", "重启后端")}

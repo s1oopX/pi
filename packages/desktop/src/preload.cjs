@@ -114,6 +114,9 @@ contextBridge.exposeInMainWorld("piDesktop", {
 	saveDiagnostics(diagnostics) {
 		return ipcRenderer.invoke("diagnostics:save", diagnostics);
 	},
+	openLogsFolder() {
+		return ipcRenderer.invoke("logs:reveal");
+	},
 	saveModelBackup(backup) {
 		return ipcRenderer.invoke("model-config:save", backup);
 	},

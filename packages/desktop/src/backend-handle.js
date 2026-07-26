@@ -35,6 +35,7 @@ export class BackendHandle {
 	 * @param {() => boolean} [options.isQuitting]
 	 * @param {typeof spawn} [options.spawnImpl]
 	 * @param {(path: string) => boolean} [options.existsSyncImpl]
+	 * @param {() => number} [options.nowImpl]
 	 */
 	constructor({
 		id,
@@ -307,6 +308,7 @@ export class BackendHandle {
 		// bash_execution_update events by it); otherwise assign one.
 		const id = typeof command?.id === "string" && command.id ? command.id : `desktop_${++this.requestCounter}`;
 		const payload = { ...command, id };
+		const stdin = this.child.stdin;
 
 		return new Promise((resolve, reject) => {
 			const timeout = timeoutMs > 0
@@ -317,7 +319,7 @@ export class BackendHandle {
 				: undefined;
 
 			this.pendingRequests.set(id, { resolve, reject, timeout });
-			this.child.stdin.write(`${JSON.stringify(payload)}\n`, (error) => {
+			stdin.write(`${JSON.stringify(payload)}\n`, (error) => {
 				if (!error) {
 					return;
 				}
@@ -328,12 +330,14 @@ export class BackendHandle {
 		});
 	}
 
+	/** @returns {Promise<void>} */
 	send(command) {
 		if (!this.ready || !this.child?.stdin?.writable) {
 			return Promise.reject(new Error("Pi backend is not running"));
 		}
+		const stdin = this.child.stdin;
 		return new Promise((resolve, reject) => {
-			this.child.stdin.write(`${JSON.stringify(command)}\n`, (error) => {
+			stdin.write(`${JSON.stringify(command)}\n`, (error) => {
 				if (error) {
 					reject(error);
 				} else {

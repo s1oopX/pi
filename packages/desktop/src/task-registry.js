@@ -133,7 +133,7 @@ export function createTaskRegistry({ primary, createHandle, maxTasks = DEFAULT_M
 		 * Pool tasks whose backend has been silent past the idle window. The
 		 * primary and the renderer's active task are never candidates.
 		 */
-		listIdle(nowMs, idleMs, { skipTaskId } = {}) {
+		listIdle(nowMs, idleMs, /** @type {{ skipTaskId?: string }} */ { skipTaskId } = {}) {
 			const idle = [];
 			for (const entry of pool.values()) {
 				if (entry.taskId === skipTaskId) continue;

@@ -77,6 +77,7 @@ export interface PiDesktopApi {
   getAppInfo(): Promise<{ name: string; version: string }>;
   checkForUpdates(): Promise<unknown>;
   saveDiagnostics(diagnostics: unknown): Promise<{ saved: boolean; path?: string }>;
+  openLogsFolder?: () => Promise<{ opened: boolean }>;
   saveModelBackup(backup: unknown): Promise<{ saved: boolean; path?: string }>;
   openModelBackup(): Promise<{ opened: boolean; backup?: unknown }>;
   onEvent(listener: (payload: unknown) => void): () => void;
@@ -577,6 +578,12 @@ export async function checkForUpdates(): Promise<unknown> {
 
 export async function saveDiagnostics(diagnostics: unknown): Promise<{ saved: boolean; path?: string }> {
   return requireApi().saveDiagnostics(diagnostics);
+}
+
+export async function openLogsFolder(): Promise<void> {
+  const api = requireApi();
+  if (!api.openLogsFolder) throw new Error("Log files need a newer Pi Studio build");
+  await api.openLogsFolder();
 }
 
 export async function saveModelBackup(backup: unknown): Promise<{ saved: boolean; path?: string }> {
