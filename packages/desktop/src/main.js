@@ -1,5 +1,4 @@
 import { app, BrowserWindow, clipboard, dialog, ipcMain, nativeTheme, Notification, screen, shell } from "electron";
-import { spawn } from "node:child_process";
 import { existsSync, mkdirSync, readFileSync, readdirSync, statSync, writeFileSync } from "node:fs";
 import { copyFile, readFile, writeFile } from "node:fs/promises";
 import { basename, dirname, join, relative } from "node:path";
@@ -9,13 +8,12 @@ import {
 	BACKEND_SEND_COMMAND_TYPES,
 	describeBackendCommandRejection,
 } from "./backend-command-allowlist.js";
-import { createBackendMutationQueue } from "./backend-mutation-queue.js";
+import { BackendHandle } from "./backend-handle.js";
 import { sanitizeDiagnostics } from "./diagnostics.js";
 import { commitAllChanges, listGitBranches, listGitChanges, pushCurrentBranch, switchGitBranch } from "./git-commit.js";
 import { createPullRequest, getPullRequestContext } from "./git-pr.js";
 import { getGitWorkspaceStatus } from "./git-workspace-status.js";
 import { describeRevealTarget, resolveWorkspacePath } from "./path-reveal.js";
-import { createPendingExtensionUIRequestStore } from "./pending-extension-ui-requests.js";
 import { prepareSessionImport, resolveKnownSessionFile } from "./session-files.js";
 import { checkDesktopUpdate } from "./update.js";
 import { loadStoredWorkspace, saveStoredWorkspace } from "./workspace-state.js";
@@ -35,29 +33,30 @@ const TASK_WORKSPACE_DIRECTORY = "tasks";
 
 let mainWindow;
 let windowCreationPromise;
-let backend;
-let backendBuffer = "";
-let backendBufferBytes = 0;
-let requestCounter = 0;
-const pendingRequests = new Map();
-const pendingExtensionUIRequests = createPendingExtensionUIRequestStore();
-let backendReady = false;
-let backendStarting = false;
-let backendStderr = "";
 let backendCwd = process.env.PI_DESKTOP_CWD || process.cwd();
-let backendRestartTimer;
-let backendStableTimer;
-let backendRestartAttempts = 0;
-let backendRetryAt = 0;
 let isQuitting = false;
 let workspaceStateInitialized = false;
-const sessionMutationQueue = createBackendMutationQueue();
 
-// RPC messages include inline base64 image content. Keep a bounded but large
-// enough frame buffer for multi-image prompts and get_messages responses.
-const MAX_BACKEND_BUFFER_BYTES = 128 * 1024 * 1024;
-const MAX_BACKEND_STDERR_BYTES = 64 * 1024;
-const MAX_BACKEND_RESTART_ATTEMPTS = 3;
+// Every backend child and its per-process state lives in a BackendHandle
+// (src/backend-handle.js). M1 of the parallel-tasks design: the registry holds
+// only the primary workspace backend; pool members arrive in M2.
+const backends = new Map();
+const primaryBackend = new BackendHandle({
+	id: "main",
+	getCwd: () => backendCwd,
+	getBackendPath,
+	sendToRenderer,
+	onSessionChanged: syncBackendCwd,
+	notify: maybeNotify,
+	isQuitting: () => isQuitting,
+});
+backends.set(primaryBackend.id, primaryBackend);
+
+function stopAllBackends() {
+	for (const handle of backends.values()) {
+		handle.stop();
+	}
+}
 
 function getWindowStatePath() {
 	return join(app.getPath("userData"), WINDOW_STATE_FILE);
@@ -95,15 +94,7 @@ function syncBackendCwd(cwd) {
 	if (typeof cwd !== "string" || !cwd.trim() || backendCwd === cwd) return;
 	backendCwd = cwd;
 	persistBackendCwd();
-	sendToRenderer("backend:status", {
-		ready: backendReady,
-		starting: backendStarting,
-		restarting: Boolean(backendRestartTimer),
-		retryInMs: backendRetryAt ? Math.max(0, backendRetryAt - Date.now()) : 0,
-		restartAttempts: backendRestartAttempts,
-		backendPath: getBackendPath(),
-		cwd: backendCwd,
-	});
+	sendToRenderer("backend:status", primaryBackend.statusSnapshot());
 }
 
 function loadWindowState() {
@@ -339,34 +330,6 @@ async function fetchProviderModels({ baseUrl, apiKey, api }) {
 	throw new Error(lastError || "Could not fetch models from endpoint");
 }
 
-function parseBackendLine(line) {
-	if (!line.trim()) {
-		return;
-	}
-	let payload;
-	try {
-		payload = JSON.parse(line);
-	} catch {
-		sendToRenderer("backend:log", { level: "warn", message: line.slice(0, 16 * 1024) });
-		return;
-	}
-
-	if (payload.type === "response" && payload.id && pendingRequests.has(payload.id)) {
-		const pending = pendingRequests.get(payload.id);
-		pendingRequests.delete(payload.id);
-		clearTimeout(pending.timeout);
-		pending.resolve(payload);
-		return;
-	}
-
-	if (payload.type === "session_changed" && typeof payload.cwd === "string") {
-		syncBackendCwd(payload.cwd);
-	}
-	pendingExtensionUIRequests.track(payload);
-	maybeNotify(payload);
-	sendToRenderer("backend:event", payload);
-}
-
 // Surface a desktop notification when a run finishes while the window is not
 // focused, so the user can look away during long agent runs.
 function maybeNotify(payload) {
@@ -393,224 +356,6 @@ function maybeNotify(payload) {
 	} catch {
 		// Notifications are best-effort; ignore platform failures.
 	}
-}
-
-function handleBackendStdout(chunk) {
-	backendBuffer += chunk.toString("utf8");
-	backendBufferBytes += chunk.length;
-	if (backendBufferBytes > MAX_BACKEND_BUFFER_BYTES && !backendBuffer.includes("\n")) {
-		backendBuffer = "";
-		backendBufferBytes = 0;
-		sendToRenderer("backend:log", { level: "error", message: "Discarded an oversized backend output line" });
-		return;
-	}
-	let newlineIndex = backendBuffer.indexOf("\n");
-	while (newlineIndex !== -1) {
-		const line = backendBuffer.slice(0, newlineIndex);
-		backendBuffer = backendBuffer.slice(newlineIndex + 1);
-		backendBufferBytes = Buffer.byteLength(backendBuffer, "utf8");
-		parseBackendLine(line);
-		newlineIndex = backendBuffer.indexOf("\n");
-	}
-}
-
-function rejectPendingRequests(error) {
-	for (const pending of pendingRequests.values()) {
-		clearTimeout(pending.timeout);
-		pending.reject(error);
-	}
-	pendingRequests.clear();
-}
-
-function clearBackendRestartTimers() {
-	clearTimeout(backendRestartTimer);
-	clearTimeout(backendStableTimer);
-	backendRestartTimer = undefined;
-	backendStableTimer = undefined;
-	backendRetryAt = 0;
-}
-
-function scheduleBackendRestart(reason) {
-	clearTimeout(backendStableTimer);
-	backendStableTimer = undefined;
-	if (isQuitting || backend || backendRestartTimer) return;
-	if (backendRestartAttempts >= MAX_BACKEND_RESTART_ATTEMPTS) {
-		backendStarting = false;
-		backendRetryAt = 0;
-		sendToRenderer("backend:status", {
-			ready: false,
-			error: `Pi backend stopped after ${MAX_BACKEND_RESTART_ATTEMPTS} restart attempts. ${reason}`,
-		});
-		return;
-	}
-	const delay = 1000 * 2 ** backendRestartAttempts;
-	backendRestartAttempts += 1;
-	backendStarting = true;
-	backendRetryAt = Date.now() + delay;
-	sendToRenderer("backend:status", {
-		ready: false,
-		starting: true,
-		restarting: true,
-		retryInMs: delay,
-		error: reason,
-	});
-	backendRestartTimer = setTimeout(() => {
-		backendRestartTimer = undefined;
-		backendRetryAt = 0;
-		startBackend();
-	}, delay);
-}
-
-function startBackend() {
-	if (backend) {
-		return;
-	}
-	pendingExtensionUIRequests.clear();
-
-	const backendPath = getBackendPath();
-	if (!existsSync(backendPath)) {
-		backendReady = false;
-		sendToRenderer("backend:status", {
-			ready: false,
-			error: `Pi backend not found: ${backendPath}`,
-		});
-		return;
-	}
-
-	backendBuffer = "";
-	backendBufferBytes = 0;
-	backendRetryAt = 0;
-	const child = spawn(backendPath, [], {
-		cwd: backendCwd,
-		env: {
-			...process.env,
-			PI_DESKTOP: "1",
-		},
-		stdio: ["pipe", "pipe", "pipe"],
-		windowsHide: true,
-	});
-	backend = child;
-	sessionMutationQueue.invalidate();
-	backendReady = false;
-	backendStarting = true;
-	backendStderr = "";
-	sendToRenderer("backend:status", { ready: false, starting: true, backendPath, cwd: backendCwd });
-
-	child.stdout.on("data", (chunk) => {
-		if (backend !== child) return;
-		handleBackendStdout(chunk);
-	});
-	child.stderr.on("data", (chunk) => {
-		if (backend !== child) return;
-		const message = chunk.toString("utf8").slice(-16 * 1024);
-		backendStderr = `${backendStderr}${message}`.slice(-MAX_BACKEND_STDERR_BYTES);
-		sendToRenderer("backend:log", { level: "error", message });
-	});
-	child.on("exit", (code, signal) => {
-		if (backend !== child) {
-			return;
-		}
-		sessionMutationQueue.invalidate();
-		pendingExtensionUIRequests.clear();
-		backendReady = false;
-		backendStarting = false;
-		backend = undefined;
-		const message = `Pi backend exited code=${code} signal=${signal}. ${backendStderr}`;
-		rejectPendingRequests(new Error(message));
-		scheduleBackendRestart(message);
-	});
-	child.on("error", (error) => {
-		if (backend !== child) {
-			return;
-		}
-		sessionMutationQueue.invalidate();
-		pendingExtensionUIRequests.clear();
-		backend = undefined;
-		backendReady = false;
-		backendStarting = false;
-		rejectPendingRequests(error);
-		scheduleBackendRestart(error.message);
-	});
-
-	void requestBackend({ type: "get_state" }, { allowStarting: true, timeoutMs: 15000 })
-		.then(() => {
-			if (backend !== child) return;
-			backendStarting = false;
-			backendReady = true;
-			sendToRenderer("backend:status", { ready: true, backendPath, cwd: backendCwd });
-			clearTimeout(backendStableTimer);
-			backendStableTimer = setTimeout(() => {
-				if (backend === child && backendReady) backendRestartAttempts = 0;
-			}, 30000);
-		})
-		.catch((error) => {
-			if (backend !== child) return;
-			backendStarting = false;
-			backendReady = false;
-			sendToRenderer("backend:status", { ready: false, error: `Pi backend failed to initialize: ${error.message}` });
-			child.kill();
-		});
-}
-
-function stopBackend() {
-	clearBackendRestartTimers();
-	backendRestartAttempts = 0;
-	sessionMutationQueue.invalidate();
-	pendingExtensionUIRequests.clear();
-	if (!backend) {
-		return;
-	}
-	const child = backend;
-	backend = undefined;
-	backendReady = false;
-	backendStarting = false;
-	rejectPendingRequests(new Error("Pi backend stopped"));
-	child.kill();
-}
-
-function requestBackend(command, { allowStarting = false, timeoutMs = 30000 } = {}) {
-	if ((!backendReady && !(allowStarting && backendStarting)) || !backend?.stdin?.writable) {
-		return Promise.reject(new Error(backendStarting ? "Pi backend is starting" : "Pi backend is not running"));
-	}
-
-	// Callers may supply their own request id (bash runs correlate streamed
-	// bash_execution_update events by it); otherwise assign one.
-	const id = typeof command?.id === "string" && command.id ? command.id : `desktop_${++requestCounter}`;
-	const payload = { ...command, id };
-
-	return new Promise((resolve, reject) => {
-		const timeout = timeoutMs > 0
-			? setTimeout(() => {
-					pendingRequests.delete(id);
-					reject(new Error(`Timed out waiting for ${command.type}`));
-				}, timeoutMs)
-			: undefined;
-
-		pendingRequests.set(id, { resolve, reject, timeout });
-		backend.stdin.write(`${JSON.stringify(payload)}\n`, (error) => {
-			if (!error) {
-				return;
-			}
-			clearTimeout(timeout);
-			pendingRequests.delete(id);
-			reject(error);
-		});
-	});
-}
-
-function sendBackend(command) {
-	if (!backendReady || !backend?.stdin?.writable) {
-		return Promise.reject(new Error("Pi backend is not running"));
-	}
-	return new Promise((resolve, reject) => {
-		backend.stdin.write(`${JSON.stringify(command)}\n`, (error) => {
-			if (error) {
-				reject(error);
-			} else {
-				resolve();
-			}
-		});
-	});
 }
 
 async function createWindow() {
@@ -657,7 +402,7 @@ async function createWindow() {
 	window.once("ready-to-show", () => {
 		if (savedWindowState?.maximized) window.maximize();
 		window.show();
-		startBackend();
+		primaryBackend.start();
 	});
 	window.on("close", () => saveWindowState(window));
 	window.on("closed", () => {
@@ -724,13 +469,13 @@ function getRequestTimeoutMs(command) {
 }
 
 function serializeSessionMutation(operation) {
-	return sessionMutationQueue.serialize(operation);
+	return primaryBackend.mutationQueue.serialize(operation);
 }
 
 async function getKnownSessionFile(sessionPath) {
 	const [firstPageResponse, stateResponse] = await Promise.all([
-		requestBackend({ type: "get_sessions", all: true, offset: 0, limit: 200 }),
-		requestBackend({ type: "get_state" }),
+		primaryBackend.request({ type: "get_sessions", all: true, offset: 0, limit: 200 }),
+		primaryBackend.request({ type: "get_state" }),
 	]);
 	if (!firstPageResponse.success) {
 		throw new Error(firstPageResponse.error || "Could not list sessions");
@@ -751,7 +496,7 @@ async function getKnownSessionFile(sessionPath) {
 			throw new Error("Could not paginate sessions safely");
 		}
 		previousOffset = page.nextOffset;
-		const nextPageResponse = await requestBackend({
+		const nextPageResponse = await primaryBackend.request({
 			type: "get_sessions",
 			all: true,
 			offset: page.nextOffset,
@@ -781,7 +526,7 @@ ipcMain.handle("backend:request", async (_event, command) => {
 	}
 	const execute = async () => {
 		const timeoutMs = getRequestTimeoutMs(command);
-		const response = await requestBackend(command, timeoutMs === undefined ? {} : { timeoutMs });
+		const response = await primaryBackend.request(command, timeoutMs === undefined ? {} : { timeoutMs });
 		if (!response.success) {
 			throw new Error(response.error || `Command failed: ${response.command}`);
 		}
@@ -804,21 +549,13 @@ ipcMain.handle("backend:send", async (_event, command) => {
 	if (rejection) {
 		throw new Error(rejection);
 	}
-	await sendBackend(command);
-	if (command?.type === "extension_ui_response") pendingExtensionUIRequests.remove(command.id);
+	await primaryBackend.send(command);
+	if (command?.type === "extension_ui_response") primaryBackend.pendingExtensionUIRequests.remove(command.id);
 });
 
-ipcMain.handle("backend:get-pending-extension-ui-requests", () => pendingExtensionUIRequests.list());
+ipcMain.handle("backend:get-pending-extension-ui-requests", () => primaryBackend.pendingExtensionUIRequests.list());
 
-ipcMain.handle("backend:get-status", () => ({
-	ready: backendReady,
-	starting: backendStarting,
-	restarting: Boolean(backendRestartTimer),
-	retryInMs: backendRetryAt ? Math.max(0, backendRetryAt - Date.now()) : 0,
-	restartAttempts: backendRestartAttempts,
-	backendPath: getBackendPath(),
-	cwd: backendCwd,
-}));
+ipcMain.handle("backend:get-status", () => primaryBackend.statusSnapshot());
 
 ipcMain.handle("backend:open-external", async (_event, url) => {
 	await openExternalSafely(url);
@@ -857,7 +594,7 @@ ipcMain.handle("session:export", async (_event, sessionPath) => {
 
 ipcMain.handle("session:import", async () => {
 	return serializeSessionMutation(async () => {
-		const stateResponse = await requestBackend({ type: "get_state" });
+		const stateResponse = await primaryBackend.request({ type: "get_state" });
 		if (!stateResponse.success) {
 			throw new Error(stateResponse.error || "Could not read the active session");
 		}
@@ -874,7 +611,7 @@ ipcMain.handle("session:import", async () => {
 			return { imported: false };
 		}
 		const targetPath = await prepareSessionImport(picked.filePaths[0], dirname(activeSessionFile));
-		const switched = await requestBackend({ type: "switch_session", sessionPath: targetPath });
+		const switched = await primaryBackend.request({ type: "switch_session", sessionPath: targetPath });
 		if (!switched.success) {
 			throw new Error(switched.error || "Could not open the imported session");
 		}
@@ -906,8 +643,8 @@ ipcMain.handle("diagnostics:save", async (_event, rendererDiagnostics) => {
 		platform: process.platform,
 		arch: process.arch,
 		backend: {
-			ready: backendReady,
-			starting: backendStarting,
+			ready: primaryBackend.ready,
+			starting: primaryBackend.starting,
 			cwd: backendCwd,
 			path: getBackendPath(),
 		},
@@ -972,8 +709,8 @@ ipcMain.handle("model-config:open", async () => {
 });
 
 ipcMain.handle("backend:restart", async () => {
-	stopBackend();
-	startBackend();
+	primaryBackend.stop();
+	primaryBackend.start();
 });
 
 ipcMain.handle("workspace:choose", async () => {
@@ -995,8 +732,8 @@ ipcMain.handle("workspace:open", async (_event, cwd) => {
 	}
 	backendCwd = nextCwd;
 	persistBackendCwd();
-	stopBackend();
-	startBackend();
+	primaryBackend.stop();
+	primaryBackend.start();
 	return { cwd: backendCwd, changed: true };
 });
 
@@ -1087,7 +824,7 @@ if (!hasSingleInstanceLock) {
 
 app.on("before-quit", () => {
 	isQuitting = true;
-	stopBackend();
+	stopAllBackends();
 });
 
 app.on("window-all-closed", () => {

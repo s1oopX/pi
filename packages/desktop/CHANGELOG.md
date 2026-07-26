@@ -6,6 +6,10 @@ client (Electron main process and the `renderer-next` React renderer).
 
 ## [Unreleased]
 
+### Changed
+
+- Extracted the backend child process and all of its per-process state (stdout JSONL reassembly, request correlation, restart backoff, the session mutation queue, the pending extension-UI store) from `main.js` module singletons into a `BackendHandle` class (`src/backend-handle.js`) — milestone M1 of the parallel-tasks design (`docs/parallel-tasks-design.md`). `main.js` now holds a registry with the single primary handle; behavior is a verbatim port and the whole e2e suite passes unchanged. Renderer-facing `backend:event`/`backend:status`/`backend:log` payloads now carry a `backendId` tag (ignored by the current renderer) so pool members can be routed in M2. The handle is unit-tested with a fake spawn: ready handshake, request lifecycle and timeouts, split-chunk stdout reassembly, event tagging, restart backoff and budget, stop semantics, and init-failure paths.
+
 ### Added
 
 - Session JSONL import and export: every thread's context menu gains "Export JSONL..." (save-dialog copy of the session file — only files the backend lists as sessions can be exported), and the Projects header gains an import button that picks a `.jsonl` file, validates it (first line must be a JSON object, non-empty, ≤256 MB), copies it into the current sessions folder under a collision-free name (`COPYFILE_EXCL`, never overwrites), and switches to it. Import runs through the session-mutation queue like clone/delete. Validation and collision naming live in a pure `prepareSessionImport` helper with unit tests.
