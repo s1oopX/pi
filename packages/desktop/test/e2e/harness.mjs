@@ -43,12 +43,15 @@ export function assertPrerequisites() {
 	assertPrerequisite(backendExe, "npm run build:backend (in packages/desktop)");
 }
 
-export async function launchStudio({ reply, script, setupWorkspace } = {}) {
+export async function launchStudio({ reply, script, setupWorkspace, extraWorkspaces = 0 } = {}) {
 	const tempRoot = mkdtempSync(join(tmpdir(), "pi-studio-e2e-"));
 	const workspaceDir = join(tempRoot, "workspace");
 	const agentDir = join(tempRoot, "agent");
 	const userDataDir = join(tempRoot, "user-data");
-	for (const dir of [workspaceDir, agentDir, userDataDir]) {
+	const extraWorkspaceDirs = Array.from({ length: extraWorkspaces }, (_, index) =>
+		join(tempRoot, `workspace-extra-${index + 1}`),
+	);
+	for (const dir of [workspaceDir, agentDir, userDataDir, ...extraWorkspaceDirs]) {
 		mkdirSync(dir, { recursive: true });
 	}
 	if (setupWorkspace) {
@@ -97,7 +100,10 @@ export async function launchStudio({ reply, script, setupWorkspace } = {}) {
 	await page.evaluate(() => {
 		window.__e2eBackendTrace = [];
 		window.piDesktop?.onLog((entry) => window.__e2eBackendTrace.push({ log: entry }));
-		window.piDesktop?.onStatus((status) => window.__e2eBackendTrace.push({ status }));
+		window.piDesktop?.onStatus((status) => window.__e2eBackendTrace.push({ ts: Date.now(), status }));
+		window.piDesktop?.onEvent((event) =>
+			window.__e2eBackendTrace.push({ ts: Date.now(), event: { type: event?.type, backendId: event?.backendId } }),
+		);
 	});
 
 	return {
@@ -106,6 +112,17 @@ export async function launchStudio({ reply, script, setupWorkspace } = {}) {
 		server,
 		tempRoot,
 		workspaceDir,
+		extraWorkspaceDirs,
+
+		/**
+		 * Replace the native folder picker with a canned choice so tests can
+		 * drive flows that open dialog.showOpenDialog.
+		 */
+		async stubFolderPicker(pickedPath) {
+			await app.evaluate(({ dialog }, picked) => {
+				dialog.showOpenDialog = async () => ({ canceled: false, filePaths: [picked] });
+			}, pickedPath);
+		},
 
 		async waitUntilReady() {
 			// Wait for the app to fully settle (backend ready, models loaded) before

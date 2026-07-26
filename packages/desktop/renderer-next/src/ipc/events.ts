@@ -363,6 +363,14 @@ export function useBackendEvents(): void {
       const statusBackendId = typeof payload.backendId === "string" ? payload.backendId : undefined;
       if (statusBackendId && statusBackendId !== PRIMARY_TASK_ID) {
         useStore.setState({ taskRegistry: applyTaskStatus(store.taskRegistry, payload) });
+        // Completing the deferred hydration: switching to a still-booting pool
+        // task set workspaceLoading but had no backend to refresh from, so the
+        // ready signal must run the refresh (mirrors the primary's
+        // connection-generation retrigger) or the UI stays busy forever.
+        const current = useStore.getState();
+        if (Boolean(payload.ready) && current.taskRegistry.activeTaskId === statusBackendId && current.workspaceLoading) {
+          void current.refreshAsync();
+        }
         return;
       }
       const ready = Boolean(payload.ready);

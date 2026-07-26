@@ -6,7 +6,12 @@
  *
  * Steps: `{ reply: "text" }` or `{ toolCalls: [{ id, name, arguments }] }`
  * (arguments as a plain object). Requests past the end of the script repeat
- * the last step.
+ * the last step. Optional per-step fields:
+ * - `when`: substring matched against the request messages; matching steps
+ *   take priority over positional order. Required for multi-backend tests,
+ *   where cross-client request order is nondeterministic.
+ * - `delayMs`: holds the stream open before the final chunk, so a run stays
+ *   observably in-flight.
  */
 
 import { createServer } from "node:http";
@@ -27,7 +32,9 @@ export function startFauxOpenAiServer({ reply = "Hello from faux.", script } = {
 				} catch {
 					parsed = undefined;
 				}
-				const step = steps[Math.min(requests.length, steps.length - 1)];
+				const messagesText = JSON.stringify(parsed?.messages ?? "");
+				const matched = steps.find((candidate) => candidate.when && messagesText.includes(candidate.when));
+				const step = matched ?? steps[Math.min(requests.length, steps.length - 1)];
 				requests.push({ url: req.url, body: parsed });
 				respondChatCompletion(res, parsed, step);
 				return;
@@ -66,24 +73,30 @@ function respondChatCompletion(res, request, step) {
 
 	if (request?.stream === false) {
 		res.writeHead(200, { "content-type": "application/json" });
-		res.end(
-			JSON.stringify({
-				id: "faux-completion",
-				object: "chat.completion",
-				created: 1,
-				model,
-				choices: [
-					{
-						index: 0,
-						message: toolCalls
-							? { role: "assistant", content: null, tool_calls: toolCalls }
-							: { role: "assistant", content: reply },
-						finish_reason: toolCalls ? "tool_calls" : "stop",
-					},
-				],
-				usage,
-			}),
-		);
+		const respond = () =>
+			res.end(
+				JSON.stringify({
+					id: "faux-completion",
+					object: "chat.completion",
+					created: 1,
+					model,
+					choices: [
+						{
+							index: 0,
+							message: toolCalls
+								? { role: "assistant", content: null, tool_calls: toolCalls }
+								: { role: "assistant", content: reply },
+							finish_reason: toolCalls ? "tool_calls" : "stop",
+						},
+					],
+					usage,
+				}),
+			);
+		if (step.delayMs > 0) {
+			setTimeout(respond, step.delayMs);
+		} else {
+			respond();
+		}
 		return;
 	}
 
@@ -104,6 +117,10 @@ function respondChatCompletion(res, request, step) {
 			})}\n\n`,
 		);
 	};
+	const finish = () => {
+		res.write("data: [DONE]\n\n");
+		res.end();
+	};
 	writeChunk({ role: "assistant" });
 	if (toolCalls) {
 		for (const call of toolCalls) {
@@ -115,12 +132,19 @@ function respondChatCompletion(res, request, step) {
 			writeChunk({ tool_calls: [{ index: call.index, function: { arguments: call.function.arguments } }] });
 		}
 		writeChunk({}, "tool_calls", { usage });
-	} else {
-		const splitAt = Math.ceil(reply.length / 2);
-		writeChunk({ content: reply.slice(0, splitAt) });
+		finish();
+		return;
+	}
+	const splitAt = Math.ceil(reply.length / 2);
+	writeChunk({ content: reply.slice(0, splitAt) });
+	const complete = () => {
 		writeChunk({ content: reply.slice(splitAt) });
 		writeChunk({}, "stop", { usage });
+		finish();
+	};
+	if (step.delayMs > 0) {
+		setTimeout(complete, step.delayMs);
+	} else {
+		complete();
 	}
-	res.write("data: [DONE]\n\n");
-	res.end();
 }
