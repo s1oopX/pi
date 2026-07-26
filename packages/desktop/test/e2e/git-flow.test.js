@@ -116,6 +116,17 @@ test("git flow: create a branch and push to a bare remote", async (t) => {
 		const fileDiff = studio.page.locator(".git-panel-file-diff");
 		await fileDiff.waitFor({ state: "visible", timeout: LAUNCH_TIMEOUT_MS });
 		await fileDiff.getByText("scratch").first().waitFor({ state: "visible", timeout: LAUNCH_TIMEOUT_MS });
+		// "Ask agent" drafts an @file prompt into the composer and closes the
+		// panel; reopen and re-expand for the discard flow below.
+		await studio.page.locator(".git-panel-ask-btn").click();
+		await studio.page
+			.locator(".composer-input")
+			.evaluate((el) => /** @type {HTMLTextAreaElement} */ (el).value)
+			.then((value) => assert.ok(value.includes("@notes.txt"), `composer draft should reference the file, got: ${value}`));
+		await studio.page.locator(".top-bar-git").click();
+		await studio.page.locator(".git-panel-file-path", { hasText: "notes.txt" }).first().click();
+		await studio.page.locator(".git-panel-file-diff").waitFor({ state: "visible", timeout: LAUNCH_TIMEOUT_MS });
+
 		const discard = studio.page.locator(".git-panel-restore-btn");
 		await discard.click(); // arm
 		await discard.click(); // confirm

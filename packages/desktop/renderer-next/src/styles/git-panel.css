@@ -451,3 +451,18 @@ button.git-panel-file.expanded {
 .git-panel-restore-btn:disabled {
   opacity: 0.5;
 }
+
+.git-panel-ask-btn {
+  padding: 4px 10px;
+  border-radius: var(--radius-xs);
+  background: var(--control-hover);
+  color: var(--text-soft);
+  font-size: 12px;
+  font-weight: 600;
+  margin-right: auto;
+}
+
+.git-panel-ask-btn:hover {
+  background: var(--accent-soft);
+  color: var(--accent);
+}

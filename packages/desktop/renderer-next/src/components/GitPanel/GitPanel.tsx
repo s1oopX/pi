@@ -22,6 +22,7 @@ export function GitPanel({ onClose }: GitPanelProps) {
   const workspaceGitStatus = useStore((s) => s.workspaceGitStatus);
   const refreshWorkspaceGitStatus = useStore((s) => s.refreshWorkspaceGitStatus);
   const isStreaming = useStore((s) => s.isStreaming);
+  const setComposerDraft = useStore((s) => s.setComposerDraft);
 
   const [changes, setChanges] = useState<GitChanges | null>(null);
   const [changesLoading, setChangesLoading] = useState(false);
@@ -222,6 +223,13 @@ export function GitPanel({ onClose }: GitPanelProps) {
         message: ipcErrorReason(error),
       }), "error");
     }
+  }
+
+  function handleAskAgent(path: string) {
+    // Prefill the composer with an @file reference; the composer consumes the
+    // draft, focuses, and the user finishes the instruction.
+    setComposerDraft(t("Review the uncommitted changes in @{path} and ", "请检查 @{path} 的未提交更改，然后", { path }));
+    onClose();
   }
 
   async function handleRestoreFile(path: string) {
@@ -507,6 +515,14 @@ export function GitPanel({ onClose }: GitPanelProps) {
                     <>
                       <DiffView patch={expandedPatch} />
                       <div className="git-panel-file-diff-actions">
+                        <button
+                          className="git-panel-ask-btn"
+                          type="button"
+                          title={t("Draft a prompt about this file's changes", "就此文件的更改起草提示词")}
+                          onClick={() => handleAskAgent(file.path)}
+                        >
+                          {t("Ask agent", "让智能体处理")}
+                        </button>
                         <button
                           className="git-panel-restore-btn"
                           type="button"
