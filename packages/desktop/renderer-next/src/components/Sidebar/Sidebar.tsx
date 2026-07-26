@@ -69,6 +69,7 @@ export function Sidebar({ collapsed, onToggle }: SidebarProps) {
   const [deleteTarget, setDeleteTarget] = useState<SessionInfo | null>(null);
   const [deleting, setDeleting] = useState(false);
   const [cloning, setCloning] = useState(false);
+  const [importingSession, setImportingSession] = useState(false);
   const [failedSwitch, setFailedSwitch] = useState<FailedSwitchState | null>(null);
   const [branchNavigatorOpen, setBranchNavigatorOpen] = useState(false);
   const [switchingWorkspaceCwd, setSwitchingWorkspaceCwd] = useState<string | null>(null);
@@ -422,6 +423,47 @@ export function Sidebar({ collapsed, onToggle }: SidebarProps) {
         }),
         "error",
       );
+    }
+  }
+
+  async function handleExportSession(candidate: SessionInfo) {
+    closeSessionMenu(true);
+    try {
+      const result = await api.exportSessionFile(candidate.path);
+      if (!result.exported) return;
+      showToast(t("Thread exported to {path}", "会话已导出到 {path}", { path: result.path ?? "" }), "success");
+    } catch (error) {
+      showToast(
+        t("Failed to export thread: {error}", "导出会话失败：{error}", {
+          error: error instanceof Error ? error.message : String(error),
+        }),
+        "error",
+      );
+    }
+  }
+
+  async function handleImportSession() {
+    if (importingSession) return;
+    if (useStore.getState().isStreaming) {
+      showToast(t("Finish or stop the current run before importing a thread.", "请先完成或停止当前运行，再导入会话。"), "warning");
+      return;
+    }
+    setImportingSession(true);
+    try {
+      const result = await api.importSessionFile();
+      if (!result.imported) return;
+      useStore.getState().resetForWorkspace(useStore.getState().workspaceCwd);
+      await refreshSessions();
+      showToast(t("Thread imported", "会话已导入"), "success");
+    } catch (error) {
+      showToast(
+        t("Failed to import thread: {error}", "导入会话失败：{error}", {
+          error: error instanceof Error ? error.message : String(error),
+        }),
+        "error",
+      );
+    } finally {
+      setImportingSession(false);
     }
   }
 
@@ -853,6 +895,20 @@ export function Sidebar({ collapsed, onToggle }: SidebarProps) {
                   <button
                     className="workspace-navigation-add"
                     type="button"
+                    aria-label={t("Import thread from JSONL", "从 JSONL 导入会话")}
+                    title={isStreaming
+                      ? t("Finish or stop the current run before importing a thread", "请先完成或停止当前运行，再导入会话")
+                      : !backendStatus.ready
+                        ? t("The agent backend is not ready", "智能体后端尚未就绪")
+                        : t("Import thread from JSONL", "从 JSONL 导入会话")}
+                    disabled={!backendStatus.ready || switchingWorkspace || isStreaming || importingSession}
+                    onClick={() => void handleImportSession()}
+                  >
+                    <Icon name="download" size={18} strokeWidth={1.5} />
+                  </button>
+                  <button
+                    className="workspace-navigation-add"
+                    type="button"
                     aria-label={t("Add project", "添加项目")}
                     title={isStreaming
                       ? t("Finish or stop the current run before adding a project", "请先完成或停止当前运行，再添加项目")
@@ -1102,6 +1158,14 @@ export function Sidebar({ collapsed, onToggle }: SidebarProps) {
             onClick={() => handleRevealSession(sessionMenu.session)}
           >
             {t("Show in File Explorer", "在文件资源管理器中显示")}
+          </button>
+          <button
+            className="session-actions-item"
+            type="button"
+            role="menuitem"
+            onClick={() => void handleExportSession(sessionMenu.session)}
+          >
+            {t("Export JSONL...", "导出 JSONL...")}
           </button>
           <div className="session-actions-separator" role="separator" />
           <button

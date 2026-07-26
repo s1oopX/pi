@@ -54,6 +54,8 @@ export interface PiDesktopApi {
   revealWorkspacePath(targetPath: string): Promise<{ revealed: boolean; path: string; insideWorkspace: boolean }>;
   revealSessionFile(sessionPath: string): Promise<{ revealed: boolean }>;
   trashSessionFile(sessionPath: string): Promise<{ trashed: boolean }>;
+  exportSessionFile(sessionPath: string): Promise<{ exported: boolean; path?: string }>;
+  importSessionFile(): Promise<{ imported: boolean; path?: string }>;
   openExternal(url: string): Promise<void>;
   fetchProviderModels(params: {
     baseUrl: string;
@@ -448,6 +450,14 @@ export async function revealSessionFile(sessionPath: string): Promise<void> {
 
 export async function trashSessionFile(sessionPath: string): Promise<void> {
   await requireApi().trashSessionFile(sessionPath);
+}
+
+export async function exportSessionFile(sessionPath: string): Promise<{ exported: boolean; path?: string }> {
+  return requireApi().exportSessionFile(sessionPath);
+}
+
+export async function importSessionFile(): Promise<{ imported: boolean; path?: string }> {
+  return requireApi().importSessionFile();
 }
 
 export async function openExternal(url: string): Promise<void> {

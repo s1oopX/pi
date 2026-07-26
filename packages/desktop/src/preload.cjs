@@ -64,6 +64,12 @@ contextBridge.exposeInMainWorld("piDesktop", {
 	trashSessionFile(sessionPath) {
 		return ipcRenderer.invoke("session:trash", sessionPath);
 	},
+	exportSessionFile(sessionPath) {
+		return ipcRenderer.invoke("session:export", sessionPath);
+	},
+	importSessionFile() {
+		return ipcRenderer.invoke("session:import");
+	},
 	openExternal(url) {
 		return ipcRenderer.invoke("backend:open-external", url);
 	},

@@ -1,8 +1,8 @@
 import { app, BrowserWindow, clipboard, dialog, ipcMain, nativeTheme, Notification, screen, shell } from "electron";
 import { spawn } from "node:child_process";
 import { existsSync, mkdirSync, readFileSync, readdirSync, statSync, writeFileSync } from "node:fs";
-import { readFile, writeFile } from "node:fs/promises";
-import { dirname, join, relative } from "node:path";
+import { copyFile, readFile, writeFile } from "node:fs/promises";
+import { basename, dirname, join, relative } from "node:path";
 import { fileURLToPath } from "node:url";
 import {
 	BACKEND_REQUEST_COMMAND_TYPES,
@@ -16,7 +16,7 @@ import { createPullRequest, getPullRequestContext } from "./git-pr.js";
 import { getGitWorkspaceStatus } from "./git-workspace-status.js";
 import { describeRevealTarget, resolveWorkspacePath } from "./path-reveal.js";
 import { createPendingExtensionUIRequestStore } from "./pending-extension-ui-requests.js";
-import { resolveKnownSessionFile } from "./session-files.js";
+import { prepareSessionImport, resolveKnownSessionFile } from "./session-files.js";
 import { checkDesktopUpdate } from "./update.js";
 import { loadStoredWorkspace, saveStoredWorkspace } from "./workspace-state.js";
 
@@ -838,6 +838,47 @@ ipcMain.handle("session:trash", async (_event, sessionPath) => {
 		}
 		await shell.trashItem(session.path);
 		return { trashed: true };
+	});
+});
+
+ipcMain.handle("session:export", async (_event, sessionPath) => {
+	const session = await getKnownSessionFile(sessionPath);
+	const result = await dialog.showSaveDialog(mainWindow, {
+		title: "Export Session JSONL",
+		defaultPath: basename(session.path),
+		filters: [{ name: "JSONL", extensions: ["jsonl"] }],
+	});
+	if (result.canceled || !result.filePath) {
+		return { exported: false };
+	}
+	await copyFile(session.path, result.filePath);
+	return { exported: true, path: result.filePath };
+});
+
+ipcMain.handle("session:import", async () => {
+	return serializeSessionMutation(async () => {
+		const stateResponse = await requestBackend({ type: "get_state" });
+		if (!stateResponse.success) {
+			throw new Error(stateResponse.error || "Could not read the active session");
+		}
+		const activeSessionFile = stateResponse.data?.sessionFile;
+		if (typeof activeSessionFile !== "string" || !activeSessionFile) {
+			throw new Error("The sessions folder is not available yet");
+		}
+		const picked = await dialog.showOpenDialog(mainWindow, {
+			title: "Import Session JSONL",
+			filters: [{ name: "JSONL", extensions: ["jsonl"] }],
+			properties: ["openFile"],
+		});
+		if (picked.canceled || picked.filePaths.length === 0) {
+			return { imported: false };
+		}
+		const targetPath = await prepareSessionImport(picked.filePaths[0], dirname(activeSessionFile));
+		const switched = await requestBackend({ type: "switch_session", sessionPath: targetPath });
+		if (!switched.success) {
+			throw new Error(switched.error || "Could not open the imported session");
+		}
+		return { imported: true, path: targetPath };
 	});
 });
 
