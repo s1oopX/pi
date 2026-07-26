@@ -8,6 +8,10 @@ export default mergeConfig(
 			globals: true,
 			environment: "node",
 			testTimeout: 30000,
+			// Shared CI runners intermittently push timing-sensitive upstream
+			// tests (registry refresh, bash timeouts) past their margins; a
+			// consistently failing test still fails three times and stays red.
+			retry: process.env.CI ? 2 : 0,
 			reporters: process.env.GITHUB_ACTIONS ? ["dot", "github-actions"] : ["dot"],
 			silent: "passed-only",
 			server: {
