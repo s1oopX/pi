@@ -1,6 +1,6 @@
 {
 	"name": "@s1oopx/pi-studio",
-	"version": "0.80.3",
+	"version": "0.82.1",
 	"private": true,
 	"description": "Pi Studio desktop client for third-party API service support",
 	"author": "s1oopX <s1oopp1337@gmail.com>",

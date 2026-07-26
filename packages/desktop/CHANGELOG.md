@@ -25,6 +25,7 @@ client (Electron main process and the `renderer-next` React renderer).
 
 ### Changed
 
+- Synced the fork with upstream pi-mono v0.82.1 (previously a v0.80.3-era snapshot) and ported the desktop surface to the ModelRuntime era: desktop RPC auth and custom-model commands now go through `session.modelRuntime` and the runtime credential store; `backend.ts` builds a catalog-free `ModelRuntime` (models.json only, no network catalog refresh); a new `custom-providers-all` build alias keeps generated catalogs and official gateway providers out of the Studio bundle; the models.json provider-level `env` (proxy setting) is restored in the 0.82 schema and auth composition; the wire contract gains the `max` thinking level. The upgrade unlocks `bash_execution_update` streaming, `get_available_thinking_levels`, `agent_settled`, and summarization retry events for upcoming desktop features.
 - Reworked settings into a card-based layout with per-section icons.
 - Moved the palette to pure neutrals with neutral selection states, warm region layering, and soft elevation with a rounded shell.
 - Replaced 67 hand-inlined SVGs across 18 files with the shared `Icon` component, removing four competing viewBox sizes and eight stroke weights.

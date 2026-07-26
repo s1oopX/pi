@@ -96,10 +96,10 @@ describe("RPC provider auth status", () => {
 	it("includes model providers without auth and stored providers without models", async () => {
 		const listenerSnapshot = takeListenerSnapshot();
 		const harness = await createHarness();
-		harness.authStorage.set("stored-only", { type: "api_key", key: "secret" });
+		await harness.authStorage.modify("stored-only", async () => ({ type: "api_key", key: "secret" }));
 		const model = harness.getModel();
 		const modelProvider = "rpc-unauthenticated-test";
-		harness.session.modelRegistry.registerProvider(modelProvider, {
+		harness.session.modelRuntime.registerProvider(modelProvider, {
 			baseUrl: model.baseUrl,
 			api: model.api,
 			apiKey: "$PI_MISSING_RPC_AUTH_STATUS_KEY",
@@ -115,6 +115,7 @@ describe("RPC provider auth status", () => {
 				},
 			],
 		});
+		await harness.session.modelRuntime.refresh();
 
 		try {
 			void runRpcMode(createRuntimeHost(harness));
@@ -135,7 +136,7 @@ describe("RPC provider auth status", () => {
 				provider: modelProvider,
 				status: { configured: true, source: "stored" },
 			});
-			expect(harness.authStorage.has(modelProvider)).toBe(true);
+			expect(await harness.authStorage.read(modelProvider)).toBeDefined();
 		} finally {
 			harness.cleanup();
 			restoreListeners(listenerSnapshot);

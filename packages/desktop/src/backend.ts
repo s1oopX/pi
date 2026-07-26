@@ -12,7 +12,7 @@ import {
 } from "../../coding-agent/src/core/agent-session-services.ts";
 import { AuthStorage } from "../../coding-agent/src/core/auth-storage.ts";
 import { applyHttpProxySettings, configureHttpDispatcher } from "../../coding-agent/src/core/http-dispatcher.ts";
-import { ModelRegistry } from "../../coding-agent/src/core/model-registry.ts";
+import { ModelRuntime } from "../../coding-agent/src/core/model-runtime.ts";
 import { SessionManager } from "../../coding-agent/src/core/session-manager.ts";
 import { SettingsManager } from "../../coding-agent/src/core/settings-manager.ts";
 import { runRpcMode } from "../../coding-agent/src/modes/rpc/rpc-mode.ts";
@@ -35,13 +35,18 @@ const createRuntime: CreateAgentSessionRuntimeFactory = async ({
 	sessionStartEvent,
 }) => {
 	const settingsManager = SettingsManager.create(cwd, runtimeAgentDir);
-	const modelRegistry = ModelRegistry.customOnly(authStorage, join(runtimeAgentDir, "models.json"));
+	// Catalog-free runtime: only models.json models, no network catalog refresh
+	// (allowModelNetwork defaults to false). The bundled pi-ai ships no built-in
+	// provider catalogs; scripts/build-backend.mjs verifies that.
+	const modelRuntime = await ModelRuntime.create({
+		credentials: authStorage,
+		modelsPath: join(runtimeAgentDir, "models.json"),
+	});
 	const services = await createAgentSessionServices({
 		cwd,
 		agentDir: runtimeAgentDir,
-		authStorage,
 		settingsManager,
-		modelRegistry,
+		modelRuntime,
 	});
 	const created = await createAgentSessionFromServices({
 		services,

@@ -15,7 +15,7 @@
  * wire value and are therefore not `satisfies`-checked at the source object.
  */
 
-export type RpcThinkingLevel = "off" | "minimal" | "low" | "medium" | "high" | "xhigh";
+export type RpcThinkingLevel = "off" | "minimal" | "low" | "medium" | "high" | "xhigh" | "max";
 export type RpcQueueMode = "all" | "one-at-a-time";
 export type RpcCustomModelApi = "openai-completions" | "anthropic-messages";
 export type RpcConnectionErrorCategory =

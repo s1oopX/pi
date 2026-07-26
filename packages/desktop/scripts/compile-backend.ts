@@ -7,6 +7,7 @@ const outputPath = join(repoRoot, "packages/coding-agent/dist/pi-studio-backend.
 const metafilePath = join(repoRoot, "packages/coding-agent/dist/pi-studio-backend.meta.json");
 const customCompatPath = join(repoRoot, "packages/ai/src/custom-compat.ts");
 const customOauthPath = join(repoRoot, "packages/ai/src/custom-oauth.ts");
+const customProvidersAllPath = join(repoRoot, "packages/ai/src/custom-providers-all.ts");
 const customTransportHeadersPath = join(repoRoot, "packages/ai/src/custom-transport-headers.ts");
 
 const result = await Bun.build({
@@ -26,6 +27,9 @@ const result = await Bun.build({
 			setup(build) {
 				build.onResolve({ filter: /^@earendil-works\/pi-ai\/compat$/ }, () => ({ path: customCompatPath }));
 				build.onResolve({ filter: /^@earendil-works\/pi-ai\/oauth$/ }, () => ({ path: customOauthPath }));
+				build.onResolve({ filter: /^@earendil-works\/pi-ai\/providers\/all$/ }, () => ({
+					path: customProvidersAllPath,
+				}));
 				build.onResolve({ filter: /^\.\/github-copilot-headers\.ts$/ }, () => ({
 					path: customTransportHeadersPath,
 				}));

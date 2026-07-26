@@ -26,7 +26,7 @@ import type {
   RpcToolCallDTO,
 } from "../../../../coding-agent/src/modes/rpc/rpc-desktop-contract.ts";
 
-export type ThinkingLevel = "off" | "minimal" | "low" | "medium" | "high" | "xhigh";
+export type ThinkingLevel = "off" | "minimal" | "low" | "medium" | "high" | "xhigh" | "max";
 export type QueueMode = "all" | "one-at-a-time";
 export type CustomModelApi = "openai-completions" | "anthropic-messages";
 

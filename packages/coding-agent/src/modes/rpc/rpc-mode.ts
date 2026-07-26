@@ -102,6 +102,14 @@ function isSensitiveHeader(name: string): boolean {
 	return /authorization|api[-_]?key|token|secret|cookie/i.test(name);
 }
 
+function definedHeaders(
+	headers: Record<string, string | null | undefined> | undefined,
+): Record<string, string> | undefined {
+	if (!headers) return undefined;
+	const entries = Object.entries(headers).filter((entry): entry is [string, string] => typeof entry[1] === "string");
+	return entries.length > 0 ? Object.fromEntries(entries) : undefined;
+}
+
 function getProxyUrlFromEnv(env: Record<string, string> | undefined): string | undefined {
 	return env?.HTTPS_PROXY || env?.HTTP_PROXY || undefined;
 }
@@ -821,7 +829,7 @@ export async function runRpcMode(runtimeHost: AgentSessionRuntime): Promise<neve
 			uiContext: createExtensionUIContext(),
 			mode: "rpc",
 			commandContextActions: {
-				waitForIdle: () => session.agent.waitForIdle(),
+				waitForIdle: () => session.waitForIdle(),
 				newSession: (options) =>
 					runtimeHost.newSession({
 						...options,
@@ -863,6 +871,18 @@ export async function runRpcMode(runtimeHost: AgentSessionRuntime): Promise<neve
 					error: err.error,
 				} satisfies RpcExtensionErrorEventDTO);
 			},
+		});
+
+		unsubscribe?.();
+		unsubscribeBackpressure?.();
+		unsubscribe = session.subscribe((event) => {
+			output(event);
+			if (event.type === "agent_settled") {
+				void checkShutdownRequested();
+			}
+		});
+		unsubscribeBackpressure = session.agent.subscribe(async () => {
+			await waitForRawStdoutBackpressure();
 		});
 	};
 
@@ -1000,7 +1020,7 @@ export async function runRpcMode(runtimeHost: AgentSessionRuntime): Promise<neve
 			// =================================================================
 
 			case "set_model": {
-				const models = await session.modelRegistry.getAvailable();
+				const models = await session.modelRuntime.getAvailable();
 				const model = models.find((m) => m.provider === command.provider && m.id === command.modelId);
 				if (!model) {
 					return error(id, "set_model", `Model not found: ${command.provider}/${command.modelId}`);
@@ -1018,7 +1038,7 @@ export async function runRpcMode(runtimeHost: AgentSessionRuntime): Promise<neve
 			}
 
 			case "get_available_models": {
-				const models = await session.modelRegistry.getAvailable();
+				const models = [...(await session.modelRuntime.getAvailable())];
 				return success(id, "get_available_models", { models } satisfies RpcGetAvailableModelsDataDTO);
 			}
 
@@ -1028,12 +1048,12 @@ export async function runRpcMode(runtimeHost: AgentSessionRuntime): Promise<neve
 						? command.providers
 						: [
 								...new Set([
-									...session.modelRegistry.getAll().map((model) => model.provider),
-									...session.modelRegistry.authStorage.list(),
+									...session.modelRuntime.getModels().map((model) => model.provider),
+									...(await session.modelRuntime.getCredentialStore().list()).map((entry) => entry.providerId),
 								]),
 							];
 				const statuses = Object.fromEntries(
-					providers.map((provider) => [provider, session.modelRegistry.getProviderAuthStatus(provider)]),
+					providers.map((provider) => [provider, session.modelRuntime.getProviderAuthStatus(provider)]),
 				);
 				return success(id, "get_auth_status", { providers: statuses } satisfies RpcGetAuthStatusDataDTO);
 			}
@@ -1047,10 +1067,13 @@ export async function runRpcMode(runtimeHost: AgentSessionRuntime): Promise<neve
 				if (!apiKey) {
 					return error(id, "set_api_key", "API key is required");
 				}
-				session.modelRegistry.authStorage.set(provider, { type: "api_key", key: apiKey });
+				await session.modelRuntime
+					.getCredentialStore()
+					.modify(provider, async () => ({ type: "api_key", key: apiKey }));
+				await session.modelRuntime.refresh();
 				return success(id, "set_api_key", {
 					provider,
-					status: session.modelRegistry.getProviderAuthStatus(provider),
+					status: session.modelRuntime.getProviderAuthStatus(provider),
 				});
 			}
 
@@ -1059,20 +1082,29 @@ export async function runRpcMode(runtimeHost: AgentSessionRuntime): Promise<neve
 				if (!provider) {
 					return error(id, "remove_api_key", "Provider is required");
 				}
-				session.modelRegistry.authStorage.remove(provider);
+				await session.modelRuntime.getCredentialStore().delete(provider);
+				await session.modelRuntime.refresh();
 				return success(id, "remove_api_key", {
 					provider,
-					status: session.modelRegistry.getProviderAuthStatus(provider),
+					status: session.modelRuntime.getProviderAuthStatus(provider),
 				});
 			}
 
 			case "get_custom_models": {
 				const config = readCustomModelsConfig();
+				const credentialsByProvider = new Map(
+					await Promise.all(
+						Object.keys(config.providers).map(
+							async (provider) =>
+								[provider, await session.modelRuntime.getCredentialStore().read(provider)] as const,
+						),
+					),
+				);
 				return success(id, "get_custom_models", {
 					path: getModelsPath(),
 					providers: sanitizeCustomModelsConfig(config, (provider) => {
 						const providerConfig = config.providers[provider];
-						const credential = session.modelRegistry.authStorage.get(provider);
+						const credential = credentialsByProvider.get(provider);
 						const credentialEnv = credential?.type === "api_key" ? credential.env : undefined;
 						const env =
 							providerConfig?.env || credentialEnv ? { ...providerConfig?.env, ...credentialEnv } : undefined;
@@ -1090,7 +1122,7 @@ export async function runRpcMode(runtimeHost: AgentSessionRuntime): Promise<neve
 				const previousProviders = Object.keys(readCustomModelsConfig().providers);
 				const config = validateImportedCustomModels(command.providers);
 				writeCustomModelsConfig(config);
-				session.modelRegistry.refresh();
+				await session.modelRuntime.refresh();
 				const models = Object.values(config.providers).reduce(
 					(count, provider) => count + (provider.models?.length || 0),
 					0,
@@ -1099,8 +1131,8 @@ export async function runRpcMode(runtimeHost: AgentSessionRuntime): Promise<neve
 				if (command.removeOrphanStoredAuth) {
 					for (const provider of previousProviders) {
 						if (provider in config.providers) continue;
-						if (!session.modelRegistry.authStorage.has(provider)) continue;
-						session.modelRegistry.authStorage.remove(provider);
+						if ((await session.modelRuntime.getCredentialStore().read(provider)) === undefined) continue;
+						await session.modelRuntime.getCredentialStore().delete(provider);
 						removedStoredAuthProviders.push(provider);
 					}
 				}
@@ -1137,11 +1169,11 @@ export async function runRpcMode(runtimeHost: AgentSessionRuntime): Promise<neve
 						contextWindow: 4096,
 						maxTokens: 8,
 					};
-					const storedAuth = await session.modelRegistry.getApiKeyAndHeaders(model);
-					if (storedAuth.ok) {
-						apiKey = storedAuth.apiKey;
+					const storedAuth = await session.modelRuntime.getAuth(model).catch(() => undefined);
+					if (storedAuth) {
+						apiKey = storedAuth.auth.apiKey;
 						env = { ...storedAuth.env, ...env };
-						storedHeaders = storedAuth.headers;
+						storedHeaders = definedHeaders(storedAuth.auth.headers);
 					}
 				}
 				return success(
@@ -1159,7 +1191,7 @@ export async function runRpcMode(runtimeHost: AgentSessionRuntime): Promise<neve
 
 			case "test_model": {
 				const provider = normalizeProviderId(command.provider);
-				const model = session.modelRegistry.find(provider, command.modelId.trim());
+				const model = session.modelRuntime.getModel(provider, command.modelId.trim());
 				if (!model) {
 					return success(id, "test_model", {
 						ok: false,
@@ -1168,16 +1200,28 @@ export async function runRpcMode(runtimeHost: AgentSessionRuntime): Promise<neve
 						message: `Model not found: ${provider}/${command.modelId.trim()}`,
 					});
 				}
-				const auth = await session.modelRegistry.getApiKeyAndHeaders(model);
-				if (!auth.ok || !auth.apiKey) {
+				let authError: string | undefined;
+				const auth = await session.modelRuntime.getAuth(model).catch((error) => {
+					authError = error instanceof Error ? error.message : String(error);
+					return undefined;
+				});
+				if (!auth?.auth.apiKey) {
 					return success(id, "test_model", {
 						ok: false,
 						latencyMs: 0,
 						category: "auth" as const,
-						message: auth.ok ? `No API key found for "${provider}"` : auth.error,
+						message: authError ?? `No API key found for "${provider}"`,
 					});
 				}
-				return success(id, "test_model", await testModelConnection(model, auth));
+				return success(
+					id,
+					"test_model",
+					await testModelConnection(model, {
+						apiKey: auth.auth.apiKey,
+						headers: definedHeaders(auth.auth.headers),
+						env: auth.env,
+					}),
+				);
 			}
 
 			case "test_custom_model": {
@@ -1224,11 +1268,11 @@ export async function runRpcMode(runtimeHost: AgentSessionRuntime): Promise<neve
 				let env = mergeProxyEnv(preservedProvider?.env, command.proxyUrl);
 				let storedHeaders: Record<string, string> | undefined;
 				if (!apiKey && command.useStoredAuthProvider) {
-					const storedAuth = await session.modelRegistry.getApiKeyAndHeaders(model);
-					if (storedAuth.ok) {
-						apiKey = storedAuth.apiKey;
+					const storedAuth = await session.modelRuntime.getAuth(model).catch(() => undefined);
+					if (storedAuth) {
+						apiKey = storedAuth.auth.apiKey;
 						env = { ...storedAuth.env, ...env };
-						storedHeaders = storedAuth.headers;
+						storedHeaders = definedHeaders(storedAuth.auth.headers);
 					}
 				}
 				return success(
@@ -1297,30 +1341,30 @@ export async function runRpcMode(runtimeHost: AgentSessionRuntime): Promise<neve
 				};
 				writeCustomModelsConfig(config);
 				if (command.authKind === "none") {
-					session.modelRegistry.authStorage.remove(provider);
+					await session.modelRuntime.getCredentialStore().delete(provider);
 				} else {
-					const existingCredential = session.modelRegistry.authStorage.get(provider);
+					const existingCredential = await session.modelRuntime.getCredentialStore().read(provider);
 					const existingCredentialEnv =
 						existingCredential?.type === "api_key" ? mergeProxyEnv(existingCredential.env, "") : undefined;
 					if (command.apiKey?.trim()) {
-						session.modelRegistry.authStorage.set(provider, {
+						await session.modelRuntime.getCredentialStore().modify(provider, async () => ({
 							type: "api_key",
-							key: command.apiKey.trim(),
+							key: command.apiKey?.trim() ?? "",
 							...(existingCredentialEnv ? { env: existingCredentialEnv } : {}),
-						});
+						}));
 					} else if (
 						command.proxyUrl !== undefined &&
 						existingCredential?.type === "api_key" &&
 						existingCredential.env
 					) {
-						session.modelRegistry.authStorage.set(provider, {
+						await session.modelRuntime.getCredentialStore().modify(provider, async () => ({
 							type: "api_key",
 							key: existingCredential.key,
 							...(existingCredentialEnv ? { env: existingCredentialEnv } : {}),
-						});
+						}));
 					}
 				}
-				session.modelRegistry.refresh();
+				await session.modelRuntime.refresh();
 				return success(id, "upsert_custom_model", { path: getModelsPath(), provider, modelId });
 			}
 
@@ -1337,11 +1381,11 @@ export async function runRpcMode(runtimeHost: AgentSessionRuntime): Promise<neve
 					if (providerConfig.models.length === 0) {
 						delete config.providers[provider];
 						if (command.removeAuthWhenEmpty) {
-							session.modelRegistry.authStorage.remove(provider);
+							await session.modelRuntime.getCredentialStore().delete(provider);
 						}
 					}
 					writeCustomModelsConfig(config);
-					session.modelRegistry.refresh();
+					await session.modelRuntime.refresh();
 				}
 				return success(id, "remove_custom_model", { path: getModelsPath(), provider, modelId });
 			}
@@ -1355,9 +1399,9 @@ export async function runRpcMode(runtimeHost: AgentSessionRuntime): Promise<neve
 				delete config.providers[provider];
 				writeCustomModelsConfig(config);
 				if (command.removeAuth !== false) {
-					session.modelRegistry.authStorage.remove(provider);
+					await session.modelRuntime.getCredentialStore().delete(provider);
 				}
-				session.modelRegistry.refresh();
+				await session.modelRuntime.refresh();
 				return success(id, "remove_custom_provider", { path: getModelsPath(), provider });
 			}
 
@@ -1376,6 +1420,11 @@ export async function runRpcMode(runtimeHost: AgentSessionRuntime): Promise<neve
 					return success(id, "cycle_thinking_level", null);
 				}
 				return success(id, "cycle_thinking_level", { level });
+			}
+
+			case "get_available_thinking_levels": {
+				const levels = session.getAvailableThinkingLevels();
+				return success(id, "get_available_thinking_levels", { levels });
 			}
 
 			// =================================================================
@@ -1432,6 +1481,7 @@ export async function runRpcMode(runtimeHost: AgentSessionRuntime): Promise<neve
 			case "bash": {
 				const result = await session.executeBash(command.command, undefined, {
 					excludeFromContext: command.excludeFromContext,
+					id,
 				});
 				return success(id, "bash", result);
 			}
