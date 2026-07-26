@@ -18,6 +18,10 @@ client (Electron main process and the `renderer-next` React renderer).
 - Added approval history and elevated-risk framing for inline approvals.
 - Added live agent status on the active turn.
 - Added path reveal actions, sticky statistics, and refresh guards.
+- Surfaced backend `extension_error` events as an error toast and a log entry. Extension failures were previously silent in the desktop client.
+- Added a main-process allowlist for renderer backend commands: `backend:request` only forwards the renderer's typed command set, and `backend:send` only accepts `extension_ui_response`.
+- Added an end-to-end smoke test (`npm run test:e2e`): drives the real Electron app and the compiled backend through a prompt round-trip against a faux OpenAI-compatible provider on 127.0.0.1, with workspace, agent config, and Electron profile state fully isolated in a temp directory. The `Desktop E2E` CI workflow packages the offline Windows build and runs the smoke on a Windows runner.
+- Added the `PI_STUDIO_USER_DATA_DIR` environment override, which relocates Electron `userData` (window and workspace state, renderer `localStorage`, the single-instance lock) so tests never touch the real profile.
 
 ### Changed
 
@@ -27,6 +31,7 @@ client (Electron main process and the `renderer-next` React renderer).
 - Raised `--muted` to 60% opacity so 11px metadata text meets the WCAG AA 4.5:1 contrast ratio.
 - Added a pressed-state scale to icon buttons and the empty-state call to action.
 - Presented the agent process in a Codex-like style, including file changes with diff previews.
+- Revealing a path in the file manager now refuses paths outside the current workspace instead of only flagging them, and the failure toast includes the underlying reason.
 
 ### Fixed
 
@@ -37,3 +42,8 @@ client (Electron main process and the `renderer-next` React renderer).
 - Fixed thread list reloading on workspace switch, and stabilized workspace switching state.
 - Fixed empty project thread controls appearing with no threads.
 - Skipped redundant message-row re-renders while streaming.
+- Fixed a corrupted Simplified Chinese translation on the model configuration import checkbox.
+
+### Removed
+
+- Removed the unused `workspaceSwitchPhase` store module (the sidebar implements the switch narrative inline) and the empty `ExtensionApproval` component directory.

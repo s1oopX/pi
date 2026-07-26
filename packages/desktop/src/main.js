@@ -4,6 +4,11 @@ import { existsSync, mkdirSync, readFileSync, readdirSync, statSync, writeFileSy
 import { readFile, writeFile } from "node:fs/promises";
 import { dirname, join, relative } from "node:path";
 import { fileURLToPath } from "node:url";
+import {
+	BACKEND_REQUEST_COMMAND_TYPES,
+	BACKEND_SEND_COMMAND_TYPES,
+	describeBackendCommandRejection,
+} from "./backend-command-allowlist.js";
 import { createBackendMutationQueue } from "./backend-mutation-queue.js";
 import { sanitizeDiagnostics } from "./diagnostics.js";
 import { getGitWorkspaceStatus } from "./git-workspace-status.js";
@@ -15,6 +20,13 @@ import { loadStoredWorkspace, saveStoredWorkspace } from "./workspace-state.js";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const PRODUCT_NAME = "Pi Studio";
+
+// Relocates all profile state (window/workspace state, renderer localStorage,
+// the single-instance lock) so e2e runs never touch the real profile. Must run
+// before anything derives a path from userData.
+if (process.env.PI_STUDIO_USER_DATA_DIR) {
+	app.setPath("userData", process.env.PI_STUDIO_USER_DATA_DIR);
+}
 const WINDOW_STATE_FILE = "window-state.json";
 const WORKSPACE_STATE_FILE = "workspace-state.json";
 const TASK_WORKSPACE_DIRECTORY = "tasks";
@@ -759,6 +771,10 @@ async function getKnownSessionFile(sessionPath) {
 }
 
 ipcMain.handle("backend:request", async (_event, command) => {
+	const rejection = describeBackendCommandRejection(command, BACKEND_REQUEST_COMMAND_TYPES);
+	if (rejection) {
+		throw new Error(rejection);
+	}
 	const execute = async () => {
 		const timeoutMs = getRequestTimeoutMs(command);
 		const response = await requestBackend(command, timeoutMs === undefined ? {} : { timeoutMs });
@@ -780,6 +796,10 @@ ipcMain.handle("backend:request", async (_event, command) => {
 });
 
 ipcMain.handle("backend:send", async (_event, command) => {
+	const rejection = describeBackendCommandRejection(command, BACKEND_SEND_COMMAND_TYPES);
+	if (rejection) {
+		throw new Error(rejection);
+	}
 	await sendBackend(command);
 	if (command?.type === "extension_ui_response") pendingExtensionUIRequests.remove(command.id);
 });
@@ -964,6 +984,9 @@ ipcMain.handle("workspace:reveal-path", async (_event, targetPath) => {
 		throw new Error(`Path not found: ${absolutePath}`);
 	}
 	const { insideWorkspace } = describeRevealTarget(backendCwd, absolutePath);
+	if (!insideWorkspace) {
+		throw new Error(`Path is outside the workspace: ${absolutePath}`);
+	}
 	shell.showItemInFolder(absolutePath);
 	return { revealed: true, path: absolutePath, insideWorkspace };
 });

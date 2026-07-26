@@ -26,9 +26,8 @@ export function resolveWorkspacePath(workspaceCwd, targetPath) {
 }
 
 /**
- * Soft containment check: resolved path must stay under workspace when possible.
- * Absolute paths outside the workspace are still allowed (agent may touch them)
- * but are returned as-is for reveal.
+ * Containment check: flags whether the resolved path stays under the
+ * workspace. The reveal IPC handler refuses paths outside the workspace.
  *
  * @param {string} workspaceCwd
  * @param {string} absolutePath
