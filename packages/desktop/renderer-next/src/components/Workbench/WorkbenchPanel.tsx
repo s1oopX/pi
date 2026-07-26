@@ -6,6 +6,7 @@ import { TerminalPanel, type TerminalPanelHandle } from "../Terminal";
 import { showToast } from "../Toast";
 import { useI18n } from "../../i18n";
 import * as api from "../../ipc/api";
+import { createBashExecutionId, subscribeBashExecution } from "../../ipc/bashExecutionStream";
 import { useStore } from "../../store";
 import { createCommandHistoryState, pushCommand, recallNext, recallPrevious } from "./commandHistory";
 
@@ -213,10 +214,19 @@ function WorkbenchTerminal() {
     setCommand("");
     setRunning(true);
     terminalRef.current?.writeln(`$ ${trimmed}`);
+    // Stream output live via bash_execution_update events correlated by the
+    // request id; the final response only fills in what was not streamed.
+    const executionId = createBashExecutionId();
+    let streamed = "";
+    const unsubscribe = subscribeBashExecution(executionId, (delta) => {
+      streamed += delta;
+      terminalRef.current?.write(delta);
+    });
     try {
-      const result = parseBashResult(await api.bash(trimmed, true));
-      terminalRef.current?.write(result.output);
-      if (result.output && !result.output.endsWith("\n")) terminalRef.current?.writeln("");
+      const result = parseBashResult(await api.bash(trimmed, true, executionId));
+      if (!streamed && result.output) terminalRef.current?.write(result.output);
+      const finalOutput = streamed || result.output;
+      if (finalOutput && !finalOutput.endsWith("\n")) terminalRef.current?.writeln("");
       const suffix = result.cancelled
         ? t("cancelled", "已取消")
         : t("exit {code}", "退出码 {code}", { code: result.exitCode ?? 0 });
@@ -229,6 +239,7 @@ function WorkbenchTerminal() {
     } catch (error) {
       terminalRef.current?.writeln(error instanceof Error ? error.message : String(error));
     } finally {
+      unsubscribe();
       setRunning(false);
       terminalRef.current?.focus();
     }

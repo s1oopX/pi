@@ -280,6 +280,8 @@ export interface BashCommand {
   type: "bash";
   command: string;
   excludeFromContext?: boolean;
+  /** Request id; streamed bash_execution_update events carry the same id. */
+  id?: string;
 }
 
 export interface AbortBashCommand {

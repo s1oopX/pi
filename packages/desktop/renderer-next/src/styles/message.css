@@ -1357,3 +1357,19 @@
     animation: none;
   }
 }
+
+/* Live output tail shown under a running tool call (streamed via tool_execution_update). */
+.tool-live-output {
+  margin: 2px 0 4px 24px;
+  padding: 4px 10px;
+  max-height: 180px;
+  overflow-y: auto;
+  background: transparent;
+  border-left: 2px solid var(--border);
+  font-family: var(--font-mono);
+  font-size: calc(11px * var(--font-scale));
+  line-height: 1.55;
+  white-space: pre-wrap;
+  word-break: break-word;
+  color: var(--text-soft);
+}

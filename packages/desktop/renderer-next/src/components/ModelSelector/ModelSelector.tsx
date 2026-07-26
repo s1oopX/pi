@@ -6,8 +6,8 @@ import type { Model, ThinkingLevel } from "../../ipc/types";
 import { showToast } from "../Toast";
 import { Icon } from "../Icon";
 
-const THINKING_LEVELS: ThinkingLevel[] = ["off", "minimal", "low", "medium", "high", "xhigh"];
-const THINKING_LEVEL_SUFFIX_PATTERN = /^(.*?)(?:[-_: ])(off|minimal|low|medium|high|xhigh)$/i;
+const THINKING_LEVELS: ThinkingLevel[] = ["off", "minimal", "low", "medium", "high", "xhigh", "max"];
+const THINKING_LEVEL_SUFFIX_PATTERN = /^(.*?)(?:[-_: ])(off|minimal|low|medium|high|xhigh|max)$/i;
 
 // Which submenu (if any) is expanded in the popover.
 type Submenu = null | "model" | "thinking" | "speed";

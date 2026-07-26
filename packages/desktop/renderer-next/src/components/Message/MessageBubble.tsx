@@ -184,6 +184,7 @@ function AssistantContent({
               call={block}
               result={result}
               phase={phase}
+              liveOutput={block.id ? toolExecutionsByCallId[block.id]?.liveOutput : undefined}
             />
           );
         }
@@ -279,10 +280,12 @@ function ToolCallPart({
   call,
   result,
   phase,
+  liveOutput,
 }: {
   call: ToolCall;
   result?: Extract<Message, { role: "toolResult" }>;
   phase: ToolPhase;
+  liveOutput?: string;
 }) {
   const { resolvedLanguage, t } = useI18n();
   const presentation = describeToolCall(call, phase, resolvedLanguage);
@@ -348,6 +351,11 @@ function ToolCallPart({
           <span className="tool-call-chevron" aria-hidden="true">{expanded ? "\u25be" : "\u25b8"}</span>
         )}
       </button>
+      {phase === "running" && liveOutput && (
+        <pre className="tool-live-output">
+          <code>{liveOutput.length > 2000 ? liveOutput.slice(-2000) : liveOutput}</code>
+        </pre>
+      )}
       {expanded && hasBody && (
         <div className="tool-call-body">
           {presentation.meta && (

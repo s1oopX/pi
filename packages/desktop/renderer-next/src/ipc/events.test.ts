@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   describeExtensionError,
+  extractToolPartialText,
   filterUnchangedPendingExtensionUIRequests,
   getExtensionUIHydrationGeneration,
   isBackendEventCurrent,
@@ -86,6 +87,28 @@ describe("extension UI request hydration race guard", () => {
     const baseline = new Map([ [request.id, 1], [other.id, 1] ]);
     const current = new Map([ [request.id, 2], [other.id, 1] ]);
     expect(filterUnchangedPendingExtensionUIRequests([request, other], baseline, current)).toEqual([other]);
+  });
+});
+
+describe("tool partial output extraction", () => {
+  it("joins text blocks from a bash-style partial result", () => {
+    expect(
+      extractToolPartialText({
+        content: [
+          { type: "text", text: "line 1\n" },
+          { type: "image", data: "...", mimeType: "image/png" },
+          { type: "text", text: "line 2" },
+        ],
+        details: {},
+      }),
+    ).toBe("line 1\n\nline 2");
+  });
+
+  it("returns null when there is no text yet", () => {
+    expect(extractToolPartialText({ content: [], details: undefined })).toBeNull();
+    expect(extractToolPartialText(undefined)).toBeNull();
+    expect(extractToolPartialText("output")).toBeNull();
+    expect(extractToolPartialText({ content: "not-an-array" })).toBeNull();
   });
 });
 

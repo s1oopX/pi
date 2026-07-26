@@ -8,6 +8,9 @@ client (Electron main process and the `renderer-next` React renderer).
 
 ### Added
 
+- Live tool output: while the agent runs a tool, the tool card streams the output tail in real time (`tool_execution_update` snapshots), and the workbench terminal streams direct bash output chunk by chunk (`bash_execution_update` correlated by request id) instead of printing everything at the end.
+- The thinking-level picker now offers `max` on models that support it.
+
 - Added a shared `Icon` component as the single source of truth for line icons, with every glyph authored in a 24x24 box at a common stroke weight.
 - Added `npm run lint:desktop-renderer`, an audit that lints the renderer through a temporary biome config. The repo-wide config does not reach `packages/desktop/renderer-next/src`, so this covers the gap without reformatting the renderer.
 - Added `npm run pack:offline` in `packages/desktop`, which builds the renderer, compiles the backend, and packages an unpacked app without needing `npx` or network access.

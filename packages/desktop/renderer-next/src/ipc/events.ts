@@ -1,5 +1,6 @@
 import { useEffect } from "react";
 import { getPendingExtensionUIRequests, onEvent, onLog, onStatus } from "./api";
+import { emitBashExecutionDelta } from "./bashExecutionStream";
 import { isInteractiveExtensionUIRequest, parseExtensionUIEffect } from "./extensionUIEffects";
 import { createExtensionUIRequestTimeoutManager } from "./extensionUIRequestTimeouts";
 import type { BackendEvent, ExtensionUIRequestClosedEvent, ExtensionUIRequestEvent, LogEntry } from "./types";
@@ -9,6 +10,22 @@ import { isSameWorkspace } from "../components/Sidebar/sidebarState";
 import { t } from "../i18n";
 
 const MAX_EXTENSION_ERROR_DETAIL_LENGTH = 200;
+
+export function extractToolPartialText(partialResult: unknown): string | null {
+  if (!partialResult || typeof partialResult !== "object") return null;
+  const content = (partialResult as { content?: unknown }).content;
+  if (!Array.isArray(content)) return null;
+  const texts = content
+    .filter(
+      (block): block is { type: "text"; text: string } =>
+        Boolean(block) &&
+        typeof block === "object" &&
+        (block as { type?: unknown }).type === "text" &&
+        typeof (block as { text?: unknown }).text === "string",
+    )
+    .map((block) => block.text);
+  return texts.length > 0 ? texts.join("\n") : null;
+}
 
 export function describeExtensionError(event: { extensionPath: string; error: string }): {
   extension: string;
@@ -242,8 +259,16 @@ export function useBackendEvents(): void {
         case "tool_execution_start":
           store.startToolExecution(event.toolCallId, event.toolName);
           break;
+        case "tool_execution_update": {
+          const text = extractToolPartialText(event.partialResult);
+          if (text !== null) store.updateToolExecutionOutput(event.toolCallId, event.toolName, text);
+          break;
+        }
         case "tool_execution_end":
           store.finishToolExecution(event.toolCallId, event.toolName, event.isError);
+          break;
+        case "bash_execution_update":
+          emitBashExecutionDelta(event.id, event.delta);
           break;
         case "queue_update":
           useStore.setState({

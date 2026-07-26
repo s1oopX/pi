@@ -38,6 +38,8 @@ export type ToolExecutionPhase = "queued" | "running" | "done" | "error";
 export interface ToolExecutionRecord {
   toolName: string;
   phase: ToolExecutionPhase;
+  /** Throttled live output snapshot while the tool is running. */
+  liveOutput?: string;
 }
 
 export type ToolExecutionsByCallId = Record<string, ToolExecutionRecord>;
@@ -147,6 +149,7 @@ export interface AppState {
   setStreaming: (streaming: boolean) => void;
   queueToolExecutions: (calls: readonly { callId: string; toolName: string }[]) => void;
   startToolExecution: (callId: string, toolName: string) => void;
+  updateToolExecutionOutput: (callId: string, toolName: string, output: string) => void;
   finishToolExecution: (callId: string, toolName: string, isError: boolean) => void;
   clearToolExecutions: () => void;
   upsertMessage: (message: Message, eventType: MessageEventType) => void;
@@ -393,6 +396,19 @@ export const useStore = create<AppState>((set, get) => ({
       const toolExecutionsByCallId = {
         ...state.toolExecutionsByCallId,
         [callId]: { toolName, phase: "running" as const },
+      };
+      return { toolExecutionsByCallId, activeTool: deriveActiveTool(toolExecutionsByCallId) };
+    });
+  },
+
+  updateToolExecutionOutput(callId, toolName, output) {
+    set((state) => {
+      const current = state.toolExecutionsByCallId[callId];
+      // A late throttled update must not resurrect a finished execution.
+      if (current && current.phase !== "running" && current.phase !== "queued") return state;
+      const toolExecutionsByCallId = {
+        ...state.toolExecutionsByCallId,
+        [callId]: { toolName, phase: "running" as const, liveOutput: output },
       };
       return { toolExecutionsByCallId, activeTool: deriveActiveTool(toolExecutionsByCallId) };
     });

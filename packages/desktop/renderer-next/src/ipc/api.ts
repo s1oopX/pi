@@ -312,8 +312,8 @@ export async function switchSession(sessionPath: string): Promise<{ cancelled: b
 
 // --- Bash ---
 
-export async function bash(command: string, excludeFromContext?: boolean): Promise<unknown> {
-  return requireApi().request({ type: "bash", command, excludeFromContext });
+export async function bash(command: string, excludeFromContext?: boolean, id?: string): Promise<unknown> {
+  return requireApi().request({ type: "bash", command, excludeFromContext, ...(id ? { id } : {}) });
 }
 
 export async function abortBash(): Promise<void> {

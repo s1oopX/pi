@@ -442,12 +442,28 @@ export interface RpcToolExecutionStartEventDTO {
 	args: unknown;
 }
 
+export interface RpcToolExecutionUpdateEventDTO {
+	type: "tool_execution_update";
+	toolCallId: string;
+	toolName: string;
+	args: unknown;
+	/** Throttled snapshot of the tool's partial result (e.g. bash `{ content: [{type:"text",text}], details }`). */
+	partialResult: unknown;
+}
+
 export interface RpcToolExecutionEndEventDTO {
 	type: "tool_execution_end";
 	toolCallId: string;
 	toolName: string;
 	result: unknown;
 	isError: boolean;
+}
+
+/** Streamed output chunk of a direct RPC `bash` command, correlated by the request id. */
+export interface RpcBashExecutionUpdateEventDTO {
+	type: "bash_execution_update";
+	id: string;
+	delta: string;
 }
 
 export interface RpcQueueUpdateEventDTO {
@@ -519,7 +535,9 @@ export type RpcBackendEventDTO =
 	| RpcAgentStartEventDTO
 	| RpcAgentEndEventDTO
 	| RpcToolExecutionStartEventDTO
+	| RpcToolExecutionUpdateEventDTO
 	| RpcToolExecutionEndEventDTO
+	| RpcBashExecutionUpdateEventDTO
 	| RpcQueueUpdateEventDTO
 	| RpcCompactionStartEventDTO
 	| RpcCompactionEndEventDTO

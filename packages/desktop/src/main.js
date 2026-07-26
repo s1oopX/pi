@@ -571,7 +571,9 @@ function requestBackend(command, { allowStarting = false, timeoutMs = 30000 } = 
 		return Promise.reject(new Error(backendStarting ? "Pi backend is starting" : "Pi backend is not running"));
 	}
 
-	const id = `desktop_${++requestCounter}`;
+	// Callers may supply their own request id (bash runs correlate streamed
+	// bash_execution_update events by it); otherwise assign one.
+	const id = typeof command?.id === "string" && command.id ? command.id : `desktop_${++requestCounter}`;
 	const payload = { ...command, id };
 
 	return new Promise((resolve, reject) => {

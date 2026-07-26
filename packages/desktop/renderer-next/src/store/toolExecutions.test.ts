@@ -31,4 +31,36 @@ describe("tool execution state", () => {
     store.finishToolExecution("read-1", "read", true);
     expect(useStore.getState().activeTool).toBeNull();
   });
+
+  it("tracks live output while running and drops it on finish", () => {
+    const store = useStore.getState();
+    store.startToolExecution("bash-1", "bash");
+    store.updateToolExecutionOutput("bash-1", "bash", "$ ls\nsrc");
+    expect(useStore.getState().toolExecutionsByCallId["bash-1"]).toEqual({
+      toolName: "bash",
+      phase: "running",
+      liveOutput: "$ ls\nsrc",
+    });
+
+    store.updateToolExecutionOutput("bash-1", "bash", "$ ls\nsrc\ntest");
+    expect(useStore.getState().toolExecutionsByCallId["bash-1"]?.liveOutput).toBe("$ ls\nsrc\ntest");
+
+    store.finishToolExecution("bash-1", "bash", false);
+    expect(useStore.getState().toolExecutionsByCallId["bash-1"]).toEqual({ toolName: "bash", phase: "done" });
+
+    // A late throttled update must not resurrect the finished execution.
+    store.updateToolExecutionOutput("bash-1", "bash", "stale");
+    expect(useStore.getState().toolExecutionsByCallId["bash-1"]?.phase).toBe("done");
+  });
+
+  it("starts an unknown execution on first live output", () => {
+    const store = useStore.getState();
+    store.updateToolExecutionOutput("bash-2", "bash", "hello");
+    expect(useStore.getState().toolExecutionsByCallId["bash-2"]).toEqual({
+      toolName: "bash",
+      phase: "running",
+      liveOutput: "hello",
+    });
+    expect(useStore.getState().activeTool).toBe("bash");
+  });
 });
