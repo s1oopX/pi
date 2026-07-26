@@ -37,6 +37,12 @@ jobs:
       - name: Install dependencies
         run: npm ci --ignore-scripts
 
+      # --ignore-scripts skips electron's postinstall, so the binary in
+      # node_modules/electron/dist never materializes. Run exactly that one
+      # vetted script instead of enabling lifecycle scripts globally.
+      - name: Download Electron binary
+        run: node node_modules/electron/install.js
+
       - name: Package offline build
         run: npm run pack:offline -w @s1oopx/pi-studio
 
