@@ -8,6 +8,7 @@ client (Electron main process and the `renderer-next` React renderer).
 
 ### Added
 
+- A drag narration overlay: while an OS file drag is over the window, a pointer-transparent card says what releasing will do — attach to the message over the composer, open as a workspace elsewhere. Enter/leave depth counting keeps it stable across child elements; window blur resets it.
 - Drop a folder anywhere in the window (outside the composer, which keeps its image-attachment drop zone) to open it as the workspace — resolved sandbox-safely through `webUtils.getPathForFile` in the preload; files and unreadable drops surface the normal open-workspace error.
 - "What's New" in About: an in-app changelog viewer. The packaged app now ships `CHANGELOG.md` inside the asar; a new `app:get-changelog` IPC reads it (512 KB cap) and a dialog renders it with the same markdown stack the conversation uses.
 - "Copy Last Reply" (`Mod+Shift+C`, rebindable, also in the command palette): copies the assistant's latest reply as plain text — the text blocks only, skipping thinking, tool markers, and tool-only turns. Codex-parity quality-of-life for grabbing a long answer without scrolling to hover it.

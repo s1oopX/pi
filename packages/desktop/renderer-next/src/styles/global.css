@@ -898,3 +898,44 @@ html[data-window-controls-overlay="true"] .window-chrome {
     transition: none;
   }
 }
+
+/* File-drag narration overlay: pointer-transparent so drops land on their
+   real targets; the card floats near the bottom to stay out of the way. */
+
+.file-drop-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 400;
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+  padding-bottom: 96px;
+  pointer-events: none;
+  background: color-mix(in srgb, var(--scrim) 40%, transparent);
+  animation: file-drop-overlay-in 120ms ease-out;
+}
+
+.file-drop-overlay-card {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  padding: 12px 18px;
+  border: 1px solid var(--border-strong, var(--border));
+  border-radius: var(--radius-lg);
+  background: var(--elevated);
+  box-shadow: var(--shadow-dialog);
+  color: var(--text);
+  font-size: calc(13px * var(--font-scale));
+  font-weight: 550;
+}
+
+@keyframes file-drop-overlay-in {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .file-drop-overlay {
+    animation: none;
+  }
+}

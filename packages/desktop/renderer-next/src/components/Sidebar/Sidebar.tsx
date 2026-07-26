@@ -83,23 +83,52 @@ export function Sidebar({ collapsed, onToggle }: SidebarProps) {
   const workspaceTriggerRef = useRef<HTMLButtonElement | null>(null);
   const creatingThreadRef = useRef(false);
   const openWorkspaceRef = useRef<(cwd: string) => Promise<void>>(async () => {});
+  const fileDragDepthRef = useRef(0);
+  const [fileDragTarget, setFileDragTarget] = useState<"workspace" | "composer" | null>(null);
 
   // OS drag-drop of a folder anywhere outside the composer opens it as the
   // workspace (the composer keeps its own drop zone for image attachments).
+  // A pointer-transparent overlay narrates the drop while a file drag is
+  // over the window; classic enter/leave depth counting keeps it stable
+  // across child-element transitions.
   useEffect(() => {
+    function hasFiles(event: DragEvent): boolean {
+      return Boolean(event.dataTransfer?.types.includes("Files"));
+    }
+    function overComposer(event: DragEvent): boolean {
+      return event.target instanceof Element && Boolean(event.target.closest(".composer-wrap"));
+    }
     function isWorkspaceDrag(event: DragEvent): boolean {
-      if (event.defaultPrevented) return false;
-      if (!event.dataTransfer?.types.includes("Files")) return false;
-      if (event.target instanceof Element && event.target.closest(".composer-wrap")) return false;
-      return true;
+      return !event.defaultPrevented && hasFiles(event) && !overComposer(event);
+    }
+    function resetOverlay() {
+      fileDragDepthRef.current = 0;
+      setFileDragTarget(null);
+    }
+    function onDragEnter(event: DragEvent) {
+      if (!hasFiles(event)) return;
+      fileDragDepthRef.current += 1;
+      setFileDragTarget(overComposer(event) ? "composer" : "workspace");
+    }
+    function onDragLeave(event: DragEvent) {
+      if (!hasFiles(event)) return;
+      fileDragDepthRef.current = Math.max(0, fileDragDepthRef.current - 1);
+      if (fileDragDepthRef.current === 0) setFileDragTarget(null);
     }
     function onDragOver(event: DragEvent) {
+      if (!hasFiles(event)) return;
+      setFileDragTarget((current) => {
+        const next = overComposer(event) ? "composer" : "workspace";
+        return current === next ? current : next;
+      });
       if (!isWorkspaceDrag(event)) return;
       event.preventDefault();
       if (event.dataTransfer) event.dataTransfer.dropEffect = "link";
     }
     function onDrop(event: DragEvent) {
-      if (!isWorkspaceDrag(event)) return;
+      const workspaceDrag = isWorkspaceDrag(event);
+      resetOverlay();
+      if (!workspaceDrag) return;
       event.preventDefault();
       const file = event.dataTransfer?.files?.[0];
       if (!file) return;
@@ -107,11 +136,17 @@ export function Sidebar({ collapsed, onToggle }: SidebarProps) {
       if (!path) return;
       void openWorkspaceRef.current(path);
     }
+    window.addEventListener("dragenter", onDragEnter);
+    window.addEventListener("dragleave", onDragLeave);
     window.addEventListener("dragover", onDragOver);
     window.addEventListener("drop", onDrop);
+    window.addEventListener("blur", resetOverlay);
     return () => {
+      window.removeEventListener("dragenter", onDragEnter);
+      window.removeEventListener("dragleave", onDragLeave);
       window.removeEventListener("dragover", onDragOver);
       window.removeEventListener("drop", onDrop);
+      window.removeEventListener("blur", resetOverlay);
     };
   }, []);
 
@@ -1321,6 +1356,19 @@ export function Sidebar({ collapsed, onToggle }: SidebarProps) {
               <span>{t("Clear other workspaces", "清除其他工作区")}</span>
             </button>
           )}
+        </div>,
+        document.body,
+      )}
+      {fileDragTarget && createPortal(
+        <div className="file-drop-overlay" aria-hidden="true">
+          <div className="file-drop-overlay-card">
+            <Icon name={fileDragTarget === "composer" ? "paperclip" : "folder-open"} size={22} strokeWidth={1.5} />
+            <span>
+              {fileDragTarget === "composer"
+                ? t("Release to attach to the message", "松开以附加到消息")
+                : t("Release to open the folder as a workspace", "松开以将文件夹作为工作区打开")}
+            </span>
+          </div>
         </div>,
         document.body,
       )}
