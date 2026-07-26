@@ -34,8 +34,12 @@ export function PathActions({ path }: PathActionsProps) {
     event.stopPropagation();
     try {
       await ipcApi.revealWorkspacePath(path);
-    } catch {
-      showToast(pathRevealFailedToast(language), "error");
+    } catch (error) {
+      // Electron invoke errors carry a "Error invoking remote method ..." prefix;
+      // keep only the underlying reason for the toast.
+      const raw = error instanceof Error ? error.message : String(error);
+      const reason = raw.split("Error: ").pop()?.trim() ?? "";
+      showToast(reason ? `${pathRevealFailedToast(language)}: ${reason}` : pathRevealFailedToast(language), "error");
     }
   }
 

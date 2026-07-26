@@ -506,6 +506,14 @@ export interface RpcSessionChangedEventDTO {
 	reason: "extension_command";
 }
 
+/** Emitted when an extension event handler fails. */
+export interface RpcExtensionErrorEventDTO {
+	type: "extension_error";
+	extensionPath: string;
+	event: string;
+	error: string;
+}
+
 export type RpcBackendEventDTO =
 	| RpcMessageEventDTO
 	| RpcAgentStartEventDTO
@@ -519,4 +527,5 @@ export type RpcBackendEventDTO =
 	| RpcAutoRetryEndEventDTO
 	| RpcExtensionUIRequestEventDTO
 	| RpcExtensionUIRequestClosedEventDTO
-	| RpcSessionChangedEventDTO;
+	| RpcSessionChangedEventDTO
+	| RpcExtensionErrorEventDTO;

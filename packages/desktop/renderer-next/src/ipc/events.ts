@@ -6,6 +6,21 @@ import type { BackendEvent, ExtensionUIRequestClosedEvent, ExtensionUIRequestEve
 import { useStore } from "../store";
 import { showToast } from "../components/Toast";
 import { isSameWorkspace } from "../components/Sidebar/sidebarState";
+import { t } from "../i18n";
+
+const MAX_EXTENSION_ERROR_DETAIL_LENGTH = 200;
+
+export function describeExtensionError(event: { extensionPath: string; error: string }): {
+  extension: string;
+  detail: string;
+} {
+  const extension = event.extensionPath.split(/[\\/]/).pop() || event.extensionPath;
+  const error = event.error.trim();
+  const detail = error.length > MAX_EXTENSION_ERROR_DETAIL_LENGTH
+    ? `${error.slice(0, MAX_EXTENSION_ERROR_DETAIL_LENGTH)}…`
+    : error;
+  return { extension, detail };
+}
 
 export function handleExtensionUIRequestClosed(event: ExtensionUIRequestClosedEvent): void {
   useStore.getState().removeExtensionUIRequest(event.id);
@@ -273,6 +288,17 @@ export function useBackendEvents(): void {
           markRequestMutation(event.id);
           handleExtensionUIRequestClosed(event);
           break;
+        case "extension_error": {
+          const { extension, detail } = describeExtensionError(event);
+          const message = t(
+            "Extension error in {extension} ({event}): {detail}",
+            "扩展 {extension}（{event}）发生错误：{detail}",
+            { extension, event: event.event, detail },
+          );
+          store.addLog({ level: "error", message });
+          showToast(message, "error");
+          break;
+        }
       }
     });
 

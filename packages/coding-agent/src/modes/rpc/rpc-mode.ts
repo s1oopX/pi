@@ -37,6 +37,7 @@ import { type Theme, theme } from "../interactive/theme/theme.ts";
 import { attachJsonlLineReader, serializeJsonLine } from "./jsonl.ts";
 import { loadResourceCatalog } from "./resource-catalog.ts";
 import type {
+	RpcExtensionErrorEventDTO,
 	RpcFetchProviderModelsDataDTO,
 	RpcForkResultDTO,
 	RpcGetAuthStatusDataDTO,
@@ -855,7 +856,12 @@ export async function runRpcMode(runtimeHost: AgentSessionRuntime): Promise<neve
 				shutdownRequested = true;
 			},
 			onError: (err) => {
-				output({ type: "extension_error", extensionPath: err.extensionPath, event: err.event, error: err.error });
+				output({
+					type: "extension_error",
+					extensionPath: err.extensionPath,
+					event: err.event,
+					error: err.error,
+				} satisfies RpcExtensionErrorEventDTO);
 			},
 		});
 	};

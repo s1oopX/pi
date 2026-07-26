@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  describeExtensionError,
   filterUnchangedPendingExtensionUIRequests,
   getExtensionUIHydrationGeneration,
   isBackendEventCurrent,
@@ -85,5 +86,28 @@ describe("extension UI request hydration race guard", () => {
     const baseline = new Map([ [request.id, 1], [other.id, 1] ]);
     const current = new Map([ [request.id, 2], [other.id, 1] ]);
     expect(filterUnchangedPendingExtensionUIRequests([request, other], baseline, current)).toEqual([other]);
+  });
+});
+
+describe("extension error presentation", () => {
+  it("uses the extension file name and keeps short errors intact", () => {
+    expect(describeExtensionError({
+      extensionPath: "C:\\Users\\me\\.pi\\extensions\\hooks.ts",
+      error: " boom ",
+    })).toEqual({ extension: "hooks.ts", detail: "boom" });
+    expect(describeExtensionError({
+      extensionPath: "/home/me/.pi/extensions/hooks.ts",
+      error: "boom",
+    })).toEqual({ extension: "hooks.ts", detail: "boom" });
+  });
+
+  it("falls back to the full path when it has no separators", () => {
+    expect(describeExtensionError({ extensionPath: "hooks.ts", error: "boom" }).extension).toBe("hooks.ts");
+  });
+
+  it("truncates very long error output", () => {
+    const { detail } = describeExtensionError({ extensionPath: "hooks.ts", error: "x".repeat(500) });
+    expect(detail).toHaveLength(201);
+    expect(detail.endsWith("…")).toBe(true);
   });
 });

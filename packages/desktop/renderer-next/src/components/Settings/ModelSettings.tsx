@@ -206,7 +206,7 @@ export function ModelSettings() {
               <span>
                 {t(
                   "Also remove stored API keys for providers that disappear after import",
-                  "��e��dЛF�,0X� API ƥ",
+                  "同时移除导入后不再存在的提供商所存储的 API 密钥",
                 )}
               </span>
             </label>
