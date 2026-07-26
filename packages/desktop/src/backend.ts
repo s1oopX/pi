@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 
-import { join } from "node:path";
+import { join, resolve } from "node:path";
 import { APP_NAME, getAgentDir } from "../../coding-agent/src/config.ts";
 import {
 	type CreateAgentSessionRuntimeFactory,
@@ -18,7 +18,7 @@ import { SettingsManager } from "../../coding-agent/src/core/settings-manager.ts
 import { hasTrustRequiringProjectResources, ProjectTrustStore } from "../../coding-agent/src/core/trust-manager.ts";
 import { runRpcMode } from "../../coding-agent/src/modes/rpc/rpc-mode.ts";
 import { toolApprovalExtension } from "./tool-approval.ts";
-import { resolveWorktreeSourceRoot } from "./worktree-trust.js";
+import { directoriesShareIdentity, resolveWorktreeSourceRoot } from "./worktree-trust.js";
 
 process.title = `${APP_NAME}-studio-rpc`;
 process.env.PI_CODING_AGENT = "true";
@@ -58,8 +58,17 @@ const createRuntime: CreateAgentSessionRuntimeFactory = async ({
 		if (!hasTrustRequiringProjectResources(cwd)) return true;
 		const own = trustStore.get(cwd);
 		if (own !== null) return own === true;
+		// Inherit from the source repository by filesystem identity, not path
+		// strings: the stored key and the gitdir-derived path can disagree in
+		// 8.3 short names, case, or separators across processes.
 		const sourceRoot = resolveWorktreeSourceRoot(cwd);
-		return sourceRoot !== null && trustStore.get(sourceRoot) === true;
+		if (sourceRoot === null) return false;
+		// A relative gitdir (git's worktree.useRelativePaths) resolves against
+		// the worktree itself; an absolute one passes through unchanged.
+		const resolvedSource = resolve(cwd, sourceRoot);
+		return trustStore
+			.list()
+			.some((entry) => entry.decision === true && directoriesShareIdentity(entry.path, resolvedSource));
 	};
 	const services = await createAgentSessionServices({
 		cwd,

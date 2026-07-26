@@ -6,7 +6,7 @@
  * main process, the Bun-bundled backend, and node:test can all import it.
  */
 
-import { readFileSync } from "node:fs";
+import { readFileSync, statSync } from "node:fs";
 import { join, normalize, sep } from "node:path";
 
 /**
@@ -52,5 +52,32 @@ export function resolveWorktreeSourceRoot(cwd, readImpl = (path) => readFileSync
 		return gitdir ? deriveWorktreeSourceRoot(gitdir) : null;
 	} catch {
 		return null;
+	}
+}
+
+/**
+ * Whether two paths name the same directory, judged by filesystem identity
+ * (device + inode) rather than string comparison — immune to 8.3 short
+ * names, case differences, and separator styles that defeat any string
+ * canonicalization across processes.
+ * @param {string} a
+ * @param {string} b
+ * @param {(path: string) => { dev: bigint, ino: bigint }} [statImpl]
+ * @returns {boolean}
+ */
+export function directoriesShareIdentity(
+	a,
+	b,
+	statImpl = (path) => {
+		const stats = statSync(path, { bigint: true });
+		return { dev: stats.dev, ino: stats.ino };
+	},
+) {
+	try {
+		const left = statImpl(a);
+		const right = statImpl(b);
+		return left.dev === right.dev && left.ino === right.ino && left.ino !== 0n;
+	} catch {
+		return false;
 	}
 }
