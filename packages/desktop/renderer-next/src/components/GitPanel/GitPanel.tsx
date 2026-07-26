@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { DiffView } from "../DiffView";
 import { useI18n } from "../../i18n";
 import * as api from "../../ipc/api";
 import type { GitBranches, GitChanges, GitPrContext } from "../../ipc/types";
@@ -28,6 +29,10 @@ export function GitPanel({ onClose }: GitPanelProps) {
   const [committing, setCommitting] = useState(false);
   const [pushing, setPushing] = useState(false);
   const [branchData, setBranchData] = useState<GitBranches | null>(null);
+  const [expandedFile, setExpandedFile] = useState<string | null>(null);
+  const [expandedPatch, setExpandedPatch] = useState<string | null>(null);
+  const [armedRestore, setArmedRestore] = useState<string | null>(null);
+  const [restoringFile, setRestoringFile] = useState<string | null>(null);
   const [branchesOpen, setBranchesOpen] = useState(false);
   const [switchingBranch, setSwitchingBranch] = useState<string | null>(null);
   const [newBranchName, setNewBranchName] = useState("");
@@ -196,6 +201,54 @@ export function GitPanel({ onClose }: GitPanelProps) {
       }), "error");
     } finally {
       setCreatingPr(false);
+    }
+  }
+
+  async function toggleFileDiff(path: string) {
+    setArmedRestore(null);
+    if (expandedFile === path) {
+      setExpandedFile(null);
+      setExpandedPatch(null);
+      return;
+    }
+    setExpandedFile(path);
+    setExpandedPatch(null);
+    try {
+      const result = await api.getGitFileDiff(path);
+      setExpandedPatch(result.patch);
+    } catch (error) {
+      setExpandedFile(null);
+      showToast(t("Could not load the diff: {message}", "无法加载差异：{message}", {
+        message: ipcErrorReason(error),
+      }), "error");
+    }
+  }
+
+  async function handleRestoreFile(path: string) {
+    if (armedRestore !== path) {
+      setArmedRestore(path);
+      return;
+    }
+    setArmedRestore(null);
+    setRestoringFile(path);
+    try {
+      const result = await api.restoreGitFile(path);
+      showToast(
+        result.trashed
+          ? t("Moved {path} to the Recycle Bin", "已将 {path} 移至回收站", { path })
+          : t("Restored {path}", "已还原 {path}", { path }),
+        "success",
+      );
+      setExpandedFile(null);
+      setExpandedPatch(null);
+      refreshWorkspaceGitStatus();
+      await loadChanges();
+    } catch (error) {
+      showToast(t("Could not restore the file: {message}", "还原文件失败：{message}", {
+        message: ipcErrorReason(error),
+      }), "error");
+    } finally {
+      setRestoringFile(null);
     }
   }
 
@@ -429,15 +482,52 @@ export function GitPanel({ onClose }: GitPanelProps) {
         )}
         {!changesLoading &&
           changes?.files.map((file) => (
-            <div className="git-panel-file" role="listitem" key={`${file.status}:${file.path}`}>
-              <span
-                className={`git-panel-file-status status-${
-                  file.status === "??" ? "untracked" : file.status.replace(/[^A-Za-z]/g, "") || "modified"
-                }`}
+            <div className="git-panel-file-block" role="listitem" key={`${file.status}:${file.path}`}>
+              <button
+                className={`git-panel-file ${expandedFile === file.path ? "expanded" : ""}`}
+                type="button"
+                aria-expanded={expandedFile === file.path}
+                title={t("Show the diff for {path}", "查看 {path} 的差异", { path: file.path })}
+                onClick={() => void toggleFileDiff(file.path)}
               >
-                {file.status}
-              </span>
-              <span className="git-panel-file-path" title={file.path}>{file.path}</span>
+                <span
+                  className={`git-panel-file-status status-${
+                    file.status === "??" ? "untracked" : file.status.replace(/[^A-Za-z]/g, "") || "modified"
+                  }`}
+                >
+                  {file.status}
+                </span>
+                <span className="git-panel-file-path" title={file.path}>{file.path}</span>
+              </button>
+              {expandedFile === file.path && (
+                <div className="git-panel-file-diff">
+                  {expandedPatch === null ? (
+                    <div className="git-panel-note">{t("Loading...", "正在加载...")}</div>
+                  ) : (
+                    <>
+                      <DiffView patch={expandedPatch} />
+                      <div className="git-panel-file-diff-actions">
+                        <button
+                          className="git-panel-restore-btn"
+                          type="button"
+                          disabled={restoringFile === file.path || isStreaming}
+                          title={isStreaming
+                            ? t("Finish or stop the current run before discarding changes", "请先完成或停止当前运行，再丢弃更改")
+                            : t("Discard this file's uncommitted changes", "丢弃此文件的未提交更改")}
+                          onBlur={() => setArmedRestore((current) => (current === file.path ? null : current))}
+                          onClick={() => void handleRestoreFile(file.path)}
+                        >
+                          {restoringFile === file.path
+                            ? t("Restoring...", "正在还原...")
+                            : armedRestore === file.path
+                              ? t("Confirm discard", "确认丢弃")
+                              : t("Discard changes", "丢弃更改")}
+                        </button>
+                      </div>
+                    </>
+                  )}
+                </div>
+              )}
             </div>
           ))}
         {!changesLoading && changes?.truncated && (

@@ -6,7 +6,7 @@
 
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
-import { writeFileSync } from "node:fs";
+import { existsSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import test from "node:test";
 import { assertPrerequisites, launchStudio, LAUNCH_TIMEOUT_MS } from "./harness.mjs";
@@ -109,6 +109,22 @@ test("git flow: create a branch and push to a bare remote", async (t) => {
 		await prHead.waitFor({ state: "visible", timeout: LAUNCH_TIMEOUT_MS });
 		assert.equal((await prHead.textContent())?.trim(), "feature/e2e");
 		assert.equal(await studio.page.locator(".git-panel-pr-base-input").inputValue(), "main");
+
+		// Per-file review: expanding a changed file shows its diff, and the
+		// armed two-click discard recycles an untracked file off the disk.
+		await studio.page.locator(".git-panel-file-path", { hasText: "notes.txt" }).first().click();
+		const fileDiff = studio.page.locator(".git-panel-file-diff");
+		await fileDiff.waitFor({ state: "visible", timeout: LAUNCH_TIMEOUT_MS });
+		await fileDiff.getByText("scratch").first().waitFor({ state: "visible", timeout: LAUNCH_TIMEOUT_MS });
+		const discard = studio.page.locator(".git-panel-restore-btn");
+		await discard.click(); // arm
+		await discard.click(); // confirm
+		let removed = false;
+		for (let attempt = 0; attempt < 40 && !removed; attempt++) {
+			removed = !existsSync(join(studio.workspaceDir, "notes.txt"));
+			if (!removed) await studio.page.waitForTimeout(500);
+		}
+		assert.equal(removed, true, "discarding an untracked file should recycle it off the disk");
 	} catch (error) {
 		await studio.dumpDiagnostics();
 		throw error;

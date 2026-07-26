@@ -54,6 +54,11 @@ export interface PiDesktopApi {
   getWorkspaceGitStatus(taskId?: string): Promise<WorkspaceGitStatus>;
   getGitChanges(taskId?: string): Promise<GitChanges>;
   commitAllGitChanges(message: string, taskId?: string): Promise<{ committed: boolean; summary: string }>;
+  getGitFileDiff?: (filePath: string, taskId?: string) => Promise<{ patch: string; tracked: boolean }>;
+  restoreGitFile?: (
+    filePath: string,
+    taskId?: string,
+  ) => Promise<{ restored: boolean; untracked: boolean; trashed: boolean }>;
   getGitBranches(taskId?: string): Promise<GitBranches>;
   pushGitBranch(taskId?: string): Promise<GitPushResult>;
   switchGitBranch(name: string, options?: { create?: boolean }, taskId?: string): Promise<GitSwitchResult>;
@@ -530,6 +535,20 @@ export async function getGitChanges(): Promise<GitChanges> {
 
 export async function commitAllGitChanges(message: string): Promise<{ committed: boolean; summary: string }> {
   return requireApi().commitAllGitChanges(message, activeBackendTaskId);
+}
+
+export async function getGitFileDiff(filePath: string): Promise<{ patch: string; tracked: boolean }> {
+  const api = requireApi();
+  if (!api.getGitFileDiff) throw new Error("File diffs need a newer Pi Studio build");
+  return api.getGitFileDiff(filePath, activeBackendTaskId);
+}
+
+export async function restoreGitFile(
+  filePath: string,
+): Promise<{ restored: boolean; untracked: boolean; trashed: boolean }> {
+  const api = requireApi();
+  if (!api.restoreGitFile) throw new Error("File restore needs a newer Pi Studio build");
+  return api.restoreGitFile(filePath, activeBackendTaskId);
 }
 
 export async function getGitBranches(): Promise<GitBranches> {

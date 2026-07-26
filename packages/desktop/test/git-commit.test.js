@@ -2,6 +2,8 @@ import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import {
 	commitAllChanges,
+	getFileDiff,
+	restoreFileChanges,
 	listGitBranches,
 	listGitChanges,
 	parseGitPorcelainChanges,
@@ -188,5 +190,61 @@ describe("switchGitBranch", () => {
 		const git = fakeGit([]);
 		await assert.rejects(switchGitBranch("C:\\work", "-rf", { ...fsOk, execFileImpl: git.execFileImpl }), /start with/);
 		assert.equal(git.calls.length, 0);
+	});
+});
+
+describe("getFileDiff", () => {
+	it("returns the HEAD diff for a tracked file", async () => {
+		const git = fakeGit([{ stdout: "diff --git a/x b/x\n+new\n" }]);
+		const result = await getFileDiff("C:\\work", "src/x.ts", { ...fsOk, execFileImpl: git.execFileImpl });
+		assert.equal(result.patch.includes("+new"), true);
+		assert.deepEqual(git.calls[0].slice(-4), ["diff", "HEAD", "--", "src/x.ts"]);
+	});
+
+	it("falls back to a no-index diff for an untracked file", async () => {
+		const git = fakeGit([
+			{ stdout: "" },
+			{ error: new Error("exit 1"), stdout: "diff --git a/dev/null b/n.txt\n+hello\n" },
+		]);
+		const result = await getFileDiff("C:\\work", "n.txt", { ...fsOk, execFileImpl: git.execFileImpl });
+		assert.equal(result.patch.includes("+hello"), true);
+		assert.equal(git.calls[1].includes("--no-index"), true);
+	});
+
+	it("rejects empty paths", async () => {
+		await assert.rejects(getFileDiff("C:\\work", " ", { ...fsOk, execFileImpl: fakeGit([]).execFileImpl }), /path/iu);
+	});
+});
+
+describe("restoreFileChanges", () => {
+	it("fully restores a file that exists in HEAD", async () => {
+		const git = fakeGit([
+			{ stdout: "100644 blob abc\tsrc/x.ts\n" },
+			{ stdout: "" },
+		]);
+		const result = await restoreFileChanges("C:\\work", "src/x.ts", { ...fsOk, execFileImpl: git.execFileImpl });
+		assert.deepEqual(result, { restored: true, untracked: false });
+		assert.deepEqual(git.calls[1].slice(-6), ["restore", "--worktree", "--staged", "--source=HEAD", "--", "src/x.ts"]);
+	});
+
+	it("unstages a newly added file and reports it untracked for the caller to trash", async () => {
+		const git = fakeGit([
+			{ stdout: "" },
+			{ stdout: "src/new.ts\n" },
+			{ stdout: "" },
+		]);
+		const result = await restoreFileChanges("C:\\work", "src/new.ts", { ...fsOk, execFileImpl: git.execFileImpl });
+		assert.deepEqual(result, { restored: false, untracked: true });
+		assert.deepEqual(git.calls[2].slice(-4), ["restore", "--staged", "--", "src/new.ts"]);
+	});
+
+	it("reports a plain untracked file without touching git state", async () => {
+		const git = fakeGit([
+			{ stdout: "" },
+			{ error: new Error("exit 1") },
+		]);
+		const result = await restoreFileChanges("C:\\work", "notes.txt", { ...fsOk, execFileImpl: git.execFileImpl });
+		assert.deepEqual(result, { restored: false, untracked: true });
+		assert.equal(git.calls.length, 2);
 	});
 });

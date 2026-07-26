@@ -80,6 +80,12 @@ contextBridge.exposeInMainWorld("piDesktop", {
 	commitAllGitChanges(/** @type {unknown} */ message, /** @type {string | undefined} */ taskId) {
 		return ipcRenderer.invoke("git:commit-all", message, taskId);
 	},
+	getGitFileDiff(/** @type {unknown} */ filePath, /** @type {string | undefined} */ taskId) {
+		return ipcRenderer.invoke("git:file-diff", filePath, taskId);
+	},
+	restoreGitFile(/** @type {unknown} */ filePath, /** @type {string | undefined} */ taskId) {
+		return ipcRenderer.invoke("git:restore-file", filePath, taskId);
+	},
 	getGitBranches(/** @type {string | undefined} */ taskId) {
 		return ipcRenderer.invoke("git:branches", taskId);
 	},

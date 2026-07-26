@@ -271,3 +271,75 @@ export async function switchGitBranch(
 	}
 	return { switched: true, branch: validated.name, created: create };
 }
+
+
+/**
+ * A worktree path argument for git, required non-empty.
+ * @param {unknown} filePath
+ */
+function validateFilePath(filePath) {
+	const trimmed = String(filePath ?? "").trim();
+	if (!trimmed) throw new Error("A file path is required");
+	return trimmed;
+}
+
+/**
+ * Uncommitted diff for one file (staged + unstaged vs HEAD). Untracked files
+ * fall back to a no-index diff so new files render as pure additions.
+ * @param {string} workspace
+ * @param {string} filePath
+ */
+export async function getFileDiff(
+	workspace,
+	filePath,
+	{ execFileImpl = execFile, realpathImpl = realpath, statImpl = stat, timeoutMs = GIT_TIMEOUT_MS } = {},
+) {
+	const target = validateFilePath(filePath);
+	const cwd = await resolveWorkspaceDir(workspace, realpathImpl, statImpl);
+	const tracked = await runGit(cwd, ["diff", "HEAD", "--", target], execFileImpl, timeoutMs);
+	if (tracked.stdout.trim()) {
+		return { patch: tracked.stdout, tracked: true };
+	}
+	// `--no-index` exits 1 when the sides differ, so the output matters more
+	// than the error flag here.
+	const nullDevice = process.platform === "win32" ? "NUL" : "/dev/null";
+	const untracked = await runGit(cwd, ["diff", "--no-index", "--", nullDevice, target], execFileImpl, timeoutMs);
+	return { patch: untracked.stdout, tracked: false };
+}
+
+/**
+ * Discard a file's uncommitted changes. Files known to HEAD are restored in
+ * both the index and the worktree; a newly staged file is only unstaged and
+ * reported untracked so the caller can decide what to do with the file itself
+ * (the desktop moves it to the recycle bin rather than deleting).
+ * @param {string} workspace
+ * @param {string} filePath
+ * @returns {Promise<{ restored: boolean, untracked: boolean }>}
+ */
+export async function restoreFileChanges(
+	workspace,
+	filePath,
+	{ execFileImpl = execFile, realpathImpl = realpath, statImpl = stat, timeoutMs = GIT_TIMEOUT_MS } = {},
+) {
+	const target = validateFilePath(filePath);
+	const cwd = await resolveWorkspaceDir(workspace, realpathImpl, statImpl);
+
+	const inHead = await runGit(cwd, ["ls-tree", "HEAD", "--", target], execFileImpl, timeoutMs);
+	if (!inHead.error && inHead.stdout.trim()) {
+		const restored = await runGit(
+			cwd,
+			["restore", "--worktree", "--staged", "--source=HEAD", "--", target],
+			execFileImpl,
+			timeoutMs,
+		);
+		if (restored.error) throw describeGitFailure("Could not restore the file", restored);
+		return { restored: true, untracked: false };
+	}
+
+	const inIndex = await runGit(cwd, ["ls-files", "--error-unmatch", "--", target], execFileImpl, timeoutMs);
+	if (!inIndex.error && inIndex.stdout.trim()) {
+		const unstaged = await runGit(cwd, ["restore", "--staged", "--", target], execFileImpl, timeoutMs);
+		if (unstaged.error) throw describeGitFailure("Could not unstage the file", unstaged);
+	}
+	return { restored: false, untracked: true };
+}

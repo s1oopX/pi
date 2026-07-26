@@ -10,7 +10,15 @@ import {
 } from "./backend-command-allowlist.js";
 import { BackendHandle } from "./backend-handle.js";
 import { sanitizeDiagnostics } from "./diagnostics.js";
-import { commitAllChanges, listGitBranches, listGitChanges, pushCurrentBranch, switchGitBranch } from "./git-commit.js";
+import {
+	commitAllChanges,
+	getFileDiff,
+	listGitBranches,
+	listGitChanges,
+	pushCurrentBranch,
+	restoreFileChanges,
+	switchGitBranch,
+} from "./git-commit.js";
 import { createPullRequest, getPullRequestContext } from "./git-pr.js";
 import { getGitWorkspaceStatus } from "./git-workspace-status.js";
 import {
@@ -1093,6 +1101,30 @@ ipcMain.handle("git:commit-all", async (_event, message, taskId) =>
 );
 
 ipcMain.handle("git:branches", async (_event, taskId) => listGitBranches(resolveTaskCwd(taskId)));
+
+ipcMain.handle("git:file-diff", async (_event, filePath, taskId) =>
+	getFileDiff(resolveTaskCwd(taskId), String(filePath ?? "")),
+);
+
+ipcMain.handle("git:restore-file", async (_event, filePath, taskId) => {
+	const cwd = resolveTaskCwd(taskId);
+	const result = await restoreFileChanges(cwd, String(filePath ?? ""));
+	if (result.restored || !result.untracked) {
+		return { ...result, trashed: false };
+	}
+	// A file git never knew about: recycle it (recoverable) instead of
+	// deleting, and only ever inside the workspace.
+	const absolutePath = resolveWorkspacePath(cwd, String(filePath ?? ""));
+	const { insideWorkspace } = describeRevealTarget(cwd, absolutePath);
+	if (!insideWorkspace) {
+		throw new Error(`Path is outside the workspace: ${absolutePath}`);
+	}
+	if (existsSync(absolutePath)) {
+		await shell.trashItem(absolutePath);
+		return { ...result, trashed: true };
+	}
+	return { ...result, trashed: false };
+});
 
 ipcMain.handle("git:push", async (_event, taskId) => pushCurrentBranch(resolveTaskCwd(taskId)));
 

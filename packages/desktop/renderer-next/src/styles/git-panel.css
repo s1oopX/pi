@@ -392,3 +392,62 @@
 .git-panel-commit-btn:disabled {
   opacity: 0.55;
 }
+
+/* Per-file diff expansion in the changes list */
+
+.git-panel-file-block {
+  display: flex;
+  flex-direction: column;
+}
+
+button.git-panel-file {
+  width: 100%;
+  border-radius: var(--radius-xs);
+  padding: 2px 4px;
+  text-align: left;
+}
+
+button.git-panel-file:hover {
+  background: var(--control-hover);
+}
+
+button.git-panel-file.expanded {
+  background: var(--control-active, var(--control-hover));
+}
+
+.git-panel-file-diff {
+  margin: 4px 0 6px 24px;
+  padding: 6px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-xs);
+  background: var(--surface, transparent);
+  max-height: 320px;
+  overflow: auto;
+}
+
+.git-panel-file-diff .diff-toolbar {
+  display: none;
+}
+
+.git-panel-file-diff-actions {
+  display: flex;
+  justify-content: flex-end;
+  margin-top: 6px;
+}
+
+.git-panel-restore-btn {
+  padding: 4px 10px;
+  border-radius: var(--radius-xs);
+  background: var(--control-hover);
+  color: var(--danger);
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.git-panel-restore-btn:hover:not(:disabled) {
+  background: var(--danger-soft, var(--control-hover));
+}
+
+.git-panel-restore-btn:disabled {
+  opacity: 0.5;
+}
