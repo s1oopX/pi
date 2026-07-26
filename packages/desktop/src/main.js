@@ -12,6 +12,7 @@ import {
 import { createBackendMutationQueue } from "./backend-mutation-queue.js";
 import { sanitizeDiagnostics } from "./diagnostics.js";
 import { commitAllChanges, listGitBranches, listGitChanges, pushCurrentBranch, switchGitBranch } from "./git-commit.js";
+import { createPullRequest, getPullRequestContext } from "./git-pr.js";
 import { getGitWorkspaceStatus } from "./git-workspace-status.js";
 import { describeRevealTarget, resolveWorkspacePath } from "./path-reveal.js";
 import { createPendingExtensionUIRequestStore } from "./pending-extension-ui-requests.js";
@@ -976,6 +977,21 @@ ipcMain.handle("git:push", async () => pushCurrentBranch(backendCwd));
 ipcMain.handle("git:switch-branch", async (_event, name, options) =>
 	switchGitBranch(backendCwd, name, { create: Boolean(options?.create) }),
 );
+
+ipcMain.handle("git:pr-context", async () => getPullRequestContext(backendCwd));
+
+ipcMain.handle("git:create-pr", async (_event, params) => {
+	const result = await createPullRequest(backendCwd, {
+		title: String(params?.title ?? ""),
+		body: String(params?.body ?? ""),
+		base: String(params?.base ?? ""),
+	});
+	// Land the user on the PR (gh) or the pre-filled compare page (no gh).
+	if (result.url) {
+		await openExternalSafely(result.url);
+	}
+	return result;
+});
 
 ipcMain.handle("workspace:list-files", async (_event, query) => ({
 	files: listWorkspaceFiles(backendCwd, String(query ?? "")),

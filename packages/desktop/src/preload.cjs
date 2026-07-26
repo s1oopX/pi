@@ -43,6 +43,12 @@ contextBridge.exposeInMainWorld("piDesktop", {
 	switchGitBranch(name, options) {
 		return ipcRenderer.invoke("git:switch-branch", name, options);
 	},
+	getGitPrContext() {
+		return ipcRenderer.invoke("git:pr-context");
+	},
+	createGitPullRequest(params) {
+		return ipcRenderer.invoke("git:create-pr", params);
+	},
 	listWorkspaceFiles(query) {
 		return ipcRenderer.invoke("workspace:list-files", query);
 	},

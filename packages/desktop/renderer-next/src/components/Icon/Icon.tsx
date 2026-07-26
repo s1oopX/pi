@@ -30,6 +30,7 @@ export type IconName =
   | "grid"
   | "terminal"
   | "git-branch"
+  | "git-pull-request"
   | "paperclip"
   | "send"
   | "queue"
@@ -109,6 +110,14 @@ const GLYPHS: Record<IconName, ReactNode> = {
       <circle cx="6.5" cy="18.5" r="2.25" />
       <circle cx="17.5" cy="9" r="2.25" />
       <path d="M6.5 7.75v8.5M8.75 16.5c4.5-.5 8-2.4 8-4.75" />
+    </>
+  ),
+  "git-pull-request": (
+    <>
+      <circle cx="6.5" cy="5.5" r="2.25" />
+      <circle cx="6.5" cy="18.5" r="2.25" />
+      <circle cx="17.5" cy="18.5" r="2.25" />
+      <path d="M6.5 7.75v8.5M13 5.5h2.5a2 2 0 0 1 2 2v8.75" />
     </>
   ),
   paperclip: (

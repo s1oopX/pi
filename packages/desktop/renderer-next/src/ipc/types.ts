@@ -479,3 +479,27 @@ export interface GitSwitchResult {
   branch: string;
   created: boolean;
 }
+
+export interface GitPrRemote {
+  host: string;
+  owner: string;
+  repo: string;
+}
+
+export interface GitPrContext {
+  branch: string | null;
+  detached: boolean;
+  baseBranch: string | null;
+  remote: GitPrRemote | null;
+  isGitHub: boolean;
+  compareUrl: string | null;
+  lastCommitSubject: string;
+  hasUpstream: boolean;
+  ghAvailable: boolean;
+}
+
+export interface GitPrResult {
+  created: boolean;
+  method: "gh" | "compare";
+  url: string;
+}

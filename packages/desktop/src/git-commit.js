@@ -57,7 +57,7 @@ export function validateBranchName(name) {
 	return { ok: true, name: trimmed };
 }
 
-function runGit(cwd, args, execFileImpl, timeoutMs) {
+export function runGit(cwd, args, execFileImpl, timeoutMs) {
 	return new Promise((resolve) => {
 		const complete = (error, stdout = "", stderr = "") => {
 			resolve({ error, stdout: String(stdout ?? ""), stderr: String(stderr ?? "") });
@@ -88,14 +88,14 @@ function runGit(cwd, args, execFileImpl, timeoutMs) {
 	});
 }
 
-function describeGitFailure(action, result) {
+export function describeGitFailure(action, result) {
 	const stderr = result.stderr.trim();
 	const stdout = result.stdout.trim();
 	const detail = (stderr || stdout || String(result.error?.message ?? "unknown error")).slice(0, 500);
 	return new Error(`${action}: ${detail}`);
 }
 
-async function resolveWorkspaceDir(workspace, realpathImpl, statImpl) {
+export async function resolveWorkspaceDir(workspace, realpathImpl, statImpl) {
 	if (typeof workspace !== "string" || !workspace.trim()) {
 		throw new Error("Workspace not set");
 	}

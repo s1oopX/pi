@@ -91,6 +91,24 @@ test("git flow: create a branch and push to a bare remote", async (t) => {
 			}
 		}
 		assert.match(remoteRef, /^[0-9a-f]{40}$/u, "the bare remote should have received feature/e2e");
+
+		// PR context: a filesystem remote is not GitHub, so the PR section only
+		// shows an explanatory note (no head/base form).
+		await studio.page.locator(".git-panel-pr-toggle").click();
+		const prSection = studio.page.locator(".git-panel-pr");
+		await prSection.waitFor({ state: "visible", timeout: LAUNCH_TIMEOUT_MS });
+		await prSection.locator(".git-panel-note").first().waitFor({ state: "visible", timeout: LAUNCH_TIMEOUT_MS });
+		assert.equal(await prSection.locator(".git-panel-pr-route").count(), 0);
+
+		// With a GitHub-shaped origin the context resolves head -> base; the
+		// upstream tracking from the earlier push persists across the URL change.
+		git(studio.workspaceDir, ["remote", "set-url", "origin", "https://github.com/e2e-org/e2e-repo.git"]);
+		await studio.page.locator(".git-panel-pr-toggle").click(); // close
+		await studio.page.locator(".git-panel-pr-toggle").click(); // reopen -> refetch
+		const prHead = studio.page.locator(".git-panel-pr-head");
+		await prHead.waitFor({ state: "visible", timeout: LAUNCH_TIMEOUT_MS });
+		assert.equal((await prHead.textContent())?.trim(), "feature/e2e");
+		assert.equal(await studio.page.locator(".git-panel-pr-base-input").inputValue(), "main");
 	} catch (error) {
 		await studio.dumpDiagnostics();
 		throw error;

@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { useI18n } from "../../i18n";
 import * as api from "../../ipc/api";
-import type { GitBranches, GitChanges } from "../../ipc/types";
+import type { GitBranches, GitChanges, GitPrContext } from "../../ipc/types";
 import { useStore } from "../../store";
 import { Icon } from "../Icon";
 import { showToast } from "../Toast";
@@ -32,9 +32,16 @@ export function GitPanel({ onClose }: GitPanelProps) {
   const [switchingBranch, setSwitchingBranch] = useState<string | null>(null);
   const [newBranchName, setNewBranchName] = useState("");
   const [creatingBranch, setCreatingBranch] = useState(false);
+  const [prOpen, setPrOpen] = useState(false);
+  const [prContext, setPrContext] = useState<GitPrContext | null>(null);
+  const [prLoading, setPrLoading] = useState(false);
+  const [prTitle, setPrTitle] = useState("");
+  const [prBody, setPrBody] = useState("");
+  const [prBase, setPrBase] = useState("");
+  const [creatingPr, setCreatingPr] = useState(false);
 
   const sync = summarizeGitSync(workspaceGitStatus);
-  const busy = committing || pushing || Boolean(switchingBranch) || creatingBranch;
+  const busy = committing || pushing || Boolean(switchingBranch) || creatingBranch || creatingPr;
 
   async function loadChanges() {
     setChangesLoading(true);
@@ -151,8 +158,53 @@ export function GitPanel({ onClose }: GitPanelProps) {
     }
   }
 
+  async function loadPrContext() {
+    setPrLoading(true);
+    try {
+      const context = await api.getGitPrContext();
+      setPrContext(context);
+      setPrTitle(context.lastCommitSubject);
+      setPrBase(context.baseBranch ?? "");
+    } catch (error) {
+      setPrContext(null);
+      showToast(t("Could not read PR context: {message}", "无法读取 PR 上下文：{message}", {
+        message: ipcErrorReason(error),
+      }), "error");
+    } finally {
+      setPrLoading(false);
+    }
+  }
+
+  async function handleCreatePr() {
+    const title = prTitle.trim();
+    const base = prBase.trim();
+    if (!title || !base || busy) return;
+    setCreatingPr(true);
+    try {
+      const result = await api.createGitPullRequest({ title, body: prBody.trim(), base });
+      showToast(
+        result.created
+          ? t("Pull request created: {url}", "已创建 Pull Request：{url}", { url: result.url })
+          : t("Opened the compare page in your browser", "已在浏览器中打开对比页"),
+        "success",
+      );
+      setPrOpen(false);
+      setPrBody("");
+    } catch (error) {
+      showToast(t("Could not create the PR: {message}", "创建 PR 失败：{message}", {
+        message: ipcErrorReason(error),
+      }), "error");
+    } finally {
+      setCreatingPr(false);
+    }
+  }
+
   const currentBranch = branchData?.current ?? workspaceGitStatus?.branch ?? null;
   const otherBranches = (branchData?.branches ?? []).filter((branch) => !branch.current);
+  const prOnBase = Boolean(prContext?.branch && prContext.branch === prBase.trim());
+  const prReady = Boolean(
+    prContext?.isGitHub && !prContext.detached && prContext.hasUpstream && !prOnBase && prBase.trim(),
+  );
 
   return (
     <div className="git-panel" role="dialog" aria-label={t("Git", "Git")}>
@@ -191,8 +243,120 @@ export function GitPanel({ onClose }: GitPanelProps) {
             <Icon name="upload" size={14} />
             <span>{pushing ? t("Pushing...", "正在推送...") : t("Push", "推送")}</span>
           </button>
+          <button
+            className="git-panel-pr-toggle"
+            type="button"
+            aria-expanded={prOpen}
+            title={t("Create a pull request", "创建 Pull Request")}
+            onClick={() => {
+              const next = !prOpen;
+              setPrOpen(next);
+              if (next) void loadPrContext();
+            }}
+          >
+            <Icon name="git-pull-request" size={14} />
+            <span>PR</span>
+          </button>
         </div>
       </div>
+
+      {prOpen && (
+        <div className="git-panel-pr" role="group" aria-label={t("Create a pull request", "创建 Pull Request")}>
+          {prLoading && <div className="git-panel-note">{t("Loading...", "正在加载...")}</div>}
+          {!prLoading && prContext && !prContext.isGitHub && (
+            <div className="git-panel-note">
+              {t("Pull requests need a GitHub remote named origin.", "创建 Pull Request 需要名为 origin 的 GitHub 远端。")}
+            </div>
+          )}
+          {!prLoading && prContext?.isGitHub && prContext.detached && (
+            <div className="git-panel-note">{t("Check out a branch first.", "请先检出一个分支。")}</div>
+          )}
+          {!prLoading && prContext?.isGitHub && !prContext.detached && (
+            <>
+              <div className="git-panel-pr-route">
+                <span className="git-panel-pr-head" title={t("Head branch", "源分支")}>{prContext.branch}</span>
+                <span className="git-panel-pr-arrow" aria-hidden="true">→</span>
+                <input
+                  className="git-panel-pr-base-input"
+                  value={prBase}
+                  placeholder={t("Base branch", "目标分支")}
+                  aria-label={t("Base branch", "目标分支")}
+                  disabled={creatingPr}
+                  maxLength={240}
+                  onChange={(event) => setPrBase(event.target.value)}
+                />
+              </div>
+              {!prContext.hasUpstream && (
+                <div className="git-panel-note">
+                  {t("Push the branch before creating a PR.", "请先推送分支，再创建 PR。")}
+                </div>
+              )}
+              {prContext.hasUpstream && prOnBase && (
+                <div className="git-panel-note">
+                  {t("Head and base are the same; create a feature branch first.", "源分支与目标分支相同，请先创建功能分支。")}
+                </div>
+              )}
+              {prContext.ghAvailable ? (
+                <>
+                  <input
+                    className="git-panel-pr-title"
+                    value={prTitle}
+                    placeholder={t("PR title", "PR 标题")}
+                    aria-label={t("PR title", "PR 标题")}
+                    disabled={creatingPr}
+                    maxLength={300}
+                    onChange={(event) => setPrTitle(event.target.value)}
+                  />
+                  <textarea
+                    className="git-panel-pr-body"
+                    value={prBody}
+                    rows={3}
+                    placeholder={t("PR description (optional)", "PR 描述（可选）")}
+                    aria-label={t("PR description", "PR 描述")}
+                    disabled={creatingPr}
+                    onChange={(event) => setPrBody(event.target.value)}
+                  />
+                  <div className="git-panel-pr-actions">
+                    {prContext.compareUrl && (
+                      <button
+                        className="git-panel-pr-compare"
+                        type="button"
+                        onClick={() => void api.openExternal(prContext.compareUrl as string)}
+                      >
+                        {t("Open compare page", "打开对比页")}
+                      </button>
+                    )}
+                    <button
+                      className="git-panel-pr-create-btn"
+                      type="button"
+                      disabled={busy || !prReady || !prTitle.trim()}
+                      onClick={() => void handleCreatePr()}
+                    >
+                      {creatingPr ? t("Creating...", "正在创建...") : t("Create PR", "创建 PR")}
+                    </button>
+                  </div>
+                </>
+              ) : (
+                <div className="git-panel-pr-actions">
+                  <span className="git-panel-note">
+                    {t("GitHub CLI (gh) not found; use the browser instead.", "未检测到 GitHub CLI（gh），改用浏览器创建。")}
+                  </span>
+                  <button
+                    className="git-panel-pr-create-btn"
+                    type="button"
+                    disabled={!prContext.compareUrl || !prContext.hasUpstream}
+                    onClick={() => {
+                      if (prContext.compareUrl) void api.openExternal(prContext.compareUrl);
+                    }}
+                  >
+                    {t("Open in browser", "在浏览器中创建")}
+                  </button>
+                </div>
+              )}
+            </>
+          )}
+        </div>
+      )}
 
       {branchesOpen && (
         <div className="git-panel-branches">

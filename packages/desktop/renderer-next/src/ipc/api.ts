@@ -11,6 +11,8 @@ import type {
   GetSessionsCommand,
   GitBranches,
   GitChanges,
+  GitPrContext,
+  GitPrResult,
   GitPushResult,
   GitSwitchResult,
   ImageContent,
@@ -43,6 +45,8 @@ export interface PiDesktopApi {
   getGitBranches(): Promise<GitBranches>;
   pushGitBranch(): Promise<GitPushResult>;
   switchGitBranch(name: string, options?: { create?: boolean }): Promise<GitSwitchResult>;
+  getGitPrContext(): Promise<GitPrContext>;
+  createGitPullRequest(params: { title: string; body: string; base: string }): Promise<GitPrResult>;
   listWorkspaceFiles(query?: string): Promise<{ files: string[] }>;
   openWorkspaceLocation(cwd?: string): Promise<{ opened: boolean }>;
   revealWorkspacePath(targetPath: string): Promise<{ revealed: boolean; path: string; insideWorkspace: boolean }>;
@@ -403,6 +407,14 @@ export async function pushGitBranch(): Promise<GitPushResult> {
 
 export async function switchGitBranch(name: string, options?: { create?: boolean }): Promise<GitSwitchResult> {
   return requireApi().switchGitBranch(name, options);
+}
+
+export async function getGitPrContext(): Promise<GitPrContext> {
+  return requireApi().getGitPrContext();
+}
+
+export async function createGitPullRequest(params: { title: string; body: string; base: string }): Promise<GitPrResult> {
+  return requireApi().createGitPullRequest(params);
 }
 
 export async function listWorkspaceFiles(query?: string): Promise<string[]> {
