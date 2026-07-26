@@ -131,6 +131,13 @@ export async function launchStudio({ reply, script, setupWorkspace, extraWorkspa
 			await page.getByText("Faux 1").first().waitFor({ state: "visible", timeout: LAUNCH_TIMEOUT_MS });
 		},
 
+		async waitForWorkspaceSettled() {
+			// Hydration end marker: the model slot drops its loading state once the
+			// workspace (or parallel-task) switch finishes. Typing before that risks
+			// the draft restoration clearing the composer mid-fill on slow runners.
+			await page.waitForSelector(".composer-model-slot:not(.loading)", { timeout: LAUNCH_TIMEOUT_MS });
+		},
+
 		async sendPrompt(text) {
 			const composer = page.locator(".composer-input");
 			await page.waitForSelector(".composer-input:not([disabled])", { timeout: LAUNCH_TIMEOUT_MS });

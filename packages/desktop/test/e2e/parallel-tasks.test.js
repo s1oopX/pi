@@ -18,7 +18,7 @@ test("parallel tasks: two backends stream side by side and switching loses nothi
 	const studio = await launchStudio({
 		extraWorkspaces: 1,
 		script: [
-			{ when: "SLOW_TASK", reply: "slow reply done", delayMs: 8000 },
+			{ when: "SLOW_TASK", reply: "slow reply done", delayMs: 10000 },
 			{ when: "FAST_MAIN", reply: "fast reply done" },
 			{ reply: "fallback" },
 		],
@@ -41,6 +41,7 @@ test("parallel tasks: two backends stream side by side and switching loses nothi
 		await studio.page
 			.locator(".parallel-task-row.active .parallel-task-dot.ready")
 			.waitFor({ state: "visible", timeout: LAUNCH_TIMEOUT_MS });
+		await studio.waitForWorkspaceSettled();
 
 		// Kick off the slow run in the pool task; its dot flips to streaming.
 		await studio.sendPrompt("please run SLOW_TASK");
@@ -53,6 +54,7 @@ test("parallel tasks: two backends stream side by side and switching loses nothi
 		await studio.page.locator(".parallel-task-main").first().click();
 		const poolRow = studio.page.locator(".parallel-task-row").nth(1);
 		await poolRow.locator(".parallel-task-dot.streaming").waitFor({ state: "visible", timeout: LAUNCH_TIMEOUT_MS });
+		await studio.waitForWorkspaceSettled();
 
 		// The primary answers its own prompt while the pool task still runs.
 		await studio.sendPrompt("please run FAST_MAIN");
