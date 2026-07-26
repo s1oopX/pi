@@ -43,13 +43,16 @@ export function assertPrerequisites() {
 	assertPrerequisite(backendExe, "npm run build:backend (in packages/desktop)");
 }
 
-export async function launchStudio({ reply, script } = {}) {
+export async function launchStudio({ reply, script, setupWorkspace } = {}) {
 	const tempRoot = mkdtempSync(join(tmpdir(), "pi-studio-e2e-"));
 	const workspaceDir = join(tempRoot, "workspace");
 	const agentDir = join(tempRoot, "agent");
 	const userDataDir = join(tempRoot, "user-data");
 	for (const dir of [workspaceDir, agentDir, userDataDir]) {
 		mkdirSync(dir, { recursive: true });
+	}
+	if (setupWorkspace) {
+		await setupWorkspace(workspaceDir, tempRoot);
 	}
 
 	const server = await startFauxOpenAiServer({ reply, script });

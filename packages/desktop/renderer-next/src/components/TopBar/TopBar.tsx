@@ -2,15 +2,11 @@ import { useEffect, useRef, useState, type KeyboardEvent as ReactKeyboardEvent }
 import { useI18n } from "../../i18n";
 import { Icon } from "../Icon";
 import * as api from "../../ipc/api";
-import type { GitChanges } from "../../ipc/types";
 import { useStore } from "../../store";
+import { GitPanel } from "../GitPanel";
+import { summarizeGitSync } from "../GitPanel/gitPanelState";
 import { isSameWorkspace } from "../Sidebar/sidebarState";
 import { showToast } from "../Toast";
-
-function ipcErrorReason(error: unknown): string {
-  const raw = error instanceof Error ? error.message : String(error);
-  return raw.split("Error: ").pop()?.trim() || raw;
-}
 
 interface TopBarProps {
   commandPaletteShortcut: string;
@@ -37,18 +33,15 @@ export function TopBar({
   const workspaceGitStatus = useStore((s) => s.workspaceGitStatus);
   const workspaceGitStatusLoading = useStore((s) => s.workspaceGitStatusLoading);
   const refreshWorkspaceGitStatus = useStore((s) => s.refreshWorkspaceGitStatus);
-  const isStreaming = useStore((s) => s.isStreaming);
   const [openingLocation, setOpeningLocation] = useState(false);
   const [locationMenuOpen, setLocationMenuOpen] = useState(false);
   const [gitMenuOpen, setGitMenuOpen] = useState(false);
-  const [gitChanges, setGitChanges] = useState<GitChanges | null>(null);
-  const [gitChangesLoading, setGitChangesLoading] = useState(false);
-  const [commitMessage, setCommitMessage] = useState("");
-  const [committing, setCommitting] = useState(false);
   const locationMenuRef = useRef<HTMLDivElement>(null);
   const locationMenuTriggerRef = useRef<HTMLButtonElement>(null);
   const locationMenuInitialFocusRef = useRef<"first" | "last">("first");
   const gitMenuRef = useRef<HTMLDivElement>(null);
+
+  const gitSync = summarizeGitSync(workspaceGitStatus);
 
   const activeSession = sessions.find((candidate) => candidate.id === session?.sessionId);
   const threadTitle =
@@ -73,49 +66,6 @@ export function TopBar({
   const workbenchTitle = workbenchShortcut
     ? t("Toggle workbench ({shortcut})", "切换工作台（{shortcut}）", { shortcut: workbenchShortcut })
     : t("Toggle workbench", "切换工作台");
-
-  async function loadGitChanges() {
-    setGitChangesLoading(true);
-    try {
-      setGitChanges(await api.getGitChanges());
-    } catch (error) {
-      setGitChanges(null);
-      showToast(t("Could not list changes: {message}", "无法获取变更列表：{message}", {
-        message: ipcErrorReason(error),
-      }), "error");
-    } finally {
-      setGitChangesLoading(false);
-    }
-  }
-
-  function toggleGitMenu() {
-    if (gitMenuOpen) {
-      setGitMenuOpen(false);
-      return;
-    }
-    setGitMenuOpen(true);
-    refreshWorkspaceGitStatus();
-    void loadGitChanges();
-  }
-
-  async function handleCommitAll() {
-    const message = commitMessage.trim();
-    if (!message || committing) return;
-    setCommitting(true);
-    try {
-      const result = await api.commitAllGitChanges(message);
-      showToast(result.summary, "success");
-      setCommitMessage("");
-      setGitMenuOpen(false);
-      refreshWorkspaceGitStatus();
-    } catch (error) {
-      showToast(t("Commit failed: {message}", "提交失败：{message}", {
-        message: ipcErrorReason(error),
-      }), "error");
-    } finally {
-      setCommitting(false);
-    }
-  }
 
   async function handleOpenWorkspaceLocation() {
     setLocationMenuOpen(false);
@@ -235,12 +185,12 @@ export function TopBar({
                   className="top-bar-git"
                   type="button"
                   disabled={workspaceGitStatusLoading}
-                  onClick={toggleGitMenu}
+                  onClick={() => setGitMenuOpen((open) => !open)}
                   aria-haspopup="dialog"
                   aria-expanded={gitMenuOpen}
                   title={t(
-                    "{branch} — {state}. Click to review and commit.",
-                    "{branch} — {state}。点击查看并提交。",
+                    "{branch} — {state}. Click to review, commit, push, and switch branches.",
+                    "{branch} — {state}。点击查看、提交、推送与切换分支。",
                     { branch: gitLabel, state: gitState },
                   )}
                   aria-label={t("Git branch {branch}, {state}", "Git 分支 {branch}，{state}", {
@@ -250,82 +200,15 @@ export function TopBar({
                 >
                   <Icon name="git-branch" size={16} />
                   <span>{gitLabel}</span>
+                  {gitSync.show && (
+                    <span className="top-bar-git-sync" aria-hidden="true">
+                      {gitSync.ahead > 0 && <span className="top-bar-git-ahead">↑{gitSync.ahead}</span>}
+                      {gitSync.behind > 0 && <span className="top-bar-git-behind">↓{gitSync.behind}</span>}
+                    </span>
+                  )}
                   {workspaceGitStatus?.dirty && <span className="top-bar-git-dirty" aria-hidden="true" />}
                 </button>
-                {gitMenuOpen && (
-                  <div className="top-bar-git-menu" role="dialog" aria-label={t("Commit changes", "提交更改")}>
-                    <div className="top-bar-git-menu-header">
-                      <span className="top-bar-git-menu-title">{t("Changes", "变更")}</span>
-                      <button
-                        className="top-bar-git-menu-refresh"
-                        type="button"
-                        disabled={gitChangesLoading}
-                        onClick={() => {
-                          refreshWorkspaceGitStatus();
-                          void loadGitChanges();
-                        }}
-                        aria-label={t("Refresh change list", "刷新变更列表")}
-                      >
-                        <Icon name="rotate-cw" size={14} />
-                      </button>
-                    </div>
-                    <div className="top-bar-git-file-list" role="list">
-                      {gitChangesLoading && <div className="top-bar-git-note">{t("Loading...", "正在加载...")}</div>}
-                      {!gitChangesLoading && gitChanges && gitChanges.files.length === 0 && (
-                        <div className="top-bar-git-note">{t("Working tree clean", "工作树干净")}</div>
-                      )}
-                      {!gitChangesLoading &&
-                        gitChanges?.files.map((file) => (
-                          <div className="top-bar-git-file" role="listitem" key={`${file.status}:${file.path}`}>
-                            <span
-                              className={`top-bar-git-file-status status-${
-                                file.status === "??" ? "untracked" : file.status.replace(/[^A-Za-z]/g, "") || "modified"
-                              }`}
-                            >
-                              {file.status}
-                            </span>
-                            <span className="top-bar-git-file-path" title={file.path}>{file.path}</span>
-                          </div>
-                        ))}
-                      {!gitChangesLoading && gitChanges?.truncated && (
-                        <div className="top-bar-git-note">
-                          {t("Showing the first 200 files", "仅显示前 200 个文件")}
-                        </div>
-                      )}
-                    </div>
-                    <textarea
-                      className="top-bar-git-message"
-                      value={commitMessage}
-                      rows={2}
-                      placeholder={t("Commit message", "提交信息")}
-                      disabled={committing}
-                      onChange={(event) => setCommitMessage(event.target.value)}
-                      onKeyDown={(event) => {
-                        if (event.key === "Enter" && (event.ctrlKey || event.metaKey)) {
-                          event.preventDefault();
-                          void handleCommitAll();
-                        }
-                      }}
-                    />
-                    <button
-                      className="top-bar-git-commit-btn"
-                      type="button"
-                      disabled={
-                        committing ||
-                        isStreaming ||
-                        !commitMessage.trim() ||
-                        !gitChanges ||
-                        gitChanges.files.length === 0
-                      }
-                      title={isStreaming
-                        ? t("Finish or stop the current run before committing", "请先完成或停止当前运行，再提交")
-                        : t("Stage all changes and commit (Ctrl+Enter)", "暂存全部更改并提交（Ctrl+Enter）")}
-                      onClick={() => void handleCommitAll()}
-                    >
-                      {committing ? t("Committing...", "正在提交...") : t("Commit all changes", "提交全部更改")}
-                    </button>
-                  </div>
-                )}
+                {gitMenuOpen && <GitPanel onClose={() => setGitMenuOpen(false)} />}
               </div>
             </>
           )}

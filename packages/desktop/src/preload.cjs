@@ -34,6 +34,15 @@ contextBridge.exposeInMainWorld("piDesktop", {
 	commitAllGitChanges(message) {
 		return ipcRenderer.invoke("git:commit-all", message);
 	},
+	getGitBranches() {
+		return ipcRenderer.invoke("git:branches");
+	},
+	pushGitBranch() {
+		return ipcRenderer.invoke("git:push");
+	},
+	switchGitBranch(name, options) {
+		return ipcRenderer.invoke("git:switch-branch", name, options);
+	},
 	listWorkspaceFiles(query) {
 		return ipcRenderer.invoke("workspace:list-files", query);
 	},

@@ -1,6 +1,15 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
-import { commitAllChanges, listGitChanges, parseGitPorcelainChanges, validateCommitMessage } from "../src/git-commit.js";
+import {
+	commitAllChanges,
+	listGitBranches,
+	listGitChanges,
+	parseGitPorcelainChanges,
+	pushCurrentBranch,
+	switchGitBranch,
+	validateBranchName,
+	validateCommitMessage,
+} from "../src/git-commit.js";
 
 const fsOk = {
 	realpathImpl: async (path) => path,
@@ -87,6 +96,97 @@ describe("commitAllChanges", () => {
 	it("rejects an empty message before touching git", async () => {
 		const git = fakeGit([]);
 		await assert.rejects(commitAllChanges("C:\\work", "   ", { ...fsOk, execFileImpl: git.execFileImpl }), /required/);
+		assert.equal(git.calls.length, 0);
+	});
+});
+
+describe("validateBranchName", () => {
+	it("accepts ordinary names and trims", () => {
+		assert.deepEqual(validateBranchName("  feature/x  "), { ok: true, name: "feature/x" });
+	});
+
+	it("rejects flag-like, spaced, and malformed names", () => {
+		for (const bad of ["", "   ", "-rf", "has space", "a..b", "a~b", "a:b", "/leading", "trailing/", "x.lock", "a@{b"]) {
+			assert.equal(validateBranchName(bad).ok, false, bad);
+		}
+	});
+});
+
+describe("listGitBranches", () => {
+	it("parses the current-branch marker and names", async () => {
+		// git for-each-ref %(HEAD) emits "*" for the current branch, " " otherwise.
+		const git = fakeGit([{ stdout: "*main\n feature/x\n bugfix\n" }]);
+		const result = await listGitBranches("C:\\work", { ...fsOk, execFileImpl: git.execFileImpl });
+		assert.equal(result.current, "main");
+		assert.deepEqual(result.branches, [
+			{ name: "main", current: true },
+			{ name: "feature/x", current: false },
+			{ name: "bugfix", current: false },
+		]);
+		assert.ok(git.calls[0].includes("for-each-ref"));
+	});
+});
+
+describe("pushCurrentBranch", () => {
+	it("plain-pushes when an upstream exists", async () => {
+		const git = fakeGit([
+			{ stdout: "main\n" }, // symbolic-ref HEAD
+			{ stdout: "origin/main\n" }, // @{upstream}
+			{ stderr: "To github.com:me/repo.git\n   abc..def  main -> main\n" },
+		]);
+		const result = await pushCurrentBranch("C:\\work", { ...fsOk, execFileImpl: git.execFileImpl });
+		assert.equal(result.setUpstream, false);
+		assert.deepEqual(git.calls[2].slice(-1), ["push"]);
+	});
+
+	it("sets upstream on first push of a new branch", async () => {
+		const git = fakeGit([
+			{ stdout: "feature/x\n" },
+			{ error: new Error("no upstream"), stderr: "fatal: no upstream configured" },
+			{ stderr: "Branch 'feature/x' set up to track 'origin/feature/x'.\n" },
+		]);
+		const result = await pushCurrentBranch("C:\\work", { ...fsOk, execFileImpl: git.execFileImpl });
+		assert.equal(result.setUpstream, true);
+		assert.deepEqual(git.calls[2], ["-c", "color.status=false", "-c", "core.quotepath=false", "push", "--set-upstream", "origin", "feature/x"]);
+	});
+
+	it("refuses a detached HEAD", async () => {
+		const git = fakeGit([{ error: new Error("detached"), stderr: "" }]);
+		await assert.rejects(pushCurrentBranch("C:\\work", { ...fsOk, execFileImpl: git.execFileImpl }), /detached HEAD/);
+	});
+});
+
+describe("switchGitBranch", () => {
+	it("switches to an existing branch (name validated, so no -- needed)", async () => {
+		const git = fakeGit([{ stdout: "" }]);
+		const result = await switchGitBranch("C:\\work", "feature/x", { ...fsOk, execFileImpl: git.execFileImpl });
+		assert.deepEqual(result, { switched: true, branch: "feature/x", created: false });
+		assert.deepEqual(git.calls[0].slice(-2), ["switch", "feature/x"]);
+	});
+
+	it("creates a branch with --create", async () => {
+		const git = fakeGit([{ stdout: "" }]);
+		await switchGitBranch("C:\\work", "new-thing", { create: true, ...fsOk, execFileImpl: git.execFileImpl });
+		assert.deepEqual(git.calls[0].slice(-3), ["switch", "--create", "new-thing"]);
+	});
+
+	it("maps common failures to friendly errors", async () => {
+		const dirty = fakeGit([{ error: new Error("x"), stderr: "error: Your local changes would be overwritten by checkout" }]);
+		await assert.rejects(switchGitBranch("C:\\work", "other", { ...fsOk, execFileImpl: dirty.execFileImpl }), /Commit or stash/);
+
+		const missing = fakeGit([{ error: new Error("x"), stderr: "fatal: invalid reference: nope" }]);
+		await assert.rejects(switchGitBranch("C:\\work", "nope", { ...fsOk, execFileImpl: missing.execFileImpl }), /not found/);
+
+		const exists = fakeGit([{ error: new Error("x"), stderr: "fatal: a branch named 'dup' already exists" }]);
+		await assert.rejects(
+			switchGitBranch("C:\\work", "dup", { create: true, ...fsOk, execFileImpl: exists.execFileImpl }),
+			/already exists/,
+		);
+	});
+
+	it("rejects an invalid branch name before touching git", async () => {
+		const git = fakeGit([]);
+		await assert.rejects(switchGitBranch("C:\\work", "-rf", { ...fsOk, execFileImpl: git.execFileImpl }), /start with/);
 		assert.equal(git.calls.length, 0);
 	});
 });

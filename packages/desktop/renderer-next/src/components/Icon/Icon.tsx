@@ -45,6 +45,7 @@ export type IconName =
   | "activity"
   | "file"
   | "download"
+  | "upload"
   | "more-horizontal"
   | "eye"
   | "eye-off";
@@ -168,6 +169,12 @@ const GLYPHS: Record<IconName, ReactNode> = {
     <>
       <path d="M12 3v12m0 0 4-4m-4 4-4-4" />
       <path d="M4 17v2a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-2" />
+    </>
+  ),
+  upload: (
+    <>
+      <path d="M12 21V9m0 0 4 4m-4-4-4 4" />
+      <path d="M4 7V5a2 2 0 0 1 2-2h12a2 2 0 0 1 2 2v2" />
     </>
   ),
   eye: (

@@ -8,12 +8,15 @@ import { getGitWorkspaceStatus, parseGitStatusOutput } from "../src/git-workspac
 
 test("parses branch and clean status from porcelain v2 output", () => {
 	assert.deepEqual(
-		parseGitStatusOutput("# branch.oid abcdef\n# branch.head main\n# branch.upstream origin/main\n"),
+		parseGitStatusOutput("# branch.oid abcdef\n# branch.head main\n# branch.upstream origin/main\n# branch.ab +2 -1\n"),
 		{
 			kind: "repository",
 			branch: "main",
 			detached: false,
 			dirty: false,
+			upstream: "origin/main",
+			ahead: 2,
+			behind: 1,
 		},
 	);
 });
@@ -26,6 +29,9 @@ test("detects detached HEAD and dirty tracked or untracked files", () => {
 			branch: null,
 			detached: true,
 			dirty: true,
+			upstream: null,
+			ahead: 0,
+			behind: 0,
 		},
 	);
 	assert.equal(parseGitStatusOutput("# branch.head feature\n? new-file.txt\n").dirty, true);
@@ -81,6 +87,9 @@ test("returns a neutral status outside a git repository", async (t) => {
 		branch: null,
 		detached: false,
 		dirty: false,
+		upstream: null,
+		ahead: 0,
+		behind: 0,
 	});
 });
 
@@ -92,6 +101,9 @@ test("maps timeouts and command failures to a non-sensitive unavailable status",
 		branch: null,
 		detached: false,
 		dirty: false,
+		upstream: null,
+		ahead: 0,
+		behind: 0,
 	};
 	const timeoutError = new Error(`timed out in ${join(workspace, "private")}`);
 	timeoutError.killed = true;

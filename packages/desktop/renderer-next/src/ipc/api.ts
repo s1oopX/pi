@@ -9,7 +9,10 @@ import type {
   ForkMessage,
   ForkResult,
   GetSessionsCommand,
+  GitBranches,
   GitChanges,
+  GitPushResult,
+  GitSwitchResult,
   ImageContent,
   LogEntry,
   Message,
@@ -37,6 +40,9 @@ export interface PiDesktopApi {
   getWorkspaceGitStatus(): Promise<WorkspaceGitStatus>;
   getGitChanges(): Promise<GitChanges>;
   commitAllGitChanges(message: string): Promise<{ committed: boolean; summary: string }>;
+  getGitBranches(): Promise<GitBranches>;
+  pushGitBranch(): Promise<GitPushResult>;
+  switchGitBranch(name: string, options?: { create?: boolean }): Promise<GitSwitchResult>;
   listWorkspaceFiles(query?: string): Promise<{ files: string[] }>;
   openWorkspaceLocation(cwd?: string): Promise<{ opened: boolean }>;
   revealWorkspacePath(targetPath: string): Promise<{ revealed: boolean; path: string; insideWorkspace: boolean }>;
@@ -374,6 +380,18 @@ export async function getGitChanges(): Promise<GitChanges> {
 
 export async function commitAllGitChanges(message: string): Promise<{ committed: boolean; summary: string }> {
   return requireApi().commitAllGitChanges(message);
+}
+
+export async function getGitBranches(): Promise<GitBranches> {
+  return requireApi().getGitBranches();
+}
+
+export async function pushGitBranch(): Promise<GitPushResult> {
+  return requireApi().pushGitBranch();
+}
+
+export async function switchGitBranch(name: string, options?: { create?: boolean }): Promise<GitSwitchResult> {
+  return requireApi().switchGitBranch(name, options);
 }
 
 export async function listWorkspaceFiles(query?: string): Promise<string[]> {

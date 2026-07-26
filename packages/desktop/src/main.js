@@ -11,7 +11,7 @@ import {
 } from "./backend-command-allowlist.js";
 import { createBackendMutationQueue } from "./backend-mutation-queue.js";
 import { sanitizeDiagnostics } from "./diagnostics.js";
-import { commitAllChanges, listGitChanges } from "./git-commit.js";
+import { commitAllChanges, listGitBranches, listGitChanges, pushCurrentBranch, switchGitBranch } from "./git-commit.js";
 import { getGitWorkspaceStatus } from "./git-workspace-status.js";
 import { describeRevealTarget, resolveWorkspacePath } from "./path-reveal.js";
 import { createPendingExtensionUIRequestStore } from "./pending-extension-ui-requests.js";
@@ -968,6 +968,14 @@ ipcMain.handle("workspace:get-git-status", async () => {
 ipcMain.handle("git:changes", async () => listGitChanges(backendCwd));
 
 ipcMain.handle("git:commit-all", async (_event, message) => commitAllChanges(backendCwd, message));
+
+ipcMain.handle("git:branches", async () => listGitBranches(backendCwd));
+
+ipcMain.handle("git:push", async () => pushCurrentBranch(backendCwd));
+
+ipcMain.handle("git:switch-branch", async (_event, name, options) =>
+	switchGitBranch(backendCwd, name, { create: Boolean(options?.create) }),
+);
 
 ipcMain.handle("workspace:list-files", async (_event, query) => ({
 	files: listWorkspaceFiles(backendCwd, String(query ?? "")),

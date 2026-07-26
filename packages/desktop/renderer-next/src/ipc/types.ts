@@ -432,6 +432,11 @@ export interface WorkspaceGitStatus {
   branch: string | null;
   detached: boolean;
   dirty: boolean;
+  // Optional so the renderer tolerates an older backend during a version skew;
+  // the current backend always sends them. summarizeGitSync defaults them.
+  upstream?: string | null;
+  ahead?: number;
+  behind?: number;
 }
 
 export interface GitChangeFile {
@@ -442,4 +447,27 @@ export interface GitChangeFile {
 export interface GitChanges {
   files: GitChangeFile[];
   truncated: boolean;
+}
+
+export interface GitBranch {
+  name: string;
+  current: boolean;
+}
+
+export interface GitBranches {
+  branches: GitBranch[];
+  current: string | null;
+}
+
+export interface GitPushResult {
+  pushed: boolean;
+  branch: string;
+  setUpstream: boolean;
+  summary: string;
+}
+
+export interface GitSwitchResult {
+  switched: boolean;
+  branch: string;
+  created: boolean;
 }

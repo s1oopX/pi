@@ -18,6 +18,9 @@ function emptyStatus(kind) {
 		branch: null,
 		detached: false,
 		dirty: false,
+		upstream: null,
+		ahead: 0,
+		behind: 0,
 	};
 }
 
@@ -25,12 +28,25 @@ export function parseGitStatusOutput(output) {
 	let branch = null;
 	let detached = false;
 	let dirty = false;
+	let upstream = null;
+	let ahead = 0;
+	let behind = 0;
 
 	for (const line of String(output ?? "").split(/\r?\n/u)) {
 		if (line.startsWith("# branch.head ")) {
 			const head = line.slice("# branch.head ".length).trim();
 			detached = head === "(detached)";
 			branch = detached || !head ? null : head;
+		} else if (line.startsWith("# branch.upstream ")) {
+			const value = line.slice("# branch.upstream ".length).trim();
+			upstream = value || null;
+		} else if (line.startsWith("# branch.ab ")) {
+			// Format: "+<ahead> -<behind>"
+			const match = /\+(\d+)\s+-(\d+)/u.exec(line.slice("# branch.ab ".length));
+			if (match) {
+				ahead = Number(match[1]);
+				behind = Number(match[2]);
+			}
 		} else if (line && !line.startsWith("# ")) {
 			dirty = true;
 		}
@@ -41,6 +57,9 @@ export function parseGitStatusOutput(output) {
 		branch,
 		detached,
 		dirty,
+		upstream,
+		ahead,
+		behind,
 	};
 }
 
