@@ -310,6 +310,13 @@ export interface SetExtensionFlagCommand {
   value: boolean | string;
 }
 
+// Project trust
+
+export interface SetProjectTrustCommand {
+  type: "set_project_trust";
+  trusted: boolean;
+}
+
 export type BackendCommand =
   | GetStateCommand
   | GetMessagesCommand
@@ -355,7 +362,8 @@ export type BackendCommand =
   | AbortBashCommand
   | SteerCommand
   | FollowUpCommand
-  | SetExtensionFlagCommand;
+  | SetExtensionFlagCommand
+  | SetProjectTrustCommand;
 
 // Fire-and-forget commands (sent via window.piDesktop.send)
 

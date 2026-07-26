@@ -30,6 +30,8 @@ function sessionState(sessionId: string): SessionState {
     retryAttempt: 0,
     messageCount: 0,
     pendingMessageCount: 0,
+    projectTrusted: true,
+    projectTrustRequired: false,
   };
 }
 

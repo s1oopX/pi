@@ -5,6 +5,7 @@ import "./styles/global.css";
 import "./styles/sidebar.css";
 import "./styles/topbar.css";
 import "./styles/git-panel.css";
+import "./styles/trust-banner.css";
 import "./styles/message.css";
 import "./styles/message-list.css";
 import "./styles/composer.css";

@@ -46,6 +46,7 @@ export const BACKEND_REQUEST_COMMAND_TYPES = new Set([
 	"set_extension_flag",
 	"set_follow_up_mode",
 	"set_model",
+	"set_project_trust",
 	"set_session_name",
 	"set_steering_mode",
 	"set_thinking_level",

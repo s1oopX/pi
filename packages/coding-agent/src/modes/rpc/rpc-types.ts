@@ -154,7 +154,10 @@ export type RpcCommand =
 	| ({ id?: string; type: "get_resources" } & RpcGetResourcesOptions)
 
 	// Extension flags (runtime-settable, e.g. permission mode)
-	| { id?: string; type: "set_extension_flag"; name: string; value: boolean | string };
+	| { id?: string; type: "set_extension_flag"; name: string; value: boolean | string }
+
+	// Project trust (load project-local extensions/settings for this cwd)
+	| { id?: string; type: "set_project_trust"; trusted: boolean };
 
 // ============================================================================
 // RPC Slash Command (for get_commands response)
@@ -193,6 +196,10 @@ export interface RpcSessionState {
 	retryAttempt: number;
 	messageCount: number;
 	pendingMessageCount: number;
+	/** Whether project-local extensions/settings for this cwd are trusted to load. */
+	projectTrusted: boolean;
+	/** Whether this cwd has project-local resources that require a trust decision. */
+	projectTrustRequired: boolean;
 }
 
 // ============================================================================
@@ -425,6 +432,13 @@ export type RpcResponse =
 					extensionPath: string;
 				}>;
 			};
+	  }
+	| {
+			id?: string;
+			type: "response";
+			command: "set_project_trust";
+			success: true;
+			data: { trusted: boolean; projectTrustRequired: boolean };
 	  }
 
 	// Error response (any command can fail)

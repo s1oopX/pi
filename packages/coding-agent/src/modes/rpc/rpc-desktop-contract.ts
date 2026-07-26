@@ -206,6 +206,8 @@ export interface RpcSessionStateDTO {
 	retryAttempt: number;
 	messageCount: number;
 	pendingMessageCount: number;
+	projectTrusted: boolean;
+	projectTrustRequired: boolean;
 }
 
 export interface RpcContextUsageDTO {
@@ -367,6 +369,8 @@ export interface RpcGetStateDataDTO {
 	retryAttempt: number;
 	messageCount: number;
 	pendingMessageCount: number;
+	projectTrusted: boolean;
+	projectTrustRequired: boolean;
 }
 
 export interface RpcGetAvailableModelsDataDTO {

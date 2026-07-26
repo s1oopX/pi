@@ -341,6 +341,17 @@ export async function setExtensionFlag(name: string, value: boolean | string): P
   await requireApi().request({ type: "set_extension_flag", name, value });
 }
 
+// --- Project trust ---
+
+export async function setProjectTrust(
+  trusted: boolean,
+): Promise<{ trusted: boolean; projectTrustRequired: boolean }> {
+  return (await requireApi().request({ type: "set_project_trust", trusted })) as {
+    trusted: boolean;
+    projectTrustRequired: boolean;
+  };
+}
+
 // --- Desktop-level APIs (not routed through backend) ---
 
 export async function getBackendStatus(): Promise<BackendStatus> {

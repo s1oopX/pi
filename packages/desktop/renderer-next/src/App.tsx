@@ -13,6 +13,7 @@ import { MessageList } from "./components/MessageList";
 import { Settings } from "./components/Settings";
 import { ToastContainer } from "./components/Toast";
 import { TopBar } from "./components/TopBar";
+import { TrustBanner } from "./components/TrustBanner";
 import { WorkbenchPanel, type WorkbenchKeybindingLabels, type WorkbenchView } from "./components/Workbench";
 import { useI18n } from "./i18n";
 import { useBackendEvents } from "./ipc/events";
@@ -234,6 +235,7 @@ export function App() {
             }
           >
             <section className="conversation-pane" aria-label={t("Conversation", "对话")}>
+              <TrustBanner />
               <MessageList />
               <Composer />
             </section>

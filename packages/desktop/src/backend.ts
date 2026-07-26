@@ -15,6 +15,7 @@ import { applyHttpProxySettings, configureHttpDispatcher } from "../../coding-ag
 import { ModelRuntime } from "../../coding-agent/src/core/model-runtime.ts";
 import { SessionManager } from "../../coding-agent/src/core/session-manager.ts";
 import { SettingsManager } from "../../coding-agent/src/core/settings-manager.ts";
+import { hasTrustRequiringProjectResources, ProjectTrustStore } from "../../coding-agent/src/core/trust-manager.ts";
 import { runRpcMode } from "../../coding-agent/src/modes/rpc/rpc-mode.ts";
 import { toolApprovalExtension } from "./tool-approval.ts";
 
@@ -43,6 +44,12 @@ const createRuntime: CreateAgentSessionRuntimeFactory = async ({
 		credentials: authStorage,
 		modelsPath: join(runtimeAgentDir, "models.json"),
 	});
+	// Project trust: pi trusts projects by default, which would auto-run a
+	// folder's .pi extensions/settings on open. Studio flips that to safe —
+	// folders with trust-requiring resources stay untrusted until the user
+	// explicitly trusts them (persisted in <agentDir>/trust.json). The
+	// set_project_trust RPC command updates the store and hot-reloads.
+	const trustStore = new ProjectTrustStore(runtimeAgentDir);
 	const services = await createAgentSessionServices({
 		cwd,
 		agentDir: runtimeAgentDir,
@@ -50,6 +57,9 @@ const createRuntime: CreateAgentSessionRuntimeFactory = async ({
 		modelRuntime,
 		resourceLoaderOptions: {
 			extensionFactories: [{ name: "tool-approval", factory: toolApprovalExtension }],
+		},
+		resourceLoaderReloadOptions: {
+			resolveProjectTrust: async () => !hasTrustRequiringProjectResources(cwd) || trustStore.get(cwd) === true,
 		},
 	});
 	const created = await createAgentSessionFromServices({

@@ -16,7 +16,7 @@ import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname } from "node:path";
 import { type Api, completeSimple, type Model } from "@earendil-works/pi-ai/compat";
 import { ProxyAgent, fetch as undiciFetch } from "undici";
-import { getModelsPath } from "../../config.ts";
+import { getAgentDir, getModelsPath } from "../../config.ts";
 import type { AgentSessionRuntime } from "../../core/agent-session-runtime.ts";
 import type {
 	ExtensionUIContext,
@@ -32,6 +32,7 @@ import {
 	writeRawStdout,
 } from "../../core/output-guard.ts";
 import { type SessionInfo, SessionManager, type SessionTreeNode } from "../../core/session-manager.ts";
+import { hasTrustRequiringProjectResources, ProjectTrustStore } from "../../core/trust-manager.ts";
 import { killTrackedDetachedChildren } from "../../utils/shell.ts";
 import { type Theme, theme } from "../interactive/theme/theme.ts";
 import { attachJsonlLineReader, serializeJsonLine } from "./jsonl.ts";
@@ -1011,6 +1012,8 @@ export async function runRpcMode(runtimeHost: AgentSessionRuntime): Promise<neve
 					retryAttempt: session.retryAttempt,
 					messageCount: session.messages.length,
 					pendingMessageCount: session.pendingMessageCount,
+					projectTrusted: session.settingsManager.isProjectTrusted(),
+					projectTrustRequired: hasTrustRequiringProjectResources(session.sessionManager.getCwd()),
 				} satisfies RpcSessionState satisfies RpcSessionStateDTO;
 				return success(id, "get_state", state);
 			}
@@ -1694,6 +1697,25 @@ export async function runRpcMode(runtimeHost: AgentSessionRuntime): Promise<neve
 						: undefined,
 				);
 				return success(id, "get_resources", resources);
+			}
+
+			case "set_project_trust": {
+				const cwd = session.sessionManager.getCwd();
+				if (session.isStreaming) {
+					return error(id, "set_project_trust", "Wait for the current response to finish before changing trust");
+				}
+				if (session.isCompacting) {
+					return error(id, "set_project_trust", "Wait for compaction to finish before changing trust");
+				}
+				new ProjectTrustStore(getAgentDir()).set(cwd, command.trusted);
+				session.settingsManager.setProjectTrusted(command.trusted);
+				// Reload so newly-trusted project extensions/settings load (or
+				// untrusted ones unload) and rebind to the running session.
+				await session.reload();
+				return success(id, "set_project_trust", {
+					trusted: session.settingsManager.isProjectTrusted(),
+					projectTrustRequired: hasTrustRequiringProjectResources(cwd),
+				});
 			}
 
 			default: {
