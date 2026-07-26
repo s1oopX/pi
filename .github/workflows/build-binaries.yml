@@ -25,6 +25,9 @@ jobs:
   # Keep the public GitHub Release publication last. Binary assets are staged in
   # a draft release first; cleanup removes the draft if later publishing fails.
   build:
+    # Release automation targets the upstream repo; skip it on forks so a
+    # stray v* tag here cannot attempt an npm publish.
+    if: github.repository == 'earendil-works/pi'
     runs-on: ubuntu-latest
     permissions:
       contents: read
