@@ -13,8 +13,8 @@
     "commander": "13.0.0"
   },
   "devDependencies": {
-    "@types/node": "22.10.5",
-    "tsx": "4.19.2",
-    "typescript": "5.7.2"
+    "@types/node": "22.20.1",
+    "tsx": "4.23.1",
+    "typescript": "5.9.3"
   }
 }
