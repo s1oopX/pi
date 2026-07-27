@@ -63,6 +63,11 @@ concurrency:
 
 jobs:
   authorize:
+    # Verifies sender membership in the upstream earendil-works org using an
+    # upstream-only token and writes back upstream environment secrets. Skip
+    # on forks, where these secrets are absent and the analysis has no
+    # upstream context to act on.
+    if: github.repository == 'earendil-works/pi'
     runs-on: ubuntu-latest
     outputs:
       should_run: ${{ steps.verify.outputs.should_run }}

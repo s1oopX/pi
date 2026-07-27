@@ -323,6 +323,10 @@ jobs:
           fi
 
   publish-npm:
+    # Publishes upstream @earendil-works/* packages via trusted publishing,
+    # which only the upstream repo is configured for. Skip on forks so a
+    # v* tag here cannot attempt an npm publish that would just fail.
+    if: github.repository == 'earendil-works/pi'
     runs-on: ubuntu-latest
     needs: stage-github-release
     environment: npm-publish
@@ -373,10 +377,15 @@ jobs:
         run: node scripts/publish.mjs
 
   publish-github-release:
-    runs-on: ubuntu-latest
+    # Runs once staging succeeded AND either publish-npm succeeded or was
+    # skipped (skipped on forks, where it's guarded to upstream). On upstream
+    # this preserves the original semantics: if npm publish fails, the release
+    # is not promoted. On a fork publish-npm is skipped, so the release still
+    # promotes from staging alone.
     needs:
       - stage-github-release
       - publish-npm
+    if: ${{ always() && needs.stage-github-release.result == 'success' && (needs.publish-npm.result == 'success' || needs.publish-npm.result == 'skipped') }}
     permissions:
       contents: write
     env:
@@ -406,9 +415,11 @@ jobs:
     needs:
       - build
       - stage-github-release
-      - publish-npm
       - publish-github-release
-    if: ${{ always() && needs.stage-github-release.result != 'skipped' && (needs.stage-github-release.result != 'success' || needs.publish-npm.result != 'success' || needs.publish-github-release.result != 'success') }}
+    # publish-npm is skipped on forks; don't treat its absence as a failure
+    # here. A draft release is cleaned up only when staging or publishing
+    # actually failed, not when an upstream-only job was skipped.
+    if: ${{ always() && needs.stage-github-release.result != 'skipped' && (needs.stage-github-release.result != 'success' || needs.publish-github-release.result != 'success') }}
     permissions:
       contents: write
     env:
