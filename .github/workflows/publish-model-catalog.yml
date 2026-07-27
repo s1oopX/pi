@@ -71,7 +71,10 @@ jobs:
           retention-days: 14
 
   publish:
-    if: ${{ github.event_name == 'schedule' || github.event_name == 'workflow_run' || (github.event_name == 'workflow_dispatch' && inputs.publish) }}
+    # The publish job uploads to the upstream model-catalog R2 bucket using
+    # upstream-only secrets; on a fork those secrets are absent and the job
+    # would just fail every run. Guard the repo so forks skip it entirely.
+    if: ${{ github.repository == 'earendil-works/pi' && (github.event_name == 'schedule' || github.event_name == 'workflow_run' || (github.event_name == 'workflow_dispatch' && inputs.publish)) }}
     needs: generate
     runs-on: ubuntu-latest
     environment: pi-model-upload
