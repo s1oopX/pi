@@ -107,6 +107,13 @@ describe("npmrc", () => {
 			assert.equal(identifySource("npm", parseNpmrcRegistry(after)), preset.id);
 		}
 	});
+
+	it("reports the last registry line (npm last-wins)", () => {
+		// npm resolves duplicate registry= by last-wins; the parser must match.
+		const dup = "registry=https://registry.npmjs.org/\nregistry=https://registry.npmmirror.com/\n";
+		assert.equal(parseNpmrcRegistry(dup), "https://registry.npmmirror.com/");
+		assert.equal(identifySource("npm", parseNpmrcRegistry(dup)), "npmmirror");
+	});
 });
 
 describe("pip config", () => {
@@ -193,6 +200,24 @@ describe("cargo config", () => {
 			const after = setCargoRegistry("", preset.url);
 			assert.equal(identifySource("cargo", parseCargoRegistry(after)), preset.id);
 		}
+	});
+
+	it("preserves non-replace-with keys in [source.crates-io] when switching", () => {
+		const before =
+			'[source.crates-io]\nreplace-with = "m"\nprotocol = "sparse"\ncheck-revoked = false\n\n[source.m]\nregistry = "https://a/"\n';
+		const after = setCargoRegistry(before, "sparse+https://b/");
+		assert.match(after, /protocol = "sparse"/);
+		assert.match(after, /check-revoked = false/);
+		assert.equal(parseCargoRegistry(after), "sparse+https://b/");
+	});
+
+	it("preserves non-replace-with keys when restoring the default", () => {
+		const before =
+			'[source.crates-io]\nreplace-with = "m"\nprotocol = "sparse"\n\n[source.m]\nregistry = "https://a/"\n';
+		const after = setCargoRegistry(before, "");
+		assert.equal(parseCargoRegistry(after), "");
+		assert.doesNotMatch(after, /replace-with/);
+		assert.match(after, /protocol = "sparse"/);
 	});
 });
 

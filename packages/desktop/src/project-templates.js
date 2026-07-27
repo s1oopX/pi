@@ -185,6 +185,13 @@ export async function createProject(template, parentDir, projectName, deps = {})
 	if (!template || typeof template !== "string" || !template.trim()) {
 		throw new Error("A template name is required");
 	}
+	// Validate the template against the allowlist before any filesystem work,
+	// so a bad name never leaves a stray directory behind.
+	if (!TEMPLATE_NAMES.includes(template.trim())) {
+		throw new Error(
+			`Unknown template "${template.trim()}". Expected one of: ${TEMPLATE_NAMES.join(", ")}`,
+		);
+	}
 	if (!parentDir || typeof parentDir !== "string" || !parentDir.trim()) {
 		throw new Error("A parent directory is required");
 	}

@@ -96,14 +96,18 @@ export function identifySource(manager, url) {
  * @returns {string} the configured registry, or "" when unset
  */
 export function parseNpmrcRegistry(content) {
+	// npm resolves duplicate `registry=` lines by last-wins (.npmrc/ini
+	// semantics), so we must report the last match — otherwise the UI shows a
+	// different mirror than npm actually uses.
+	let registry = "";
 	for (const line of content.split(/\r?\n/)) {
 		const trimmed = line.trim();
 		if (!trimmed || trimmed.startsWith("#") || trimmed.startsWith(";")) continue;
 		// Only the global `registry` key; scoped keys like `@scope:registry` are left alone.
 		const match = /^registry\s*=\s*(.+)$/i.exec(trimmed);
-		if (match) return match[1].trim();
+		if (match) registry = match[1].trim();
 	}
-	return "";
+	return registry;
 }
 
 /**
@@ -201,16 +205,18 @@ export function setPipIndexUrl(content, url) {
 	}
 
 	if (url && !wrote) {
+		// Reaching here means no `index-url` was written during the loop. That
+		// happens only when [global] has no index-url AND is the trailing
+		// section (inGlobal still true at EOF) — so the key appends here — or
+		// when [global] never appeared at all (globalSeen false), in which case
+		// we create it. The earlier "splice after [global]" branch was dead:
+		// a non-trailing [global] always triggers the write in the loop body.
 		if (inGlobal) {
 			out.push(`index-url = ${url}`);
 		} else if (!globalSeen) {
 			while (out.length > 0 && out[out.length - 1].trim() === "") out.pop();
 			if (out.length > 0) out.push("");
 			out.push("[global]", `index-url = ${url}`);
-		} else {
-			// [global] exists but is not the trailing section; place the key right after it.
-			const at = out.findIndex((line) => /^\[global\]$/i.test(line.trim()));
-			out.splice(at + 1, 0, `index-url = ${url}`);
 		}
 	}
 
@@ -276,7 +282,23 @@ export function setCargoRegistry(content, url) {
 		else blocks[blocks.length - 1].lines.push(line);
 	}
 
-	// Drop the tables we own; they are rewritten below when a mirror is set.
+	// Preserve user keys in [source.crates-io] other than `replace-with`
+	// (e.g. `protocol = "sparse"`, `check-revoked = false`); dropping them
+	// was silent data loss. The `replace-with` line itself is owned by us.
+	/** @type {string[]} */
+	const cratesIoExtras = [];
+	for (const block of blocks) {
+		if (block.name !== "source.crates-io") continue;
+		for (const line of block.lines) {
+			const trimmed = line.trim();
+			if (!trimmed || trimmed.startsWith("#") || trimmed.startsWith("[")) continue;
+			if (/^replace-with\s*=/i.test(trimmed)) continue;
+			cratesIoExtras.push(line);
+		}
+	}
+
+	// Drop the tables we own; the crates-io block is rewritten below carrying
+	// its preserved keys, and the named mirror table is rewritten from scratch.
 	const kept = blocks.filter((block) => {
 		if (block.name === "source.crates-io") return false;
 		return !(block.name.startsWith("source.") && block.name.slice("source.".length) === CARGO_SOURCE_NAME);
@@ -289,7 +311,12 @@ export function setCargoRegistry(content, url) {
 
 	if (url) {
 		if (out.length > 0) out.push("");
-		out.push("[source.crates-io]", `replace-with = "${CARGO_SOURCE_NAME}"`, "", `[source.${CARGO_SOURCE_NAME}]`, `registry = "${url}"`);
+		out.push("[source.crates-io]", `replace-with = "${CARGO_SOURCE_NAME}"`, ...cratesIoExtras, "", `[source.${CARGO_SOURCE_NAME}]`, `registry = "${url}"`);
+	} else if (cratesIoExtras.length > 0) {
+		// Restoring the default: keep the user's other crates-io keys, just
+		// drop the replace-with line (already excluded above).
+		if (out.length > 0) out.push("");
+		out.push("[source.crates-io]", ...cratesIoExtras);
 	}
 
 	const joined = out.join("\n").replace(/\n{3,}/g, "\n\n");
