@@ -33,7 +33,7 @@ Pi Studio Dev 在原项目基础上，新增了面向个人开发者的实用功
 
 1. 打开 [GitHub Releases](https://github.com/s1oopX/pi/releases/latest) 页面，找到最新的发布版本。
 2. 在发布版本的 Assets 列表中，下载安装包：
-   - 文件名格式：`PiStudio-Dev-{version}.exe`（例如 `PiStudio-Dev-0.1.0.exe`）
+   - 文件名格式：`PiStudio-{version}.exe`（例如 `PiStudio-0.82.1-dev.1.exe`）
 3. 双击下载的 `.exe` 文件启动安装程序，按照向导完成安装。
 
 > **提示**：下载时 Windows 可能会弹出 SmartScreen 警告。这是因为该应用尚未在 Microsoft Store 上架，属于正常现象。点击 **"更多信息"** > **"仍要运行"** 即可继续安装。
