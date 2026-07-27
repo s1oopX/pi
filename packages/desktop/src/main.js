@@ -1084,14 +1084,17 @@ ipcMain.handle("workspace:open", async (_event, cwd) => {
 
 ipcMain.handle("workspace:get", async () => ({ cwd: backendCwd, taskCwd: getTaskWorkspacePath() }));
 
-ipcMain.handle("project:create", async (_event, { template, targetDir }) => {
+ipcMain.handle("project:create", async (_event, { template, parentDir, projectName } = {}) => {
 	if (!template || typeof template !== "string" || !template.trim()) {
 		throw new Error("A template name is required");
 	}
-	if (!targetDir || typeof targetDir !== "string" || !targetDir.trim()) {
-		throw new Error("A target directory is required");
+	if (!parentDir || typeof parentDir !== "string" || !parentDir.trim()) {
+		throw new Error("A parent directory is required");
 	}
-	return createProject(template, targetDir);
+	if (!projectName || typeof projectName !== "string" || !projectName.trim()) {
+		throw new Error("A project name is required");
+	}
+	return createProject(template, parentDir, projectName);
 });
 
 // Presets travel with the status so the renderer never keeps a second copy of

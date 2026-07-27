@@ -53,7 +53,7 @@ export interface PiDesktopApi {
   restartBackend(): Promise<void>;
   chooseWorkspace(): Promise<{ cwd: string; changed: boolean }>;
   openWorkspace(cwd: string): Promise<{ cwd: string; changed: boolean }>;
-  createProject?(args: { template: string; targetDir: string }): Promise<{ created: boolean; path: string }>;
+  createProject?(args: { template: string; parentDir: string; projectName: string }): Promise<{ created: boolean; path: string }>;
   getMirrorStatus?(): Promise<MirrorStatusResult>;
   setMirrorSource?(args: { manager: string; sourceId: string }): Promise<MirrorApplyResult>;
   getWorkspace(): Promise<{ cwd: string; taskCwd: string }>;
@@ -527,7 +527,7 @@ export async function openWorkspace(cwd: string): Promise<{ cwd: string; changed
   return requireApi().openWorkspace(cwd);
 }
 
-export async function createProject(args: { template: string; targetDir: string }): Promise<{ created: boolean; path: string }> {
+export async function createProject(args: { template: string; parentDir: string; projectName: string }): Promise<{ created: boolean; path: string }> {
   const api = requireApi();
   if (!api.createProject) throw new Error("Quick Start projects need a newer Pi Studio build");
   return api.createProject(args);

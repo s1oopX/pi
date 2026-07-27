@@ -24,6 +24,9 @@ export function CreateProjectDialog({ open, template, onClose }: CreateProjectDi
   const targetDir = parentDir && projectName
     ? `${parentDir.replace(/[/\\]$/, "")}/${projectName}`
     : "";
+  // NOTE: targetDir is for display only. The main process resolves the real
+  // path from parentDir + projectName so the renderer can never inject ".."
+  // or absolute paths — see project-templates.js sanitizeProjectName.
 
   async function handlePickFolder() {
     try {
@@ -40,7 +43,7 @@ export function CreateProjectDialog({ open, template, onClose }: CreateProjectDi
     if (!projectName.trim() || !parentDir) return;
     setCreating(true);
     try {
-      const result = await api.createProject({ template, targetDir });
+      const result = await api.createProject({ template, parentDir, projectName });
       if (result.created) {
         await api.openWorkspace(result.path);
         showToast(
