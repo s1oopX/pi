@@ -1044,6 +1044,69 @@
 
 /* Custom Provider form */
 
+.custom-provider-presets {
+  margin-bottom: 20px;
+}
+
+.custom-provider-presets-title {
+  display: block;
+  color: var(--text-soft);
+  font-size: calc(12px * var(--font-scale));
+  font-weight: 650;
+}
+
+.custom-provider-presets-desc {
+  margin: 4px 0 10px;
+  color: var(--muted);
+  font-size: calc(12px * var(--font-scale));
+}
+
+.custom-provider-presets-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+  gap: 8px;
+}
+
+.custom-provider-preset-card {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  padding: 10px 12px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--elevated);
+  cursor: pointer;
+  text-align: left;
+  transition:
+    border-color var(--transition),
+    box-shadow var(--transition);
+}
+
+.custom-provider-preset-card:hover:not(:disabled) {
+  border-color: var(--primary-soft);
+  box-shadow: 0 0 0 1px var(--primary-soft);
+}
+
+.custom-provider-preset-card:disabled {
+  cursor: default;
+  opacity: 0.6;
+}
+
+.custom-provider-preset-name {
+  color: var(--text);
+  font-size: calc(13px * var(--font-scale));
+  font-weight: 650;
+}
+
+.custom-provider-preset-url {
+  overflow: hidden;
+  color: var(--muted);
+  font-family: var(--font-mono);
+  font-size: calc(10px * var(--font-scale));
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .custom-provider-editor {
   margin-bottom: 28px;
   overflow: hidden;

@@ -42,6 +42,41 @@ interface ExistingModelConfig {
 
 const API_OPTIONS: CustomModelApi[] = ["openai-completions", "anthropic-messages"];
 
+interface ProviderPreset {
+  id: string;
+  nameEn: string;
+  nameZh: string;
+  baseUrl: string;
+  api: CustomModelApi;
+}
+
+// Presets only carry the stable connection details. Model IDs are never
+// hardcoded here: after the key is entered, "Fetch" asks the provider for its
+// live model list, so the presets stay correct as providers add/retire models.
+const PROVIDER_PRESETS: ProviderPreset[] = [
+  {
+    id: "deepseek",
+    nameEn: "DeepSeek",
+    nameZh: "DeepSeek",
+    baseUrl: "https://api.deepseek.com",
+    api: "openai-completions",
+  },
+  {
+    id: "qwen",
+    nameEn: "Tongyi Qianwen (Qwen)",
+    nameZh: "通义千问 (Qwen)",
+    baseUrl: "https://dashscope.aliyuncs.com/compatible-mode/v1",
+    api: "openai-completions",
+  },
+  {
+    id: "moonshot",
+    nameEn: "Moonshot (Kimi)",
+    nameZh: "Moonshot (Kimi)",
+    baseUrl: "https://api.moonshot.cn/v1",
+    api: "openai-completions",
+  },
+];
+
 const EMPTY_MODEL_DEFAULTS = {
   id: "",
   name: "",
@@ -210,6 +245,7 @@ export function CustomProviderSettings({ onDirtyChange }: { onDirtyChange?: (dir
   const [showKey, setShowKey] = useState(false);
   const [editingProviderId, setEditingProviderId] = useState<string | null>(null);
   const baselineRef = useRef<ProviderFormSnapshot>(createEmptyProviderFormSnapshot());
+  const apiKeyInputRef = useRef<HTMLInputElement>(null);
   const onDirtyChangeRef = useRef(onDirtyChange);
   onDirtyChangeRef.current = onDirtyChange;
 
@@ -542,6 +578,48 @@ export function CustomProviderSettings({ onDirtyChange }: { onDirtyChange?: (dir
     captureBaseline(createEmptyProviderFormSnapshot());
   }
 
+  // Prefills the editor with a preset's connection details. The model list is
+  // left empty on purpose: the user enters their key and presses "Fetch" so the
+  // real models come from the provider rather than a stale hardcoded list.
+  function applyPreset(preset: ProviderPreset) {
+    setEditingProviderId(null);
+    setProviderId(preset.id);
+    setBaseUrl(preset.baseUrl);
+    setApiType(preset.api);
+    setAuthKind("api_key");
+    setApiKey("");
+    setProxyUrl("");
+    setCustomHeadersText("");
+    setModels([createModelDraft()]);
+    setTestResult(null);
+    setFetchedModels([]);
+    setSelectedIds(new Set());
+    setFetchedImageInput(false);
+    captureBaseline(
+      createProviderFormSnapshot({
+        editingProviderId: null,
+        providerId: preset.id,
+        baseUrl: preset.baseUrl,
+        apiType: preset.api,
+        authKind: "api_key",
+        apiKey: "",
+        proxyUrl: "",
+        customHeadersText: "",
+        models: [createModelDraft()],
+      }),
+    );
+    apiKeyInputRef.current?.focus();
+    apiKeyInputRef.current?.scrollIntoView({ block: "center", behavior: "smooth" });
+    showToast(
+      t(
+        "Filled in {provider}. Enter your API key, then press Fetch to load its models.",
+        "已填入 {provider}。请输入 API 密钥，然后点击“获取”加载模型。",
+        { provider: t(preset.nameEn, preset.nameZh) },
+      ),
+      "info",
+    );
+  }
+
   function editProvider(name: string, config: ExistingProviderConfig) {
     const existingModels = config.models ?? [];
     setEditingProviderId(name);
@@ -631,6 +709,34 @@ export function CustomProviderSettings({ onDirtyChange }: { onDirtyChange?: (dir
           "连接第三方 OpenAI 兼容或 Anthropic 兼容 API 端点。",
         )}
       </p>
+
+      <div className="custom-provider-presets">
+        <span className="custom-provider-presets-title">{t("Quick Add", "快速添加")}</span>
+        <p className="custom-provider-presets-desc">
+          {t(
+            "Prefill the form for a popular provider, then enter your API key and press Fetch to load its models.",
+            "为常用提供商预填表单，然后输入 API 密钥并点击“获取”加载模型。",
+          )}
+        </p>
+        <div className="custom-provider-presets-grid">
+          {PROVIDER_PRESETS.map((preset) => {
+            const presetName = t(preset.nameEn, preset.nameZh);
+            return (
+              <button
+                key={preset.id}
+                className="custom-provider-preset-card"
+                type="button"
+                onClick={() => applyPreset(preset)}
+                disabled={saving || fetching}
+                aria-label={t("Quick add {provider}", "快速添加 {provider}", { provider: presetName })}
+              >
+                <span className="custom-provider-preset-name">{presetName}</span>
+                <span className="custom-provider-preset-url">{preset.baseUrl}</span>
+              </button>
+            );
+          })}
+        </div>
+      </div>
 
       <div className="custom-provider-editor">
         <div className="custom-provider-editor-header">
@@ -742,6 +848,7 @@ export function CustomProviderSettings({ onDirtyChange }: { onDirtyChange?: (dir
             <div className="input-with-toggle">
               <input
                 id="cp-api-key"
+                ref={apiKeyInputRef}
                 className="form-input"
                 type={showKey ? "text" : "password"}
                 value={apiKey}
