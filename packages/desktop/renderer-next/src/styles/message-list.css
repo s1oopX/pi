@@ -336,6 +336,21 @@
   line-height: 1.55;
 }
 
+.empty-state-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  margin: -10px 0 18px;
+  padding: 4px 12px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: var(--surface);
+  color: var(--text-soft);
+  font-size: calc(12px * var(--font-scale));
+  font-weight: 550;
+  letter-spacing: 0;
+}
+
 .empty-state-cta {
   padding: 8px 13px;
   border-radius: var(--radius-sm);

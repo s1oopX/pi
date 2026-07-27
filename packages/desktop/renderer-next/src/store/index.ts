@@ -660,7 +660,7 @@ export const useStore = create<AppState>((set, get) => ({
           extensionTitle: state.extensionTitle,
           sessionName: state.session?.sessionName,
           workspaceCwd: state.workspaceCwd,
-          appName: state.appInfo?.name ?? "Pi Studio",
+          appName: state.appInfo?.name ?? "Pi Studio Dev",
         });
         if (document.title !== title) document.title = title;
       });

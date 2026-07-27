@@ -1,5 +1,5 @@
 {
-	"name": "@s1oopx/pi-studio",
+	"name": "@s1oopx/pi-studio-dev",
 	"version": "0.82.1",
 	"private": true,
 	"description": "Pi Studio desktop client for third-party API service support",
@@ -25,8 +25,8 @@
 		"pack:portable": "npm run build:renderer && npm run build:backend && electron-builder --win portable --x64 --config.electronDist=../../node_modules/electron/dist"
 	},
 	"build": {
-		"appId": "io.s1oopx.pi-studio",
-		"productName": "Pi Studio",
+		"appId": "io.s1oopx.pi-studio-dev",
+		"productName": "Pi Studio Dev",
 		"asar": true,
 		"directories": {
 			"output": "release"
@@ -59,7 +59,7 @@
 			"target": [
 				"portable"
 			],
-			"artifactName": "PiStudio-${version}.${ext}"
+			"artifactName": "PiStudio-Dev-${version}.${ext}"
 		}
 	},
 	"devDependencies": {
