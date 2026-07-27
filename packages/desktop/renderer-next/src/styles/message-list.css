@@ -376,6 +376,125 @@
   width: 100%;
 }
 
+/* Templates section — sits below the action cards with a divider + heading. */
+
+.empty-state-templates-divider {
+  width: 100%;
+  height: 1px;
+  margin: 20px 0 16px;
+  border: 0;
+  background: var(--border);
+}
+
+.empty-state-templates-heading {
+  width: 100%;
+  margin: 0 0 10px;
+  color: var(--text-soft);
+  font-size: calc(13px * var(--font-scale));
+  font-weight: 600;
+  text-align: left;
+  letter-spacing: 0;
+}
+
+.empty-state-templates {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
+  width: 100%;
+}
+
+.empty-state-templates .empty-state-template-card {
+  animation: empty-state-rise 380ms var(--ease-standard) both;
+}
+
+.empty-state-templates .empty-state-template-card:nth-child(1) { animation-delay: 440ms; }
+.empty-state-templates .empty-state-template-card:nth-child(2) { animation-delay: 500ms; }
+.empty-state-templates .empty-state-template-card:nth-child(3) { animation-delay: 560ms; }
+
+.empty-state-template-card {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 6px;
+  min-width: 0;
+  padding: 12px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: transparent;
+  text-align: left;
+  transition:
+    border-color var(--transition-fast),
+    background var(--transition-fast),
+    transform var(--transition-fast),
+    box-shadow var(--transition-fast);
+}
+
+.empty-state-template-card:hover {
+  border-color: var(--border-strong);
+  background: var(--surface);
+  transform: translateY(-1px);
+  box-shadow: var(--shadow-sm);
+}
+
+.empty-state-template-card:active {
+  transform: translateY(0);
+  box-shadow: none;
+}
+
+.empty-state-template-card-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 30px;
+  height: 30px;
+  margin-bottom: 2px;
+  border-radius: 8px;
+  background: var(--surface);
+  color: var(--muted);
+}
+
+.empty-state-template-card:hover .empty-state-template-card-icon {
+  background: var(--main-bg);
+  color: var(--text-soft);
+}
+
+.empty-state-template-card-icon svg {
+  width: 17px;
+  height: 17px;
+}
+
+.empty-state-template-card-name {
+  color: var(--text-soft);
+  font-size: calc(13px * var(--font-scale));
+  font-weight: 600;
+  line-height: 1.35;
+}
+
+.empty-state-template-card-badges {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+
+.empty-state-template-card-badge {
+  display: inline-flex;
+  align-items: center;
+  padding: 1px 7px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: var(--surface);
+  color: var(--muted);
+  font-size: calc(10px * var(--font-scale));
+  font-weight: 550;
+  line-height: 1.45;
+}
+
+.empty-state-template-card-desc {
+  color: var(--muted);
+  font-size: calc(11px * var(--font-scale));
+  line-height: 1.4;
+}
+
 /* Cards rise individually after the grid container appears, each offset from
    the previous so the four options cascade in rather than popping together. */
 .empty-state-cards .empty-state-card {
@@ -480,6 +599,10 @@
   .empty-state-cards {
     grid-template-columns: 1fr;
   }
+
+  .empty-state-templates {
+    grid-template-columns: 1fr;
+  }
 }
 
 @media (max-width: 480px) {
@@ -505,6 +628,7 @@
 
   .empty-state-cta,
   .empty-state-card,
+  .empty-state-template-card,
   .message-list-jump-latest {
     transition: none;
   }
@@ -512,6 +636,7 @@
   /* Skip the staggered reveal so the surface appears at rest immediately. */
   .empty-state > *,
   .empty-state-cards .empty-state-card,
+  .empty-state-templates .empty-state-template-card,
   .empty-state-brand-icon {
     animation: none;
   }

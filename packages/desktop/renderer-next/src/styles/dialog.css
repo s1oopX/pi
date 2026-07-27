@@ -339,6 +339,66 @@
   }
 }
 
+/* Create-project dialog */
+
+.create-project-form {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.create-project-field {
+  display: flex;
+  flex-direction: column;
+}
+
+.create-project-folder-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.create-project-folder-path {
+  min-width: 0;
+  flex: 1;
+  overflow: hidden;
+  padding: 8px 10px;
+  border: 1px solid var(--control-border);
+  border-radius: var(--radius-sm);
+  background: var(--surface);
+  color: var(--text-soft);
+  font-size: calc(12px * var(--font-scale));
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.create-project-pick-btn {
+  flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+}
+
+.create-project-preview {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 10px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--surface);
+  color: var(--muted);
+  font-family: var(--font-mono);
+  font-size: calc(11px * var(--font-scale));
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.create-project-preview svg {
+  flex-shrink: 0;
+}
+
 @media (prefers-reduced-motion: reduce) {
   .app-dialog,
   .app-dialog::backdrop,

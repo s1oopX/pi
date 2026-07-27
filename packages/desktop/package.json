@@ -35,6 +35,7 @@
 			"src/**/*",
 			"renderer-next/dist/**/*",
 			"assets/**/*",
+			"templates/**/*",
 			"CHANGELOG.md",
 			"package.json"
 		],

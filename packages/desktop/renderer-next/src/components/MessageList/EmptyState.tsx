@@ -1,8 +1,10 @@
 import type { ReactNode } from "react";
+import { useState } from "react";
 import { useI18n } from "../../i18n";
 import * as api from "../../ipc/api";
 import { useStore } from "../../store";
 import { BrandIcon } from "../BrandIcon";
+import { CreateProjectDialog } from "../CreateProjectDialog";
 import { Icon } from "../Icon";
 import { isSameWorkspace } from "../Sidebar/sidebarState";
 import { showToast } from "../Toast";
@@ -19,6 +21,57 @@ interface ActionCard {
   prompt: LocalizedText;
   icon: ReactNode;
 }
+
+interface QuickStartTemplate {
+  id: string;
+  name: LocalizedText;
+  description: LocalizedText;
+  icon: ReactNode;
+  badges: { label: LocalizedText }[];
+}
+
+const QUICK_START_TEMPLATES: QuickStartTemplate[] = [
+  {
+    id: "nextjs",
+    name: { english: "Next.js", simplifiedChinese: "Next.js" },
+    description: {
+      english: "Full-stack React with SSR, routing, and API routes",
+      simplifiedChinese: "全栈 React，支持 SSR、路由和 API 路由",
+    },
+    icon: <Icon name="grid" size={20} />,
+    badges: [
+      { label: { english: "React", simplifiedChinese: "React" } },
+      { label: { english: "TypeScript", simplifiedChinese: "TypeScript" } },
+      { label: { english: "SSR", simplifiedChinese: "SSR" } },
+    ],
+  },
+  {
+    id: "express",
+    name: { english: "Express", simplifiedChinese: "Express" },
+    description: {
+      english: "Minimalist Node.js API server with middleware",
+      simplifiedChinese: "简约的 Node.js API 服务器，支持中间件",
+    },
+    icon: <Icon name="terminal" size={20} />,
+    badges: [
+      { label: { english: "Node.js", simplifiedChinese: "Node.js" } },
+      { label: { english: "REST", simplifiedChinese: "REST" } },
+    ],
+  },
+  {
+    id: "cli",
+    name: { english: "CLI Tool", simplifiedChinese: "CLI 工具" },
+    description: {
+      english: "Command-line utility scaffolded with arg parsing",
+      simplifiedChinese: "命令行工具，带参数解析脚手架",
+    },
+    icon: <Icon name="command" size={20} />,
+    badges: [
+      { label: { english: "Node.js", simplifiedChinese: "Node.js" } },
+      { label: { english: "CLI", simplifiedChinese: "CLI" } },
+    ],
+  },
+];
 
 const ACTION_CARDS: ActionCard[] = [
   {
@@ -87,6 +140,8 @@ export function EmptyState() {
     ? t("Tasks", "任务")
     : workspaceCwd.split(/[\\/]/).filter(Boolean).pop();
   const backendStatus = useStore((s) => s.backendStatus);
+
+  const [createTemplate, setCreateTemplate] = useState<string | null>(null);
 
   async function restartBackend() {
     try {
@@ -189,6 +244,46 @@ export function EmptyState() {
           </button>
         ))}
       </div>
+
+      <hr className="empty-state-templates-divider" />
+
+      <h3 className="empty-state-templates-heading">
+        {t("Quick Start", "快速开始")}
+      </h3>
+
+      <div className="empty-state-templates">
+        {QUICK_START_TEMPLATES.map((tmpl) => (
+          <button
+            key={tmpl.id}
+            className="empty-state-template-card"
+            type="button"
+            onClick={() => setCreateTemplate(tmpl.id)}
+          >
+            <span className="empty-state-template-card-icon" aria-hidden="true">{tmpl.icon}</span>
+            <span className="empty-state-template-card-name">
+              {t(tmpl.name.english, tmpl.name.simplifiedChinese)}
+            </span>
+            <span className="empty-state-template-card-badges">
+              {tmpl.badges.map((badge, i) => (
+                <span key={i} className="empty-state-template-card-badge">
+                  {t(badge.label.english, badge.label.simplifiedChinese)}
+                </span>
+              ))}
+            </span>
+            <span className="empty-state-template-card-desc">
+              {t(tmpl.description.english, tmpl.description.simplifiedChinese)}
+            </span>
+          </button>
+        ))}
+      </div>
+
+      {createTemplate && (
+        <CreateProjectDialog
+          open
+          template={createTemplate}
+          onClose={() => setCreateTemplate(null)}
+        />
+      )}
     </div>
   );
 }

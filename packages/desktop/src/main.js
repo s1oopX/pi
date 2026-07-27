@@ -29,6 +29,7 @@ import {
 	removeTaskWorktree,
 } from "./git-worktree.js";
 import { describeRevealTarget, resolveWorkspacePath } from "./path-reveal.js";
+import { createProject } from "./project-templates.js";
 import { createRollingLog } from "./rolling-log.js";
 import { prepareSessionImport, resolveKnownSessionFile } from "./session-files.js";
 import { createTaskRegistry } from "./task-registry.js";
@@ -1081,6 +1082,16 @@ ipcMain.handle("workspace:open", async (_event, cwd) => {
 });
 
 ipcMain.handle("workspace:get", async () => ({ cwd: backendCwd, taskCwd: getTaskWorkspacePath() }));
+
+ipcMain.handle("project:create", async (_event, { template, targetDir }) => {
+	if (!template || typeof template !== "string" || !template.trim()) {
+		throw new Error("A template name is required");
+	}
+	if (!targetDir || typeof targetDir !== "string" || !targetDir.trim()) {
+		throw new Error("A target directory is required");
+	}
+	return createProject(template, targetDir);
+});
 
 // Git and workspace-scoped IPC follows the renderer's active task: a pool
 // task (worktree or plain) gets its own folder's git state, not the primary's.

@@ -1,0 +1,20 @@
+{
+  "name": "pi-studio-cli",
+  "version": "0.0.0",
+  "private": true,
+  "bin": {
+    "pi-cli": "./dist/index.js"
+  },
+  "scripts": {
+    "build": "tsc",
+    "dev": "tsx src/index.ts"
+  },
+  "dependencies": {
+    "commander": "13.0.0"
+  },
+  "devDependencies": {
+    "@types/node": "22.10.5",
+    "tsx": "4.19.2",
+    "typescript": "5.7.2"
+  }
+}

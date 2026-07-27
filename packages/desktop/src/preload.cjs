@@ -164,6 +164,9 @@ contextBridge.exposeInMainWorld("piDesktop", {
 	openModelBackup() {
 		return ipcRenderer.invoke("model-config:open");
 	},
+	createProject(/** @type {unknown} */ args) {
+		return ipcRenderer.invoke("project:create", args);
+	},
 	onEvent(/** @type {PayloadListener} */ listener) {
 		return subscribe("backend:event", listener);
 	},

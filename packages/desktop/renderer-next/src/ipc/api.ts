@@ -50,6 +50,7 @@ export interface PiDesktopApi {
   restartBackend(): Promise<void>;
   chooseWorkspace(): Promise<{ cwd: string; changed: boolean }>;
   openWorkspace(cwd: string): Promise<{ cwd: string; changed: boolean }>;
+  createProject?(args: { template: string; targetDir: string }): Promise<{ created: boolean; path: string }>;
   getWorkspace(): Promise<{ cwd: string; taskCwd: string }>;
   getWorkspaceGitStatus(taskId?: string): Promise<WorkspaceGitStatus>;
   getGitChanges(taskId?: string): Promise<GitChanges>;
@@ -519,6 +520,12 @@ export async function chooseWorkspace(): Promise<{ cwd: string; changed: boolean
 
 export async function openWorkspace(cwd: string): Promise<{ cwd: string; changed: boolean }> {
   return requireApi().openWorkspace(cwd);
+}
+
+export async function createProject(args: { template: string; targetDir: string }): Promise<{ created: boolean; path: string }> {
+  const api = requireApi();
+  if (!api.createProject) throw new Error("Quick Start projects need a newer Pi Studio build");
+  return api.createProject(args);
 }
 
 export async function getWorkspace(): Promise<{ cwd: string; taskCwd: string }> {
