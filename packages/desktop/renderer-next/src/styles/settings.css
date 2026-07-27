@@ -1083,8 +1083,8 @@
 }
 
 .custom-provider-preset-card:hover:not(:disabled) {
-  border-color: var(--primary-soft);
-  box-shadow: 0 0 0 1px var(--primary-soft);
+  border-color: var(--accent);
+  box-shadow: 0 0 0 1px var(--accent);
 }
 
 .custom-provider-preset-card:disabled {
@@ -1105,6 +1105,93 @@
   font-size: calc(10px * var(--font-scale));
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+/* Mirror sources */
+
+.mirror-manager-list {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.mirror-manager {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 13px 15px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--surface);
+}
+
+.mirror-manager-heading {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+}
+
+.mirror-manager-name {
+  color: var(--text);
+  font-size: calc(13px * var(--font-scale));
+  font-weight: 650;
+}
+
+.mirror-manager-config {
+  overflow: hidden;
+  color: var(--muted);
+  font-family: var(--font-mono);
+  font-size: calc(10px * var(--font-scale));
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.mirror-manager-current {
+  overflow: hidden;
+  color: var(--text-soft);
+  font-family: var(--font-mono);
+  font-size: calc(11px * var(--font-scale));
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.mirror-preset-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.mirror-preset-btn {
+  padding: 5px 11px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-pill);
+  background: var(--elevated);
+  color: var(--text-soft);
+  font-size: calc(11px * var(--font-scale));
+  cursor: pointer;
+  transition:
+    border-color var(--transition),
+    background var(--transition),
+    color var(--transition);
+}
+
+.mirror-preset-btn:hover:not(:disabled) {
+  border-color: var(--accent);
+  color: var(--text);
+}
+
+/* The active mirror stays legible rather than looking merely disabled, since
+   every button is disabled while a switch is in flight. */
+.mirror-preset-btn.active {
+  border-color: var(--primary);
+  background: color-mix(in srgb, var(--primary) 14%, transparent);
+  color: var(--text);
+  font-weight: 650;
+}
+
+.mirror-preset-btn:disabled:not(.active) {
+  opacity: 0.55;
+  cursor: default;
 }
 
 .custom-provider-editor {

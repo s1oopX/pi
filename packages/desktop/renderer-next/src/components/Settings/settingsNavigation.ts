@@ -59,6 +59,14 @@ const SETTINGS_NAVIGATION: SettingsNavigationDefinition[] = [
     keywords: { en: "keys hotkey command reset restore defaults", zhCN: "按键 热键 命令 重置 恢复 默认 恢复默认" },
   },
   {
+    route: "mirror-sources",
+    label: { en: "Mirror Sources", zhCN: "镜像源" },
+    keywords: {
+      en: "npm pip cargo registry mirror index china npmmirror tsinghua aliyun",
+      zhCN: "镜像 源 加速 registry 仓库 npm pip cargo 阿里 清华",
+    },
+  },
+  {
     route: "resources",
     label: { en: "Resources", zhCN: "资源" },
     keywords: { en: "extension skill prompt diagnostic error refresh reload loading", zhCN: "扩展 技能 提示词 诊断 错误 刷新 重新加载 加载" },

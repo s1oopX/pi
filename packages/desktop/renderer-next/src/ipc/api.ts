@@ -18,6 +18,9 @@ import type {
   ImageContent,
   LogEntry,
   Message,
+  MirrorApplyResult,
+  MirrorManager,
+  MirrorStatusResult,
   Model,
   ProjectTrustEntries,
   ProjectTrustEntryUpdate,
@@ -51,6 +54,8 @@ export interface PiDesktopApi {
   chooseWorkspace(): Promise<{ cwd: string; changed: boolean }>;
   openWorkspace(cwd: string): Promise<{ cwd: string; changed: boolean }>;
   createProject?(args: { template: string; targetDir: string }): Promise<{ created: boolean; path: string }>;
+  getMirrorStatus?(): Promise<MirrorStatusResult>;
+  setMirrorSource?(args: { manager: string; sourceId: string }): Promise<MirrorApplyResult>;
   getWorkspace(): Promise<{ cwd: string; taskCwd: string }>;
   getWorkspaceGitStatus(taskId?: string): Promise<WorkspaceGitStatus>;
   getGitChanges(taskId?: string): Promise<GitChanges>;
@@ -526,6 +531,18 @@ export async function createProject(args: { template: string; targetDir: string 
   const api = requireApi();
   if (!api.createProject) throw new Error("Quick Start projects need a newer Pi Studio build");
   return api.createProject(args);
+}
+
+export async function getMirrorStatus(): Promise<MirrorStatusResult> {
+  const api = requireApi();
+  if (!api.getMirrorStatus) throw new Error("Mirror sources need a newer Pi Studio build");
+  return api.getMirrorStatus();
+}
+
+export async function setMirrorSource(manager: MirrorManager, sourceId: string): Promise<MirrorApplyResult> {
+  const api = requireApi();
+  if (!api.setMirrorSource) throw new Error("Mirror sources need a newer Pi Studio build");
+  return api.setMirrorSource({ manager, sourceId });
 }
 
 export async function getWorkspace(): Promise<{ cwd: string; taskCwd: string }> {

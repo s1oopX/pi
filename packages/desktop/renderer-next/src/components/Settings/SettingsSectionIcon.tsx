@@ -27,6 +27,13 @@ const ICON_PATHS: Record<IconRoute, ReactNode> = {
       <path d="M4 20c0-3.3 3.6-6 8-6s8 2.7 8 6" />
     </>
   ),
+  "mirror-sources": (
+    <>
+      <circle cx="12" cy="12" r="8" />
+      <path d="M4 12h16" />
+      <path d="M12 4a12 12 0 0 1 0 16a12 12 0 0 1 0-16z" />
+    </>
+  ),
   "agent-general": (
     <>
       <path d="M4 7h10M18 7h2M4 17h2M10 17h10" />

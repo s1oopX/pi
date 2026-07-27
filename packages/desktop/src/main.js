@@ -28,6 +28,7 @@ import {
 	listWorktreeLeftovers,
 	removeTaskWorktree,
 } from "./git-worktree.js";
+import { applySource, MIRROR_PRESETS, readStatus } from "./mirror-sources.js";
 import { describeRevealTarget, resolveWorkspacePath } from "./path-reveal.js";
 import { createProject } from "./project-templates.js";
 import { createRollingLog } from "./rolling-log.js";
@@ -1091,6 +1092,23 @@ ipcMain.handle("project:create", async (_event, { template, targetDir }) => {
 		throw new Error("A target directory is required");
 	}
 	return createProject(template, targetDir);
+});
+
+// Presets travel with the status so the renderer never keeps a second copy of
+// the mirror list that could drift from the one actually written to disk.
+ipcMain.handle("mirror:get-status", async () => {
+	const { sources } = await readStatus();
+	return { sources, presets: MIRROR_PRESETS };
+});
+
+ipcMain.handle("mirror:set-source", async (_event, { manager, sourceId } = {}) => {
+	if (!manager || typeof manager !== "string") {
+		throw new Error("A package manager is required");
+	}
+	if (!sourceId || typeof sourceId !== "string") {
+		throw new Error("A mirror source is required");
+	}
+	return applySource(manager, sourceId);
 });
 
 // Git and workspace-scoped IPC follows the renderer's active task: a pool

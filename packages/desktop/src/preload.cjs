@@ -167,6 +167,12 @@ contextBridge.exposeInMainWorld("piDesktop", {
 	createProject(/** @type {unknown} */ args) {
 		return ipcRenderer.invoke("project:create", args);
 	},
+	getMirrorSources() {
+		return ipcRenderer.invoke("mirror:get-status");
+	},
+	setMirrorSource(/** @type {unknown} */ args) {
+		return ipcRenderer.invoke("mirror:set-source", args);
+	},
 	onEvent(/** @type {PayloadListener} */ listener) {
 		return subscribe("backend:event", listener);
 	},

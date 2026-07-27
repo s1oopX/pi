@@ -534,3 +534,34 @@ export interface GitPrResult {
   method: "gh" | "compare";
   url: string;
 }
+
+export type MirrorManager = "npm" | "pip" | "cargo";
+
+export interface MirrorStatus {
+  manager: MirrorManager;
+  /** Preset id, or "custom" when the configured URL matches no preset. */
+  current: string;
+  currentUrl: string;
+  configExists: boolean;
+}
+
+export interface MirrorPreset {
+  id: string;
+  nameEn: string;
+  nameZh: string;
+  url: string;
+}
+
+export interface MirrorStatusResult {
+  sources: MirrorStatus[];
+  /** Sent by the main process so the renderer never keeps its own mirror list. */
+  presets: Record<MirrorManager, MirrorPreset[]>;
+}
+
+export interface MirrorApplyResult {
+  ok: boolean;
+  manager: string;
+  sourceId: string;
+  url: string;
+  path: string;
+}

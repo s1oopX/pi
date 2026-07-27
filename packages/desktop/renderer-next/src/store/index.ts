@@ -69,6 +69,7 @@ export type SettingsRoute =
   | "agent-general"
   | "appearance"
   | "shortcuts"
+  | "mirror-sources"
   | "resources"
   | "about";
 
