@@ -21,11 +21,23 @@ Pi Studio Dev 聚焦于个人开发者的日常使用体验，以下是主要优
 
 ## 快速开始
 
-从 [GitHub Releases](https://github.com/s1oopX/pi/releases) 页面下载最新版本安装包即可开始使用。
+### 下载安装
+
+1. 打开 [GitHub Releases](https://github.com/s1oopX/pi/releases/latest) 页面，找到最新的发布版本。
+2. 在发布版本的 Assets 列表中，下载安装包：
+   - 文件名格式：`PiStudio-Dev-{version}.exe`（例如 `PiStudio-Dev-0.1.0.exe`）
+3. 双击下载的 `.exe` 文件启动安装程序，按照向导完成安装。
+
+> **提示**：下载时 Windows 可能会弹出 SmartScreen 警告。这是因为该应用尚未在 Microsoft Store 上架，属于正常现象。点击 **"更多信息"** > **"仍要运行"** 即可继续安装。
+
+### 从源码构建
+
+如果你更希望从源码构建，请参考 [CONTRIBUTING.md](CONTRIBUTING.md) 中的开发环境搭建说明。
 
 ## 系统要求
 
 - **操作系统**：Windows 11 / Windows 10（64 位）
+- **内存**：至少 4 GB RAM；建议 8 GB 或以上以流畅处理大型项目
 - **网络**：需要网络连接以调用 AI 模型 API
 
 ## 项目结构
