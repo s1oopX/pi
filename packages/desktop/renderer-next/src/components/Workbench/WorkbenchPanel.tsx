@@ -1,17 +1,21 @@
 import { useEffect, useMemo, useRef, useState, type FormEvent, type KeyboardEvent } from "react";
+import Markdown from "react-markdown";
 import { BranchNavigatorContent } from "../BranchNavigator";
 import { Icon } from "../Icon";
 import { appendFileReference } from "../Composer/workspaceDrafts";
+import { PathActions } from "../Message/PathActions";
 import { TerminalPanel, type TerminalPanelHandle } from "../Terminal";
 import { showToast } from "../Toast";
 import { useI18n } from "../../i18n";
 import * as api from "../../ipc/api";
+import type { WorkspaceFilePreview } from "../../ipc/types";
 import { createBashExecutionId, subscribeBashExecution } from "../../ipc/bashExecutionStream";
 import { useStore } from "../../store";
 import { createCommandHistoryState, pushCommand, recallNext, recallPrevious } from "./commandHistory";
 import { findLatestTaskPlan } from "./planState";
+import { collectTaskArtifacts, collectTaskSources } from "./taskResources";
 
-export type WorkbenchView = "launcher" | "plan" | "review" | "terminal" | "browser" | "files" | "side-task";
+export type WorkbenchView = "launcher" | "plan" | "sources" | "artifacts" | "review" | "terminal" | "browser" | "files" | "side-task";
 
 export type WorkbenchKeybindingLabels = Partial<Record<WorkbenchView | "toggle", string>>;
 
@@ -26,7 +30,7 @@ interface WorkbenchEntry {
   view: WorkbenchView;
   label: string;
   shortcut?: string;
-  icon: "plan" | "review" | "terminal" | "browser" | "files" | "task";
+  icon: "plan" | "sources" | "artifacts" | "review" | "terminal" | "browser" | "files" | "task";
 }
 
 interface BashResult {
@@ -52,6 +56,16 @@ export function WorkbenchPanel({ activeView, keybindingLabels, onClose, onSelect
       view: "plan",
       label: t("Plan", "计划"),
       icon: "plan",
+    },
+    {
+      view: "sources",
+      label: t("Sources", "来源"),
+      icon: "sources",
+    },
+    {
+      view: "artifacts",
+      label: t("Artifacts", "产物"),
+      icon: "artifacts",
     },
     {
       view: "review",
@@ -135,6 +149,10 @@ export function WorkbenchPanel({ activeView, keybindingLabels, onClose, onSelect
           <WorkbenchLauncher entries={entries} onSelectView={onSelectView} />
         ) : activeView === "plan" ? (
           <WorkbenchPlan />
+        ) : activeView === "sources" ? (
+          <WorkbenchSources />
+        ) : activeView === "artifacts" ? (
+          <WorkbenchArtifacts />
         ) : activeView === "review" ? (
           <WorkbenchReview />
         ) : activeView === "terminal" ? (
@@ -148,6 +166,220 @@ export function WorkbenchPanel({ activeView, keybindingLabels, onClose, onSelect
         )}
       </div>
     </aside>
+  );
+}
+
+function WorkbenchSources() {
+  const { t } = useI18n();
+  const messages = useStore((state) => state.messages);
+  const sources = useMemo(() => collectTaskSources(messages), [messages]);
+
+  async function openSource(url: string) {
+    try {
+      await api.openExternal(url);
+    } catch (error) {
+      showToast(t("Could not open source: {error}", "无法打开来源：{error}", {
+        error: error instanceof Error ? error.message : String(error),
+      }), "error");
+    }
+  }
+
+  if (sources.length === 0) {
+    return (
+      <div className="workbench-state" role="status">
+        {t("No HTTP(S) sources were cited in this task.", "此任务尚未引用 HTTP(S) 来源。")}
+      </div>
+    );
+  }
+
+  return (
+    <div className="workbench-resources workbench-scroll">
+      <p className="workbench-resource-summary">
+        {t("Sources cited by Pi in this task.", "Pi 在此任务中引用的来源。")}
+      </p>
+      <div className="workbench-resource-list">
+        {sources.map((source) => (
+          <button
+            className="workbench-resource-row"
+            type="button"
+            key={source.url}
+            title={source.url}
+            onClick={() => void openSource(source.url)}
+          >
+            <WorkbenchIcon icon="sources" />
+            <span className="workbench-resource-copy">
+              <strong>{source.label}</strong>
+              <small>{source.url}</small>
+            </span>
+            <Icon name="chevron-right" size={15} />
+          </button>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function WorkbenchArtifacts() {
+  const { t } = useI18n();
+  const messages = useStore((state) => state.messages);
+  const artifacts = useMemo(() => collectTaskArtifacts(messages), [messages]);
+  const [selectedPath, setSelectedPath] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (selectedPath && !artifacts.some((artifact) => artifact.path === selectedPath)) setSelectedPath(null);
+  }, [artifacts, selectedPath]);
+
+  if (selectedPath) {
+    return <WorkbenchArtifactPreview path={selectedPath} onBack={() => setSelectedPath(null)} />;
+  }
+
+  if (artifacts.length === 0) {
+    return (
+      <div className="workbench-state" role="status">
+        {t("No files were produced or linked in this task.", "此任务尚未生成或链接文件。")}
+      </div>
+    );
+  }
+
+  return (
+    <div className="workbench-resources workbench-scroll">
+      <p className="workbench-resource-summary">
+        {t("Files produced, edited, or linked by Pi.", "Pi 生成、编辑或链接的文件。")}
+      </p>
+      <div className="workbench-resource-list">
+        {artifacts.map((artifact) => {
+          const operation = artifact.operation === "created"
+            ? t("Created", "已创建")
+            : artifact.operation === "modified"
+              ? t("Modified", "已修改")
+              : t("Linked", "已链接");
+          return (
+            <div className="workbench-artifact-row" key={artifact.path}>
+              <button
+                className="workbench-resource-row"
+                type="button"
+                title={artifact.path}
+                onClick={() => setSelectedPath(artifact.path)}
+              >
+                <WorkbenchIcon icon="artifacts" />
+                <span className="workbench-resource-copy">
+                  <strong>{artifact.label}</strong>
+                  <small>{operation} · {artifact.path}</small>
+                </span>
+                <Icon name="chevron-right" size={15} />
+              </button>
+              <PathActions path={artifact.path} />
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+function WorkbenchArtifactPreview({ path, onBack }: { path: string; onBack: () => void }) {
+  const { t } = useI18n();
+  const [preview, setPreview] = useState<WorkspaceFilePreview | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [refreshVersion, setRefreshVersion] = useState(0);
+  const [showSource, setShowSource] = useState(false);
+
+  useEffect(() => {
+    let active = true;
+    setLoading(true);
+    setError(null);
+    setShowSource(false);
+    api.readWorkspaceFile(path)
+      .then((nextPreview) => {
+        if (active) setPreview(nextPreview);
+      })
+      .catch((loadError) => {
+        if (active) {
+          setPreview(null);
+          setError(loadError instanceof Error ? loadError.message : String(loadError));
+        }
+      })
+      .finally(() => {
+        if (active) setLoading(false);
+      });
+    return () => {
+      active = false;
+    };
+  }, [path, refreshVersion]);
+
+  async function openArtifact() {
+    try {
+      await api.openWorkspacePath(path);
+    } catch (openError) {
+      showToast(t("Could not open artifact: {error}", "无法打开产物：{error}", {
+        error: openError instanceof Error ? openError.message : String(openError),
+      }), "error");
+    }
+  }
+
+  const canToggleSource = preview?.kind === "html" || preview?.mimeType === "text/markdown";
+  const sizeLabel = preview
+    ? preview.size < 1024
+      ? `${preview.size} B`
+      : preview.size < 1024 * 1024
+        ? `${(preview.size / 1024).toFixed(1)} KB`
+        : `${(preview.size / 1024 / 1024).toFixed(1)} MB`
+    : "";
+
+  return (
+    <div className="workbench-artifact-preview">
+      <div className="workbench-artifact-toolbar">
+        <button className="icon-button" type="button" onClick={onBack} aria-label={t("Back to artifacts", "返回产物列表")}>
+          <Icon name="chevron-left" size={17} />
+        </button>
+        <span className="workbench-artifact-path" title={path}>{path}</span>
+        {canToggleSource && (
+          <button className="workbench-primary secondary" type="button" onClick={() => setShowSource((current) => !current)}>
+            {showSource ? t("View preview", "查看预览") : t("View source", "查看源文件")}
+          </button>
+        )}
+        <button className="icon-button" type="button" onClick={() => setRefreshVersion((version) => version + 1)} aria-label={t("Refresh for latest", "刷新最新版本")} title={t("Refresh for latest", "刷新最新版本")}>
+          <Icon name="rotate-cw" size={16} />
+        </button>
+        <button className="icon-button" type="button" onClick={() => void openArtifact()} aria-label={t("Open artifact", "打开产物")} title={t("Open artifact", "打开产物")}>
+          <Icon name="monitor" size={16} />
+        </button>
+        <PathActions path={path} />
+      </div>
+      {preview && (
+        <div className="workbench-artifact-meta">
+          <span>{sizeLabel}</span>
+          <span>{preview.mimeType}</span>
+          <time dateTime={new Date(preview.modifiedAt).toISOString()}>{new Date(preview.modifiedAt).toLocaleString()}</time>
+        </div>
+      )}
+      <div className="workbench-artifact-stage">
+        {loading ? (
+          <div className="workbench-state" role="status">{t("Loading preview...", "正在加载预览...")}</div>
+        ) : error ? (
+          <div className="workbench-state error" role="alert">{error}</div>
+        ) : preview?.kind === "too-large" ? (
+          <div className="workbench-state" role="status">
+            {t("This file is too large to preview in the side panel.", "此文件太大，无法在侧边面板中预览。")}
+          </div>
+        ) : preview?.kind === "unsupported" ? (
+          <div className="workbench-state" role="status">
+            {t("Preview is not available for this file type. Open it with the system application.", "此文件类型无法预览，请使用系统应用打开。")}
+          </div>
+        ) : preview?.kind === "image" && preview.dataBase64 ? (
+          <img className="workbench-artifact-image" src={`data:${preview.mimeType};base64,${preview.dataBase64}`} alt={path} />
+        ) : preview?.kind === "pdf" && preview.dataBase64 ? (
+          <iframe className="workbench-artifact-frame" src={`data:${preview.mimeType};base64,${preview.dataBase64}`} title={path} />
+        ) : preview?.kind === "html" && !showSource ? (
+          <iframe className="workbench-artifact-frame" srcDoc={preview.content ?? ""} sandbox="" title={path} />
+        ) : preview?.mimeType === "text/markdown" && !showSource ? (
+          <div className="workbench-artifact-markdown"><Markdown>{preview.content ?? ""}</Markdown></div>
+        ) : preview?.content !== undefined ? (
+          <pre className="workbench-artifact-source"><code>{preview.content}</code></pre>
+        ) : null}
+      </div>
+    </div>
   );
 }
 
@@ -712,6 +944,10 @@ function WorkbenchSideTask() {
 function WorkbenchIcon({ icon }: { icon: WorkbenchEntry["icon"] }) {
   const path = icon === "plan"
     ? "M9 6h11M9 12h11M9 18h11M4 6l1 1 2-2M4 12l1 1 2-2M4 18l1 1 2-2"
+    : icon === "sources"
+      ? "M10 13a5 5 0 0 0 7.1.1l2-2a5 5 0 0 0-7.1-7.1l-1.1 1.1M14 11a5 5 0 0 0-7.1-.1l-2 2A5 5 0 0 0 12 20l1.1-1.1"
+    : icon === "artifacts"
+      ? "M14 3H6a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V9m-6-6 6 6m-6-6v6h6"
     : icon === "review"
       ? "M8 7h8M8 12h8M8 17h5M5 7h.01M5 12h.01M5 17h.01"
     : icon === "terminal"
@@ -726,6 +962,8 @@ function WorkbenchIcon({ icon }: { icon: WorkbenchEntry["icon"] }) {
 
 function getWorkbenchTitle(view: WorkbenchView, t: (en: string, zhCN: string, values?: Record<string, string | number>) => string): string {
   if (view === "plan") return t("Plan", "计划");
+  if (view === "sources") return t("Sources", "来源");
+  if (view === "artifacts") return t("Artifacts", "产物");
   if (view === "review") return t("Review", "审阅");
   if (view === "terminal") return t("Terminals", "终端");
   if (view === "browser") return t("Browser", "浏览器");

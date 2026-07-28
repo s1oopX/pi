@@ -36,6 +36,7 @@ import { createRollingLog } from "./rolling-log.js";
 import { prepareSessionImport, resolveKnownSessionFile } from "./session-files.js";
 import { createTaskRegistry } from "./task-registry.js";
 import { checkDesktopUpdate } from "./update.js";
+import { readWorkspaceFilePreview, resolveWorkspaceFilePath } from "./workspace-file-preview.js";
 import { loadStoredWorkspace, saveStoredWorkspace } from "./workspace-state.js";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
@@ -1220,6 +1221,17 @@ ipcMain.handle("workspace:reveal-path", async (_event, targetPath, taskId) => {
 	shell.showItemInFolder(absolutePath);
 	return { revealed: true, path: absolutePath, insideWorkspace };
 });
+
+ipcMain.handle("workspace:open-path", async (_event, targetPath, taskId) => {
+	const { absolutePath } = await resolveWorkspaceFilePath(resolveTaskCwd(taskId), String(targetPath ?? ""));
+	const error = await shell.openPath(absolutePath);
+	if (error) throw new Error(error);
+	return { opened: true, path: absolutePath };
+});
+
+ipcMain.handle("workspace:read-file", async (_event, targetPath, taskId) =>
+	readWorkspaceFilePreview(resolveTaskCwd(taskId), String(targetPath ?? "")),
+);
 
 const hasSingleInstanceLock = app.requestSingleInstanceLock();
 if (!hasSingleInstanceLock) {

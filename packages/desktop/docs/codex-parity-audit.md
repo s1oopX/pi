@@ -18,7 +18,7 @@ continuous alignment loop; one row lands per iteration.
 | Inline diff comments → ask the agent to address | Select an old/new line number, write a review comment, and draft the exact file/section/line context into the composer | ✅ |
 | GitHub PR review comments in-app (PR Chat) | — | ❌ heavy (GitHub API + auth); deliberate non-goal for now |
 | Multiple terminal tabs | Concurrent workbench tabs with preserved output/drafts/history and per-command Stop | ✅ |
-| Task sidebar: live plan/sources/artifacts | Workbench Plan reads the latest real `update_plan` tool call; live tool cards, turn summary, streaming status | 🟡 plan landed; sources/artifacts open |
+| Task sidebar: live plan/sources/artifacts | Workbench Plan reads the latest real `update_plan` tool call; Sources de-duplicates cited HTTP(S) links; Artifacts tracks written, edited, and linked workspace files | ✅ |
 | Summary pane | Turn summary | ✅ |
 | Session naming/rename, thread search | Inline rename (double-click), search | ✅ |
 | Copy last reply, per-message copy | Command palette + Mod+Shift+C; hover copy | ✅ |
@@ -26,15 +26,14 @@ continuous alignment loop; one row lands per iteration.
 | Drag-drop folder to open; drop narration | Window-level drop + narration overlay | ✅ |
 | Contextual window title | session — app | ✅ |
 | In-app browser for frontend iteration | Sandboxed HTTP(S) frame with URL navigation, back/forward, reload, and external fallback | ✅ |
-| Artifact viewer (PDF/spreadsheet outputs) | — | ❌ low priority (rare output shape here) |
+| Artifact viewer (PDF/spreadsheet outputs) | Inline text, Markdown, HTML, image, and PDF preview with source toggle, refresh, open, reveal, and copy-path actions; Office binaries open in the system app | 🟡 core landed; Office preview delegated |
 | Computer use / plugins / memory / image generation | — | ➖ platform-scope non-goals for a BYO-endpoint client |
 | SSH remote devboxes | — | ➖ non-goal (local-first product) |
 | Automations / scheduled tasks | — | ❌ candidate (long-term; backend cron-like runs) |
 
 ## Loop backlog (ordered)
 
-1. Task-sidebar sources and first-class artifacts.
-2. Artifact viewer for supported output files.
-3. Automations / scheduled tasks.
+1. Automations / scheduled tasks.
+2. Revisit inline Office/spreadsheet preview only if the system-app fallback proves insufficient.
 
 Sources: [OpenAI — Introducing the Codex app](https://openai.com/index/introducing-the-codex-app/), [SmartScope — Codex desktop April 2026 update](https://smartscope.blog/en/generative-ai/chatgpt/codex-desktop-major-update-april-2026/), [Codex KB — workspace/review pane](https://codex.danielvaughan.com/2026/04/17/codex-app-workspace-pr-review-task-sidebar-artifact-viewer/), [Macaron — Codex review pane guide](https://macaron.im/blog/codex-app-review-pane), [Releasebot — Codex updates July 2026](https://releasebot.io/updates/openai/codex)

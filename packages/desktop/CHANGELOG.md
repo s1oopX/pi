@@ -8,6 +8,7 @@ client (Electron main process and the `renderer-next` React renderer).
 
 ### Added
 
+- Task Sources and first-class Artifacts in the workbench: cited credential-free HTTP(S) links are normalized and de-duplicated; files from `write`/`edit` tool calls and local Markdown links stay available with text, Markdown, HTML, image, and PDF previews, source toggle, refresh, system-open, reveal, and copy-path actions. Preview reads are capped at 40 MB and verify both lexical and real paths so workspace symlinks cannot expose outside files; unsupported Office binaries fall back to the system application.
 - Embedded workbench browser for frontend iteration: user-entered HTTP(S) pages render in a sandboxed frame with address navigation, back/forward history, reload, and an external-browser fallback for sites that deny framing.
 - Line-anchored diff review comments: line numbers in the Git panel are keyboard-operable comment targets. A submitted comment drafts an agent prompt with the exact file, staged/unstaged section, old/new side, line number, and diff-line text.
 - Live task plans in the workbench, backed by a bundled `update_plan` tool rather than inferred reply text. Plans update from streamed, persisted tool calls and show the latest explanation, completion progress, and pending/in-progress/completed steps with accessible status semantics.

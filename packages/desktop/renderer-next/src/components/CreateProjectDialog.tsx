@@ -126,9 +126,9 @@ export function CreateProjectDialog({ open, template, onClose }: CreateProjectDi
         </div>
 
         <div className="create-project-field">
-          <label className="form-label">
+          <span className="form-label">
             {t("Parent folder", "父文件夹")}
-          </label>
+          </span>
           <div className="create-project-folder-row">
             <span className="create-project-folder-path">
               {parentDir || t("No folder selected", "未选择文件夹")}

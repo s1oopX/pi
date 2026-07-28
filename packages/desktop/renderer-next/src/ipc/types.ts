@@ -479,6 +479,18 @@ export interface WorkspaceGitStatus {
   behind?: number;
 }
 
+export type WorkspaceFilePreviewKind = "text" | "html" | "image" | "pdf" | "unsupported" | "too-large";
+
+export interface WorkspaceFilePreview {
+  path: string;
+  size: number;
+  modifiedAt: number;
+  mimeType: string;
+  kind: WorkspaceFilePreviewKind;
+  content?: string;
+  dataBase64?: string;
+}
+
 export interface GitChangeFile {
   status: string;
   path: string;

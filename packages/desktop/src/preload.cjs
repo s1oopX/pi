@@ -117,6 +117,12 @@ contextBridge.exposeInMainWorld("piDesktop", {
 	revealWorkspacePath(/** @type {unknown} */ targetPath, /** @type {string | undefined} */ taskId) {
 		return ipcRenderer.invoke("workspace:reveal-path", targetPath, taskId);
 	},
+	openWorkspacePath(/** @type {unknown} */ targetPath, /** @type {string | undefined} */ taskId) {
+		return ipcRenderer.invoke("workspace:open-path", targetPath, taskId);
+	},
+	readWorkspaceFile(/** @type {unknown} */ targetPath, /** @type {string | undefined} */ taskId) {
+		return ipcRenderer.invoke("workspace:read-file", targetPath, taskId);
+	},
 	revealSessionFile(/** @type {unknown} */ sessionPath) {
 		return ipcRenderer.invoke("session:reveal", sessionPath);
 	},

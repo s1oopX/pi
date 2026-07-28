@@ -36,6 +36,7 @@ import type {
   SessionTreeData,
   SlashCommand,
   ThinkingLevel,
+  WorkspaceFilePreview,
   WorkspaceGitStatus,
 } from "./types";
 
@@ -90,6 +91,8 @@ export interface PiDesktopApi {
     targetPath: string,
     taskId?: string,
   ): Promise<{ revealed: boolean; path: string; insideWorkspace: boolean }>;
+  openWorkspacePath(targetPath: string, taskId?: string): Promise<{ opened: boolean; path: string }>;
+  readWorkspaceFile(targetPath: string, taskId?: string): Promise<WorkspaceFilePreview>;
   revealSessionFile(sessionPath: string): Promise<{ revealed: boolean }>;
   trashSessionFile(sessionPath: string): Promise<{ trashed: boolean }>;
   exportSessionFile(sessionPath: string): Promise<{ exported: boolean; path?: string }>;
@@ -634,6 +637,14 @@ export async function revealWorkspacePath(
   targetPath: string,
 ): Promise<{ revealed: boolean; path: string; insideWorkspace: boolean }> {
   return requireApi().revealWorkspacePath(targetPath, activeBackendTaskId);
+}
+
+export async function openWorkspacePath(targetPath: string): Promise<void> {
+  await requireApi().openWorkspacePath(targetPath, activeBackendTaskId);
+}
+
+export async function readWorkspaceFile(targetPath: string): Promise<WorkspaceFilePreview> {
+  return requireApi().readWorkspaceFile(targetPath, activeBackendTaskId);
 }
 
 export async function revealSessionFile(sessionPath: string): Promise<void> {
