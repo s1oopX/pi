@@ -557,6 +557,31 @@ export interface GitPrRemote {
   repo: string;
 }
 
+export type GitPrFeedbackKind = "comment" | "review" | "inline";
+
+export interface GitPrFeedback {
+  kind: GitPrFeedbackKind;
+  id: string;
+  author: string;
+  body: string;
+  createdAt: string;
+  url: string;
+  state?: string;
+  path?: string;
+  line?: number;
+  side?: string;
+}
+
+export interface GitPrReview {
+  number: number;
+  title: string;
+  url: string;
+  state: string;
+  reviewDecision?: string;
+  feedback: GitPrFeedback[];
+  partial: boolean;
+}
+
 export interface GitPrContext {
   branch: string | null;
   detached: boolean;

@@ -4,6 +4,7 @@ import {
 	buildCompareUrl,
 	createPullRequest,
 	getPullRequestContext,
+	getPullRequestReview,
 	isGitHubHost,
 	parseGitRemoteUrl,
 	validatePrTitle,
@@ -157,6 +158,85 @@ describe("getPullRequestContext", () => {
 		assert.equal(context.isGitHub, false);
 		assert.equal(context.compareUrl, null);
 		assert.equal(context.hasUpstream, false);
+	});
+});
+
+describe("getPullRequestReview", () => {
+	it("loads general, review, and inline feedback for the current branch", async () => {
+		const exec = fakeExec([
+			{ stdout: "feature/x\n" },
+			{ stdout: "https://github.com/o/r.git\n" },
+			{
+				stdout: JSON.stringify({
+					number: 7,
+					title: "Improve retries",
+					url: "https://github.com/o/r/pull/7",
+					state: "OPEN",
+					reviewDecision: "CHANGES_REQUESTED",
+					comments: [{
+						id: "comment-1",
+						author: { login: "alice" },
+						body: "Please add a regression test.",
+						createdAt: "2026-07-29T02:00:00Z",
+						url: "https://github.com/o/r/pull/7#issuecomment-1",
+					}],
+					reviews: [{
+						id: "review-1",
+						author: { login: "bob" },
+						body: "The fallback needs work.",
+						submittedAt: "2026-07-29T01:00:00Z",
+						state: "CHANGES_REQUESTED",
+					}],
+				}),
+			},
+			{
+				stdout: JSON.stringify([{
+					id: 99,
+					user: { login: "carol" },
+					body: "Cover this retry branch.",
+					created_at: "2026-07-29T03:00:00Z",
+					html_url: "https://github.com/o/r/pull/7#discussion_r99",
+					path: "src/retry.ts",
+					line: 42,
+					side: "RIGHT",
+				}]),
+			},
+		]);
+
+		const review = await getPullRequestReview("C:\\work", { ...fsOk, execFileImpl: exec.execFileImpl });
+		assert.equal(review.number, 7);
+		assert.equal(review.reviewDecision, "CHANGES_REQUESTED");
+		assert.equal(review.partial, false);
+		assert.deepEqual(review.feedback.map((item) => item.kind), ["review", "comment", "inline"]);
+		assert.deepEqual(review.feedback.at(-1), {
+			kind: "inline",
+			id: "99",
+			author: "carol",
+			body: "Cover this retry branch.",
+			createdAt: "2026-07-29T03:00:00Z",
+			url: "https://github.com/o/r/pull/7#discussion_r99",
+			path: "src/retry.ts",
+			line: 42,
+			side: "RIGHT",
+		});
+		assert.deepEqual(exec.calls.at(-1).args, [
+			"api",
+			"--hostname",
+			"github.com",
+			"repos/o/r/pulls/7/comments?per_page=100",
+		]);
+	});
+
+	it("reports when the current branch has no pull request", async () => {
+		const exec = fakeExec([
+			{ stdout: "feature/x\n" },
+			{ stdout: "https://github.com/o/r.git\n" },
+			{ error: new Error("exit 1"), stderr: "no pull requests found for branch feature/x" },
+		]);
+		await assert.rejects(
+			getPullRequestReview("C:\\work", { ...fsOk, execFileImpl: exec.execFileImpl }),
+			/no pull requests found/iu,
+		);
 	});
 });
 

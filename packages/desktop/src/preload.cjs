@@ -132,6 +132,9 @@ contextBridge.exposeInMainWorld("piDesktop", {
 	getGitPrContext(/** @type {string | undefined} */ taskId) {
 		return ipcRenderer.invoke("git:pr-context", taskId);
 	},
+	getGitPrReview(/** @type {string | undefined} */ taskId) {
+		return ipcRenderer.invoke("git:pr-review", taskId);
+	},
 	createGitPullRequest(/** @type {unknown} */ params, /** @type {string | undefined} */ taskId) {
 		return ipcRenderer.invoke("git:create-pr", params, taskId);
 	},

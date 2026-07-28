@@ -21,7 +21,7 @@ import {
 	restoreFileChanges,
 	switchGitBranch,
 } from "./git-commit.js";
-import { createPullRequest, getPullRequestContext } from "./git-pr.js";
+import { createPullRequest, getPullRequestContext, getPullRequestReview } from "./git-pr.js";
 import { getGitWorkspaceStatus } from "./git-workspace-status.js";
 import {
 	createTaskWorktree,
@@ -1740,6 +1740,8 @@ ipcMain.handle("git:switch-branch", async (_event, name, options, taskId) =>
 );
 
 ipcMain.handle("git:pr-context", async (_event, taskId) => getPullRequestContext(resolveTaskCwd(taskId)));
+
+ipcMain.handle("git:pr-review", async (_event, taskId) => getPullRequestReview(resolveTaskCwd(taskId)));
 
 ipcMain.handle("git:create-pr", async (_event, params, taskId) => {
 	const result = await createPullRequest(resolveTaskCwd(taskId), {

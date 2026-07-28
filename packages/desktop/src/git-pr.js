@@ -11,10 +11,29 @@ import { describeGitFailure, resolveWorkspaceDir, runGit, validateBranchName } f
 const GIT_TIMEOUT_MS = 15000;
 const GH_CREATE_TIMEOUT_MS = 30000;
 const GH_PROBE_TIMEOUT_MS = 5000;
+const GH_READ_TIMEOUT_MS = 30000;
 const MAX_PR_TITLE_LENGTH = 300;
 const MAX_PR_BODY_LENGTH = 10000;
+const MAX_PR_FEEDBACK_BODY_LENGTH = 4000;
+const MAX_PR_FEEDBACK_ITEMS = 100;
 
 const REPO_SEGMENT_PATTERN = /^[A-Za-z0-9_.-]+$/u;
+
+/** @typedef {"comment" | "review" | "inline"} PullRequestFeedbackKind */
+/**
+ * @typedef {{
+ *   kind: PullRequestFeedbackKind,
+ *   id: string,
+ *   author: string,
+ *   body: string,
+ *   createdAt: string,
+ *   url: string,
+ *   state?: string,
+ *   path?: string,
+ *   line?: number,
+ *   side?: string,
+ * }} PullRequestFeedback
+ */
 
 /**
  * Parse a git remote URL into { host, owner, repo }. Supports https, ssh://,
@@ -124,6 +143,47 @@ function isMissingExecutable(result) {
 	);
 }
 
+/** @param {unknown} value @returns {Record<string, unknown> | undefined} */
+function asRecord(value) {
+	return value && typeof value === "object" && !Array.isArray(value)
+		? /** @type {Record<string, unknown>} */ (value)
+		: undefined;
+}
+
+/**
+ * @param {PullRequestFeedback[]} feedback
+ * @param {unknown} value
+ * @param {PullRequestFeedbackKind} kind
+ * @param {string} pullRequestUrl
+ */
+function appendFeedback(feedback, value, kind, pullRequestUrl) {
+	const item = asRecord(value);
+	if (!item) return;
+	const rawBody = typeof item.body === "string" ? item.body.trim() : "";
+	if (!rawBody) return;
+	const body = rawBody.length <= MAX_PR_FEEDBACK_BODY_LENGTH
+		? rawBody
+		: `${rawBody.slice(0, MAX_PR_FEEDBACK_BODY_LENGTH)}…`;
+	const author = asRecord(kind === "inline" ? item.user : item.author);
+	const rawId = item.id;
+	const rawLine = item.line ?? item.original_line;
+	const line = typeof rawLine === "number" && Number.isSafeInteger(rawLine) && rawLine > 0 ? rawLine : undefined;
+	const createdAtKey = kind === "inline" ? "created_at" : kind === "review" ? "submittedAt" : "createdAt";
+	const urlKey = kind === "inline" ? "html_url" : "url";
+	feedback.push({
+		kind,
+		id: typeof rawId === "string" || typeof rawId === "number" ? String(rawId) : `${kind}-${feedback.length}`,
+		author: typeof author?.login === "string" ? author.login : "unknown",
+		body,
+		createdAt: typeof item[createdAtKey] === "string" ? item[createdAtKey] : "",
+		url: typeof item[urlKey] === "string" ? item[urlKey] : pullRequestUrl,
+		...(typeof item.state === "string" && item.state ? { state: item.state } : {}),
+		...(typeof item.path === "string" && item.path ? { path: item.path } : {}),
+		...(line ? { line } : {}),
+		...(typeof item.side === "string" && item.side ? { side: item.side } : {}),
+	});
+}
+
 /**
  * @param {string} cwd
  * @param {import("node:child_process").execFile} execFileImpl
@@ -209,6 +269,97 @@ export async function getPullRequestContext(
 		: null;
 
 	return { branch, detached, baseBranch, remote, isGitHub, compareUrl, lastCommitSubject, hasUpstream, ghAvailable };
+}
+
+/** @param {string} workspace */
+export async function getPullRequestReview(
+	workspace,
+	{ execFileImpl = execFile, realpathImpl = realpath, statImpl = stat, timeoutMs = GIT_TIMEOUT_MS } = {},
+) {
+	const cwd = await resolveWorkspaceDir(workspace, realpathImpl, statImpl);
+	const { branch } = await readBranch(cwd, execFileImpl, timeoutMs);
+	if (!branch) throw new Error("Check out a branch before loading pull request feedback");
+	const remote = await readRemote(cwd, execFileImpl, timeoutMs);
+	if (!remote || !isGitHubHost(remote.host)) throw new Error("Pull request feedback needs a GitHub remote named origin");
+
+	const repoSlug = `${remote.host}/${remote.owner}/${remote.repo}`;
+	const view = await runGh(
+		cwd,
+		["pr", "view", branch, "--repo", repoSlug, "--json", "number,title,url,state,reviewDecision,comments,reviews"],
+		execFileImpl,
+		GH_READ_TIMEOUT_MS,
+	);
+	if (isMissingExecutable(view)) throw new Error("GitHub CLI (gh) is required to load pull request feedback");
+	if (view.error) throw describeGitFailure("Could not load the current branch's pull request", view);
+
+	let parsed;
+	try {
+		parsed = JSON.parse(view.stdout);
+	} catch {
+		throw new Error("gh returned invalid pull request data");
+	}
+	const pullRequest = asRecord(parsed);
+	const number = pullRequest?.number;
+	const title = pullRequest?.title;
+	const url = pullRequest?.url;
+	if (
+		!pullRequest ||
+		typeof number !== "number" ||
+		!Number.isSafeInteger(number) ||
+		number <= 0 ||
+		typeof title !== "string" ||
+		typeof url !== "string"
+	) {
+		throw new Error("gh returned incomplete pull request data");
+	}
+
+	/** @type {PullRequestFeedback[]} */
+	const feedback = [];
+	for (const comment of Array.isArray(pullRequest.comments) ? pullRequest.comments : []) {
+		appendFeedback(feedback, comment, "comment", url);
+	}
+	for (const review of Array.isArray(pullRequest.reviews) ? pullRequest.reviews : []) {
+		appendFeedback(feedback, review, "review", url);
+	}
+
+	let partial = false;
+	const inline = await runGh(
+		cwd,
+		[
+			"api",
+			"--hostname",
+			remote.host,
+			`repos/${remote.owner}/${remote.repo}/pulls/${number}/comments?per_page=100`,
+		],
+		execFileImpl,
+		GH_READ_TIMEOUT_MS,
+	);
+	if (inline.error) {
+		partial = true;
+	} else {
+		try {
+			const inlineComments = JSON.parse(inline.stdout);
+			if (Array.isArray(inlineComments)) {
+				for (const comment of inlineComments) appendFeedback(feedback, comment, "inline", url);
+			} else {
+				partial = true;
+			}
+		} catch {
+			partial = true;
+		}
+	}
+
+	feedback.sort((left, right) => left.createdAt.localeCompare(right.createdAt));
+	const reviewDecision = pullRequest.reviewDecision;
+	return {
+		number,
+		title,
+		url,
+		state: typeof pullRequest.state === "string" ? pullRequest.state : "UNKNOWN",
+		...(typeof reviewDecision === "string" && reviewDecision ? { reviewDecision } : {}),
+		feedback: feedback.slice(-MAX_PR_FEEDBACK_ITEMS),
+		partial,
+	};
 }
 
 /**
