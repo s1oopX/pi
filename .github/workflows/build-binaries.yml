@@ -222,10 +222,14 @@ jobs:
           retention-days: 14
 
   stage-github-release:
-    runs-on: ubuntu-latest
+    # Upstream needs both the cross-platform binaries (build) and the desktop
+    # exe (build-desktop). A fork only ships the Windows exe — the build job
+    # fails there on upstream-only code, so don't let that block staging.
     needs:
       - build
       - build-desktop
+    if: ${{ always() && needs.build-desktop.result == 'success' }}
+    runs-on: ubuntu-latest
     permissions:
       actions: read
       contents: write
@@ -234,6 +238,7 @@ jobs:
       RELEASE_TAG: ${{ github.event.inputs.tag || github.ref_name }}
     steps:
       - name: Download GitHub release payload
+        if: ${{ github.repository == 'earendil-works/pi' }}
         uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
         with:
           name: release-assets-${{ env.RELEASE_TAG }}
@@ -245,13 +250,29 @@ jobs:
           name: desktop-release-assets-${{ env.RELEASE_TAG }}
           path: release-assets
 
-      - name: Validate GitHub release payload
+      - name: Validate and stage GitHub release payload
         run: |
           set -euo pipefail
-
           cd release-assets
 
           VERSION="${RELEASE_TAG#v}"
+          IS_FORK=$([ "${GITHUB_REPOSITORY}" = "earendil-works/pi" ] && echo 0 || echo 1)
+
+          if [ "$IS_FORK" -eq 1 ]; then
+            # A fork ships only the Windows desktop exe (no cross-platform
+            # binaries, no npm package, no source archive).
+            desktop_asset=$(ls PiStudio-Dev-"${VERSION}".exe 2>/dev/null || ls PiStudio-"${VERSION}".exe 2>/dev/null || true)
+            if [ -z "$desktop_asset" ]; then
+              echo "::error::Desktop exe not found in payload"
+              exit 1
+            fi
+            rm -f SHA256SUMS
+            sha256sum "$desktop_asset" > SHA256SUMS
+            sha256sum -c SHA256SUMS
+            echo "Fork release assets: $desktop_asset, SHA256SUMS"
+            exit 0
+          fi
+
           source_asset="pi-${VERSION}-source.tar.gz"
           desktop_asset="PiStudio-${VERSION}.exe"
           expected_assets=(
@@ -294,25 +315,35 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           set -euo pipefail
-
           cd release-assets
 
           VERSION="${RELEASE_TAG#v}"
-          source_asset="pi-${VERSION}-source.tar.gz"
-          desktop_asset="PiStudio-${VERSION}.exe"
-          release_assets=(
-            "${source_asset}"
-            pi-darwin-arm64.tar.gz
-            pi-darwin-x64.tar.gz
-            pi-linux-x64.tar.gz
-            pi-linux-arm64.tar.gz
-            pi-windows-x64.zip
-            pi-windows-arm64.zip
-            "${desktop_asset}"
-            pi-coding-agent-install-package.json
-            pi-coding-agent-install-package-lock.json
-            SHA256SUMS
-          )
+          IS_FORK=$([ "${GITHUB_REPOSITORY}" = "earendil-works/pi" ] && echo 0 || echo 1)
+
+          if [ "$IS_FORK" -eq 1 ]; then
+            desktop_asset=$(ls PiStudio-Dev-"${VERSION}".exe 2>/dev/null || ls PiStudio-"${VERSION}".exe 2>/dev/null || true)
+            if [ -z "$desktop_asset" ]; then
+              echo "::error::Desktop exe not found"
+              exit 1
+            fi
+            release_assets=("$desktop_asset" SHA256SUMS)
+          else
+            source_asset="pi-${VERSION}-source.tar.gz"
+            desktop_asset="PiStudio-${VERSION}.exe"
+            release_assets=(
+              "${source_asset}"
+              pi-darwin-arm64.tar.gz
+              pi-darwin-x64.tar.gz
+              pi-linux-x64.tar.gz
+              pi-linux-arm64.tar.gz
+              pi-windows-x64.zip
+              pi-windows-arm64.zip
+              "${desktop_asset}"
+              pi-coding-agent-install-package.json
+              pi-coding-agent-install-package-lock.json
+              SHA256SUMS
+            )
+          fi
 
           existing_release="$(gh release view "${RELEASE_TAG}" --json isDraft --jq .isDraft 2>/dev/null || true)"
           if [[ "${existing_release}" == "false" ]]; then
@@ -323,11 +354,20 @@ jobs:
             gh release delete "${RELEASE_TAG}" --yes
           fi
 
+          # Fork release notes: use RELEASE_NOTES.dev.md from the repo if present,
+          # else fall back to a generated one. Upstream uses the staged RELEASE_NOTES.md.
+          notes_arg=(--generate-notes)
+          if [ "$IS_FORK" -eq 1 ] && gh api "repos/${GITHUB_REPOSITORY}/contents/RELEASE_NOTES.dev.md?ref=${GITHUB_SHA}" --jq '.content' 2>/dev/null | base64 -d > /tmp/fork-notes.md && [ -s /tmp/fork-notes.md ]; then
+            notes_arg=(--notes-file /tmp/fork-notes.md)
+          elif [ -f RELEASE_NOTES.md ]; then
+            notes_arg=(--notes-file RELEASE_NOTES.md)
+          fi
+
           gh release create "${RELEASE_TAG}" \
             --verify-tag \
             --draft \
             --title "${RELEASE_TAG}" \
-            --notes-file RELEASE_NOTES.md \
+            "${notes_arg[@]}" \
             "${release_assets[@]}"
 
           expected_asset_names="$(printf '%s\n' "${release_assets[@]}" | sort)"
