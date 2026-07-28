@@ -17,6 +17,7 @@ import type {
   GitHunkResult,
   GitPrContext,
   GitPrReview,
+  GitPrReviewAction,
   GitPrResult,
   GitPushResult,
   GitSwitchResult,
@@ -95,6 +96,7 @@ export interface PiDesktopApi {
   switchGitBranch(name: string, options?: { create?: boolean }, taskId?: string): Promise<GitSwitchResult>;
   getGitPrContext(taskId?: string): Promise<GitPrContext>;
   getGitPrReview?: (taskId?: string) => Promise<GitPrReview>;
+  updateGitPrReview?: (action: GitPrReviewAction, taskId?: string) => Promise<{ updated: boolean }>;
   createGitPullRequest(params: { title: string; body: string; base: string }, taskId?: string): Promise<GitPrResult>;
   listWorkspaceFiles(query?: string, taskId?: string): Promise<{ files: string[] }>;
   openWorkspaceLocation(cwd?: string): Promise<{ opened: boolean }>;
@@ -774,6 +776,12 @@ export async function getGitPrReview(): Promise<GitPrReview> {
   const api = requireApi();
   if (!api.getGitPrReview) throw new Error("Pull request feedback needs a newer Pi Studio build");
   return api.getGitPrReview(activeBackendTaskId);
+}
+
+export async function updateGitPrReview(action: GitPrReviewAction): Promise<void> {
+  const api = requireApi();
+  if (!api.updateGitPrReview) throw new Error("Pull request actions need a newer Pi Studio build");
+  await api.updateGitPrReview(action, activeBackendTaskId);
 }
 
 export async function createGitPullRequest(params: { title: string; body: string; base: string }): Promise<GitPrResult> {

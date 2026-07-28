@@ -548,6 +548,12 @@ button.git-panel-file.expanded {
   outline: 0;
 }
 
+.git-panel-pr-reply {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
 .git-panel-line-comment-actions {
   display: flex;
   justify-content: flex-end;

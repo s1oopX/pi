@@ -570,6 +570,12 @@ export interface GitPrFeedback {
   path?: string;
   line?: number;
   side?: string;
+  threadId?: string;
+  resolved?: boolean;
+  outdated?: boolean;
+  canReply?: boolean;
+  canResolve?: boolean;
+  canUnresolve?: boolean;
 }
 
 export interface GitPrReview {
@@ -581,6 +587,11 @@ export interface GitPrReview {
   feedback: GitPrFeedback[];
   partial: boolean;
 }
+
+export type GitPrReviewAction =
+  | { type: "comment"; body: string }
+  | { type: "reply"; threadId: string; body: string }
+  | { type: "resolve"; threadId: string; resolved: boolean };
 
 export interface GitPrContext {
   branch: string | null;

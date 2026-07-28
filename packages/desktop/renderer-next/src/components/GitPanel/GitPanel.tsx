@@ -12,6 +12,7 @@ import type {
   GitPrFeedback,
   GitPrContext,
   GitPrReview,
+  GitPrReviewAction,
 } from "../../ipc/types";
 import { useStore } from "../../store";
 import { Icon } from "../Icon";
@@ -59,13 +60,23 @@ export function GitPanel({ onClose }: GitPanelProps) {
   const [prReview, setPrReview] = useState<GitPrReview | null>(null);
   const [prLoading, setPrLoading] = useState(false);
   const [prReviewLoading, setPrReviewLoading] = useState(false);
+  const [prReviewAction, setPrReviewAction] = useState<string | null>(null);
+  const [prComment, setPrComment] = useState("");
+  const [prReplyThreadId, setPrReplyThreadId] = useState<string | null>(null);
+  const [prReply, setPrReply] = useState("");
   const [prTitle, setPrTitle] = useState("");
   const [prBody, setPrBody] = useState("");
   const [prBase, setPrBase] = useState("");
   const [creatingPr, setCreatingPr] = useState(false);
 
   const sync = summarizeGitSync(workspaceGitStatus);
-  const busy = committing || pushing || Boolean(switchingBranch) || creatingBranch || creatingPr || Boolean(applyingHunk);
+  const busy = committing
+    || pushing
+    || Boolean(switchingBranch)
+    || creatingBranch
+    || creatingPr
+    || Boolean(prReviewAction)
+    || Boolean(applyingHunk);
 
   async function loadChanges() {
     setChangesLoading(true);
@@ -185,6 +196,9 @@ export function GitPanel({ onClose }: GitPanelProps) {
   async function loadPrContext() {
     setPrLoading(true);
     setPrReview(null);
+    setPrComment("");
+    setPrReplyThreadId(null);
+    setPrReply("");
     try {
       const context = await api.getGitPrContext();
       setPrContext(context);
@@ -211,6 +225,58 @@ export function GitPanel({ onClose }: GitPanelProps) {
     } finally {
       setPrReviewLoading(false);
     }
+  }
+
+  async function submitPrReviewAction(action: GitPrReviewAction, key: string, successMessage: string) {
+    if (prReviewAction) return false;
+    setPrReviewAction(key);
+    try {
+      await api.updateGitPrReview(action);
+      showToast(successMessage, "success");
+      await loadPrReview();
+      return true;
+    } catch (error) {
+      showToast(t("Could not update PR feedback: {message}", "无法更新 PR 反馈：{message}", {
+        message: ipcErrorReason(error),
+      }), "error");
+      return false;
+    } finally {
+      setPrReviewAction(null);
+    }
+  }
+
+  async function handlePrComment() {
+    const body = prComment.trim();
+    if (!body) return;
+    if (await submitPrReviewAction(
+      { type: "comment", body },
+      "comment",
+      t("Comment posted", "评论已发布"),
+    )) {
+      setPrComment("");
+    }
+  }
+
+  async function handlePrReply(feedback: GitPrFeedback) {
+    const body = prReply.trim();
+    if (!feedback.threadId || !body) return;
+    if (await submitPrReviewAction(
+      { type: "reply", threadId: feedback.threadId, body },
+      `reply:${feedback.threadId}`,
+      t("Reply posted", "回复已发布"),
+    )) {
+      setPrReplyThreadId(null);
+      setPrReply("");
+    }
+  }
+
+  async function handlePrThreadState(feedback: GitPrFeedback, resolved: boolean) {
+    if (!feedback.threadId) return;
+    await submitPrReviewAction(
+      { type: "resolve", threadId: feedback.threadId, resolved },
+      `resolve:${feedback.threadId}`,
+      resolved ? t("Review thread resolved", "审阅线程已解决") : t("Review thread reopened", "审阅线程已重新打开"),
+    );
   }
 
   async function handleCreatePr() {
@@ -499,48 +565,154 @@ export function GitPanel({ onClose }: GitPanelProps) {
                   <button
                     className="git-panel-pr-compare git-panel-pr-review-load"
                     type="button"
-                    disabled={prReviewLoading}
+                    disabled={prReviewLoading || Boolean(prReviewAction)}
                     onClick={() => void loadPrReview()}
                   >
                     {prReviewLoading ? t("Refreshing...", "正在刷新...") : t("Refresh feedback", "刷新反馈")}
                   </button>
                 </div>
+                <form
+                  className="git-panel-line-comment git-panel-pr-comment"
+                  aria-label={t("Comment on pull request", "评论 Pull Request")}
+                  onSubmit={(event) => {
+                    event.preventDefault();
+                    void handlePrComment();
+                  }}
+                >
+                  <textarea
+                    value={prComment}
+                    rows={3}
+                    maxLength={10000}
+                    placeholder={t("Comment on this PR", "评论此 PR")}
+                    aria-label={t("PR comment", "PR 评论")}
+                    disabled={Boolean(prReviewAction)}
+                    onChange={(event) => setPrComment(event.target.value)}
+                  />
+                  <div className="git-panel-line-comment-actions">
+                    <button type="submit" disabled={!prComment.trim() || Boolean(prReviewAction)}>
+                      {prReviewAction === "comment" ? t("Posting...", "正在发布...") : t("Post comment", "发布评论")}
+                    </button>
+                  </div>
+                </form>
                 {prReview.partial && (
                   <div className="git-panel-note">
-                    {t("Some inline review comments could not be loaded.", "部分行内审阅评论未能加载。")}
+                    {t("Some review threads could not be loaded.", "部分审阅线程未能加载。")}
                   </div>
                 )}
                 {prReview.feedback.length === 0 ? (
                   <div className="git-panel-note">{t("No review feedback yet.", "暂无审阅反馈。")}</div>
                 ) : (
-                  prReview.feedback.map((feedback) => (
-                    <form
-                      className="git-panel-line-comment"
-                      key={`${feedback.kind}:${feedback.id}`}
-                      onSubmit={(event) => {
-                        event.preventDefault();
-                        handleAskPrFeedback(feedback);
-                      }}
-                    >
-                      <div className="git-panel-line-comment-meta">
-                        <span>@{feedback.author}</span>
-                        <span>
-                          {feedback.path
-                            ? `${feedback.path}${feedback.line ? `:${feedback.line}` : ""}`
-                            : feedback.state ?? feedback.kind}
-                        </span>
-                      </div>
-                      <div className="git-panel-note"><Markdown>{feedback.body}</Markdown></div>
-                      <div className="git-panel-line-comment-actions">
-                        {feedback.url !== prReview.url && (
-                          <button type="button" onClick={() => void api.openExternal(feedback.url)}>
-                            {t("Open comment", "打开评论")}
+                  prReview.feedback.map((feedback) => {
+                    const location = feedback.path
+                      ? `${feedback.path}${feedback.line ? `:${feedback.line}` : ""}`
+                      : feedback.state ?? feedback.kind;
+                    const threadState = feedback.resolved === undefined
+                      ? ""
+                      : feedback.resolved
+                        ? t("Resolved", "已解决")
+                        : t("Open", "未解决");
+                    const metadata = [location, threadState, feedback.outdated ? t("Outdated", "已过时") : ""]
+                      .filter(Boolean)
+                      .join(" · ");
+                    return (
+                      <div className="git-panel-line-comment" key={`${feedback.kind}:${feedback.id}`}>
+                        <div className="git-panel-line-comment-meta">
+                          <span>@{feedback.author}</span>
+                          <span>{metadata}</span>
+                        </div>
+                        <div className="git-panel-note"><Markdown>{feedback.body}</Markdown></div>
+                        <div className="git-panel-line-comment-actions">
+                          {feedback.url !== prReview.url && (
+                            <button type="button" onClick={() => void api.openExternal(feedback.url)}>
+                              {t("Open comment", "打开评论")}
+                            </button>
+                          )}
+                          {feedback.threadId && feedback.canReply && (
+                            <button
+                              className="git-panel-pr-reply-toggle"
+                              type="button"
+                              disabled={Boolean(prReviewAction)}
+                              onClick={() => {
+                                setPrReplyThreadId((current) => current === feedback.threadId ? null : feedback.threadId ?? null);
+                                setPrReply("");
+                              }}
+                            >
+                              {prReplyThreadId === feedback.threadId ? t("Cancel reply", "取消回复") : t("Reply", "回复")}
+                            </button>
+                          )}
+                          {feedback.threadId && feedback.canResolve && (
+                            <button
+                              className="git-panel-pr-resolve"
+                              type="button"
+                              disabled={Boolean(prReviewAction)}
+                              onClick={() => void handlePrThreadState(feedback, true)}
+                            >
+                              {prReviewAction === `resolve:${feedback.threadId}`
+                                ? t("Resolving...", "正在解决...")
+                                : t("Resolve thread", "解决线程")}
+                            </button>
+                          )}
+                          {feedback.threadId && feedback.canUnresolve && (
+                            <button
+                              className="git-panel-pr-reopen"
+                              type="button"
+                              disabled={Boolean(prReviewAction)}
+                              onClick={() => void handlePrThreadState(feedback, false)}
+                            >
+                              {prReviewAction === `resolve:${feedback.threadId}`
+                                ? t("Reopening...", "正在重新打开...")
+                                : t("Reopen thread", "重新打开线程")}
+                            </button>
+                          )}
+                          <button
+                            className="git-panel-pr-ask"
+                            type="button"
+                            onClick={() => handleAskPrFeedback(feedback)}
+                          >
+                            {t("Ask agent", "让智能体处理")}
                           </button>
+                        </div>
+                        {feedback.threadId && feedback.canReply && prReplyThreadId === feedback.threadId && (
+                          <form
+                            className="git-panel-pr-reply"
+                            aria-label={t("Reply to review thread", "回复审阅线程")}
+                            onSubmit={(event) => {
+                              event.preventDefault();
+                              void handlePrReply(feedback);
+                            }}
+                          >
+                            <textarea
+                              value={prReply}
+                              rows={3}
+                              maxLength={10000}
+                              placeholder={t("Reply to this thread", "回复此线程")}
+                              aria-label={t("Review thread reply", "审阅线程回复")}
+                              autoFocus
+                              disabled={Boolean(prReviewAction)}
+                              onChange={(event) => setPrReply(event.target.value)}
+                            />
+                            <div className="git-panel-line-comment-actions">
+                              <button
+                                type="button"
+                                disabled={Boolean(prReviewAction)}
+                                onClick={() => {
+                                  setPrReplyThreadId(null);
+                                  setPrReply("");
+                                }}
+                              >
+                                {t("Cancel", "取消")}
+                              </button>
+                              <button type="submit" disabled={!prReply.trim() || Boolean(prReviewAction)}>
+                                {prReviewAction === `reply:${feedback.threadId}`
+                                  ? t("Posting...", "正在发布...")
+                                  : t("Post reply", "发布回复")}
+                              </button>
+                            </div>
+                          </form>
                         )}
-                        <button type="submit">{t("Ask agent", "让智能体处理")}</button>
                       </div>
-                    </form>
-                  ))
+                    );
+                  })
                 )}
               </>
             ) : (

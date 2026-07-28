@@ -16,8 +16,45 @@ const MAX_PR_TITLE_LENGTH = 300;
 const MAX_PR_BODY_LENGTH = 10000;
 const MAX_PR_FEEDBACK_BODY_LENGTH = 4000;
 const MAX_PR_FEEDBACK_ITEMS = 100;
+const MAX_PR_THREAD_ID_LENGTH = 256;
 
 const REPO_SEGMENT_PATTERN = /^[A-Za-z0-9_.-]+$/u;
+const REVIEW_THREADS_QUERY = `query($owner: String!, $repo: String!, $number: Int!) {
+	repository(owner: $owner, name: $repo) {
+		pullRequest(number: $number) {
+			reviewThreads(first: 100) {
+				pageInfo { hasNextPage }
+				nodes {
+					id
+					isResolved
+					isOutdated
+					path
+					line
+					originalLine
+					diffSide
+					viewerCanReply
+					viewerCanResolve
+					viewerCanUnresolve
+					comments(first: 100) {
+						pageInfo { hasNextPage }
+						nodes { fullDatabaseId author { login } body createdAt url state }
+					}
+				}
+			}
+		}
+	}
+}`;
+const REPLY_TO_REVIEW_THREAD_MUTATION = `mutation($threadId: ID!, $body: String!) {
+	addPullRequestReviewThreadReply(input: { pullRequestReviewThreadId: $threadId, body: $body }) {
+		comment { url }
+	}
+}`;
+const RESOLVE_REVIEW_THREAD_MUTATION = `mutation($threadId: ID!) {
+	resolveReviewThread(input: { threadId: $threadId }) { thread { id isResolved } }
+}`;
+const UNRESOLVE_REVIEW_THREAD_MUTATION = `mutation($threadId: ID!) {
+	unresolveReviewThread(input: { threadId: $threadId }) { thread { id isResolved } }
+}`;
 
 /** @typedef {"comment" | "review" | "inline"} PullRequestFeedbackKind */
 /**
@@ -32,6 +69,12 @@ const REPO_SEGMENT_PATTERN = /^[A-Za-z0-9_.-]+$/u;
  *   path?: string,
  *   line?: number,
  *   side?: string,
+ *   threadId?: string,
+ *   resolved?: boolean,
+ *   outdated?: boolean,
+ *   canReply?: boolean,
+ *   canResolve?: boolean,
+ *   canUnresolve?: boolean,
  * }} PullRequestFeedback
  */
 
@@ -150,38 +193,102 @@ function asRecord(value) {
 		: undefined;
 }
 
+/** @param {unknown} value */
+function normalizeFeedbackBody(value) {
+	const raw = typeof value === "string" ? value.trim() : "";
+	if (!raw) return "";
+	return raw.length <= MAX_PR_FEEDBACK_BODY_LENGTH
+		? raw
+		: `${raw.slice(0, MAX_PR_FEEDBACK_BODY_LENGTH)}…`;
+}
+
 /**
  * @param {PullRequestFeedback[]} feedback
  * @param {unknown} value
- * @param {PullRequestFeedbackKind} kind
+ * @param {"comment" | "review"} kind
  * @param {string} pullRequestUrl
  */
 function appendFeedback(feedback, value, kind, pullRequestUrl) {
 	const item = asRecord(value);
 	if (!item) return;
-	const rawBody = typeof item.body === "string" ? item.body.trim() : "";
-	if (!rawBody) return;
-	const body = rawBody.length <= MAX_PR_FEEDBACK_BODY_LENGTH
-		? rawBody
-		: `${rawBody.slice(0, MAX_PR_FEEDBACK_BODY_LENGTH)}…`;
-	const author = asRecord(kind === "inline" ? item.user : item.author);
+	const body = normalizeFeedbackBody(item.body);
+	if (!body) return;
+	const author = asRecord(item.author);
 	const rawId = item.id;
-	const rawLine = item.line ?? item.original_line;
-	const line = typeof rawLine === "number" && Number.isSafeInteger(rawLine) && rawLine > 0 ? rawLine : undefined;
-	const createdAtKey = kind === "inline" ? "created_at" : kind === "review" ? "submittedAt" : "createdAt";
-	const urlKey = kind === "inline" ? "html_url" : "url";
+	const createdAtKey = kind === "review" ? "submittedAt" : "createdAt";
 	feedback.push({
 		kind,
 		id: typeof rawId === "string" || typeof rawId === "number" ? String(rawId) : `${kind}-${feedback.length}`,
 		author: typeof author?.login === "string" ? author.login : "unknown",
 		body,
 		createdAt: typeof item[createdAtKey] === "string" ? item[createdAtKey] : "",
-		url: typeof item[urlKey] === "string" ? item[urlKey] : pullRequestUrl,
+		url: typeof item.url === "string" ? item.url : pullRequestUrl,
 		...(typeof item.state === "string" && item.state ? { state: item.state } : {}),
-		...(typeof item.path === "string" && item.path ? { path: item.path } : {}),
-		...(line ? { line } : {}),
-		...(typeof item.side === "string" && item.side ? { side: item.side } : {}),
 	});
+}
+
+/**
+ * @param {PullRequestFeedback[]} feedback
+ * @param {unknown} value
+ * @param {string} pullRequestUrl
+ */
+function appendReviewThreads(feedback, value, pullRequestUrl) {
+	const root = asRecord(value);
+	let partial = Array.isArray(root?.errors) && root.errors.length > 0;
+	const data = asRecord(root?.data);
+	const repository = asRecord(data?.repository);
+	const pullRequest = asRecord(repository?.pullRequest);
+	const threads = asRecord(pullRequest?.reviewThreads);
+	if (!threads || !Array.isArray(threads.nodes)) return true;
+	partial ||= asRecord(threads.pageInfo)?.hasNextPage === true;
+
+	for (const threadValue of threads.nodes) {
+		const thread = asRecord(threadValue);
+		const comments = asRecord(thread?.comments);
+		if (!thread || !comments || !Array.isArray(comments.nodes)) {
+			partial = true;
+			continue;
+		}
+		partial ||= asRecord(comments.pageInfo)?.hasNextPage === true;
+		for (let index = 0; index < comments.nodes.length; index += 1) {
+			const item = asRecord(comments.nodes[index]);
+			if (!item) continue;
+			const body = normalizeFeedbackBody(item.body);
+			if (!body) continue;
+			const author = asRecord(item.author);
+			const rawId = item.fullDatabaseId;
+			const rawLine = thread.line ?? thread.originalLine;
+			const line = typeof rawLine === "number" && Number.isSafeInteger(rawLine) && rawLine > 0
+				? rawLine
+				: undefined;
+			const isLastComment = index === comments.nodes.length - 1;
+			feedback.push({
+				kind: "inline",
+				id: typeof rawId === "string" || typeof rawId === "number"
+					? String(rawId)
+					: `inline-${feedback.length}`,
+				author: typeof author?.login === "string" ? author.login : "unknown",
+				body,
+				createdAt: typeof item.createdAt === "string" ? item.createdAt : "",
+				url: typeof item.url === "string" ? item.url : pullRequestUrl,
+				...(typeof item.state === "string" && item.state ? { state: item.state } : {}),
+				...(typeof thread.path === "string" && thread.path ? { path: thread.path } : {}),
+				...(line ? { line } : {}),
+				...(typeof thread.diffSide === "string" && thread.diffSide ? { side: thread.diffSide } : {}),
+				...(isLastComment && typeof thread.id === "string" && thread.id ? { threadId: thread.id } : {}),
+				...(isLastComment && typeof thread.isResolved === "boolean" ? { resolved: thread.isResolved } : {}),
+				...(isLastComment && typeof thread.isOutdated === "boolean" ? { outdated: thread.isOutdated } : {}),
+				...(isLastComment && typeof thread.viewerCanReply === "boolean" ? { canReply: thread.viewerCanReply } : {}),
+				...(isLastComment && typeof thread.viewerCanResolve === "boolean"
+					? { canResolve: thread.viewerCanResolve }
+					: {}),
+				...(isLastComment && typeof thread.viewerCanUnresolve === "boolean"
+					? { canUnresolve: thread.viewerCanUnresolve }
+					: {}),
+			});
+		}
+	}
+	return partial;
 }
 
 /**
@@ -271,25 +378,26 @@ export async function getPullRequestContext(
 	return { branch, detached, baseBranch, remote, isGitHub, compareUrl, lastCommitSubject, hasUpstream, ghAvailable };
 }
 
-/** @param {string} workspace */
-export async function getPullRequestReview(
-	workspace,
-	{ execFileImpl = execFile, realpathImpl = realpath, statImpl = stat, timeoutMs = GIT_TIMEOUT_MS } = {},
-) {
-	const cwd = await resolveWorkspaceDir(workspace, realpathImpl, statImpl);
+/**
+ * @param {string} cwd
+ * @param {import("node:child_process").execFile} execFileImpl
+ * @param {number} timeoutMs
+ * @param {string[]} fields
+ */
+async function readCurrentPullRequest(cwd, execFileImpl, timeoutMs, fields) {
 	const { branch } = await readBranch(cwd, execFileImpl, timeoutMs);
-	if (!branch) throw new Error("Check out a branch before loading pull request feedback");
+	if (!branch) throw new Error("Check out a branch before accessing its pull request");
 	const remote = await readRemote(cwd, execFileImpl, timeoutMs);
-	if (!remote || !isGitHubHost(remote.host)) throw new Error("Pull request feedback needs a GitHub remote named origin");
+	if (!remote || !isGitHubHost(remote.host)) throw new Error("Pull request access needs a GitHub remote named origin");
 
 	const repoSlug = `${remote.host}/${remote.owner}/${remote.repo}`;
 	const view = await runGh(
 		cwd,
-		["pr", "view", branch, "--repo", repoSlug, "--json", "number,title,url,state,reviewDecision,comments,reviews"],
+		["pr", "view", branch, "--repo", repoSlug, "--json", fields.join(",")],
 		execFileImpl,
 		GH_READ_TIMEOUT_MS,
 	);
-	if (isMissingExecutable(view)) throw new Error("GitHub CLI (gh) is required to load pull request feedback");
+	if (isMissingExecutable(view)) throw new Error("GitHub CLI (gh) is required for pull request access");
 	if (view.error) throw describeGitFailure("Could not load the current branch's pull request", view);
 
 	let parsed;
@@ -299,11 +407,26 @@ export async function getPullRequestReview(
 		throw new Error("gh returned invalid pull request data");
 	}
 	const pullRequest = asRecord(parsed);
-	const number = pullRequest?.number;
-	const title = pullRequest?.title;
-	const url = pullRequest?.url;
+	if (!pullRequest) throw new Error("gh returned incomplete pull request data");
+	return { remote, repoSlug, pullRequest };
+}
+
+/** @param {string} workspace */
+export async function getPullRequestReview(
+	workspace,
+	{ execFileImpl = execFile, realpathImpl = realpath, statImpl = stat, timeoutMs = GIT_TIMEOUT_MS } = {},
+) {
+	const cwd = await resolveWorkspaceDir(workspace, realpathImpl, statImpl);
+	const { remote, pullRequest } = await readCurrentPullRequest(
+		cwd,
+		execFileImpl,
+		timeoutMs,
+		["number", "title", "url", "state", "reviewDecision", "comments", "reviews"],
+	);
+	const number = pullRequest.number;
+	const title = pullRequest.title;
+	const url = pullRequest.url;
 	if (
-		!pullRequest ||
 		typeof number !== "number" ||
 		!Number.isSafeInteger(number) ||
 		number <= 0 ||
@@ -327,9 +450,17 @@ export async function getPullRequestReview(
 		cwd,
 		[
 			"api",
+			"graphql",
 			"--hostname",
 			remote.host,
-			`repos/${remote.owner}/${remote.repo}/pulls/${number}/comments?per_page=100`,
+			"-F",
+			`owner=${remote.owner}`,
+			"-F",
+			`repo=${remote.repo}`,
+			"-F",
+			`number=${number}`,
+			"-f",
+			`query=${REVIEW_THREADS_QUERY}`,
 		],
 		execFileImpl,
 		GH_READ_TIMEOUT_MS,
@@ -338,12 +469,7 @@ export async function getPullRequestReview(
 		partial = true;
 	} else {
 		try {
-			const inlineComments = JSON.parse(inline.stdout);
-			if (Array.isArray(inlineComments)) {
-				for (const comment of inlineComments) appendFeedback(feedback, comment, "inline", url);
-			} else {
-				partial = true;
-			}
+			partial = appendReviewThreads(feedback, JSON.parse(inline.stdout), url);
 		} catch {
 			partial = true;
 		}
@@ -360,6 +486,87 @@ export async function getPullRequestReview(
 		feedback: feedback.slice(-MAX_PR_FEEDBACK_ITEMS),
 		partial,
 	};
+}
+
+/**
+ * @param {string} workspace
+ * @param {unknown} params
+ */
+export async function updatePullRequestReview(
+	workspace,
+	params,
+	{ execFileImpl = execFile, realpathImpl = realpath, statImpl = stat, timeoutMs = GIT_TIMEOUT_MS } = {},
+) {
+	const action = asRecord(params);
+	if (!action) throw new Error("Unknown pull request review action");
+	const type = action.type;
+	if (type !== "comment" && type !== "reply" && type !== "resolve") {
+		throw new Error("Unknown pull request review action");
+	}
+
+	const body = type === "comment" || type === "reply" ? String(action.body ?? "").trim() : "";
+	if ((type === "comment" || type === "reply") && !body) throw new Error("Pull request comment is required");
+	if (body.length > MAX_PR_BODY_LENGTH) throw new Error("Pull request comment is too long");
+
+	const threadId = type === "reply" || type === "resolve" ? String(action.threadId ?? "").trim() : "";
+	if ((type === "reply" || type === "resolve") && !threadId) throw new Error("Pull request review thread is required");
+	if (threadId.length > MAX_PR_THREAD_ID_LENGTH) throw new Error("Pull request review thread is invalid");
+	if (type === "resolve" && typeof action.resolved !== "boolean") {
+		throw new Error("Pull request review thread state is required");
+	}
+
+	const cwd = await resolveWorkspaceDir(workspace, realpathImpl, statImpl);
+	const { remote, repoSlug, pullRequest } = await readCurrentPullRequest(
+		cwd,
+		execFileImpl,
+		timeoutMs,
+		["number"],
+	);
+	const number = pullRequest.number;
+	if (typeof number !== "number" || !Number.isSafeInteger(number) || number <= 0) {
+		throw new Error("gh returned incomplete pull request data");
+	}
+
+	/** @type {string[]} */
+	let args;
+	let description = "";
+	if (type === "comment") {
+		args = ["pr", "comment", String(number), "--repo", repoSlug, "--body", body];
+		description = "Could not post the pull request comment";
+	} else if (type === "reply") {
+		args = [
+			"api",
+			"graphql",
+			"--hostname",
+			remote.host,
+			"-f",
+			`query=${REPLY_TO_REVIEW_THREAD_MUTATION}`,
+			"-f",
+			`threadId=${threadId}`,
+			"-f",
+			`body=${body}`,
+		];
+		description = "Could not reply to the pull request review thread";
+	} else {
+		args = [
+			"api",
+			"graphql",
+			"--hostname",
+			remote.host,
+			"-f",
+			`query=${action.resolved ? RESOLVE_REVIEW_THREAD_MUTATION : UNRESOLVE_REVIEW_THREAD_MUTATION}`,
+			"-f",
+			`threadId=${threadId}`,
+		];
+		description = action.resolved
+			? "Could not resolve the pull request review thread"
+			: "Could not reopen the pull request review thread";
+	}
+
+	const result = await runGh(cwd, args, execFileImpl, GH_CREATE_TIMEOUT_MS);
+	if (isMissingExecutable(result)) throw new Error("GitHub CLI (gh) is required for pull request actions");
+	if (result.error) throw describeGitFailure(description, result);
+	return { updated: true };
 }
 
 /**

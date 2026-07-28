@@ -7,6 +7,7 @@ import {
 	getPullRequestReview,
 	isGitHubHost,
 	parseGitRemoteUrl,
+	updatePullRequestReview,
 	validatePrTitle,
 } from "../src/git-pr.js";
 
@@ -190,16 +191,40 @@ describe("getPullRequestReview", () => {
 				}),
 			},
 			{
-				stdout: JSON.stringify([{
-					id: 99,
-					user: { login: "carol" },
-					body: "Cover this retry branch.",
-					created_at: "2026-07-29T03:00:00Z",
-					html_url: "https://github.com/o/r/pull/7#discussion_r99",
-					path: "src/retry.ts",
-					line: 42,
-					side: "RIGHT",
-				}]),
+				stdout: JSON.stringify({
+					data: {
+						repository: {
+							pullRequest: {
+								reviewThreads: {
+									pageInfo: { hasNextPage: false },
+									nodes: [{
+										id: "PRRT_test",
+										isResolved: false,
+										isOutdated: true,
+										path: "src/retry.ts",
+										line: null,
+										originalLine: 42,
+										diffSide: "RIGHT",
+										viewerCanReply: true,
+										viewerCanResolve: true,
+										viewerCanUnresolve: false,
+										comments: {
+											pageInfo: { hasNextPage: false },
+											nodes: [{
+												fullDatabaseId: "99",
+												author: { login: "carol" },
+												body: "Cover this retry branch.",
+												createdAt: "2026-07-29T03:00:00Z",
+												url: "https://github.com/o/r/pull/7#discussion_r99",
+												state: "SUBMITTED",
+											}],
+										},
+									}],
+								},
+							},
+						},
+					},
+				}),
 			},
 		]);
 
@@ -218,13 +243,20 @@ describe("getPullRequestReview", () => {
 			path: "src/retry.ts",
 			line: 42,
 			side: "RIGHT",
+			state: "SUBMITTED",
+			threadId: "PRRT_test",
+			resolved: false,
+			outdated: true,
+			canReply: true,
+			canResolve: true,
+			canUnresolve: false,
 		});
-		assert.deepEqual(exec.calls.at(-1).args, [
-			"api",
-			"--hostname",
-			"github.com",
-			"repos/o/r/pulls/7/comments?per_page=100",
-		]);
+		const inlineArgs = exec.calls.at(-1).args;
+		assert.deepEqual(inlineArgs.slice(0, 4), ["api", "graphql", "--hostname", "github.com"]);
+		assert.ok(inlineArgs.includes("owner=o"));
+		assert.ok(inlineArgs.includes("repo=r"));
+		assert.ok(inlineArgs.includes("number=7"));
+		assert.ok(inlineArgs.some((arg) => arg.includes("reviewThreads(first: 100)")));
 	});
 
 	it("reports when the current branch has no pull request", async () => {
@@ -237,6 +269,83 @@ describe("getPullRequestReview", () => {
 			getPullRequestReview("C:\\work", { ...fsOk, execFileImpl: exec.execFileImpl }),
 			/no pull requests found/iu,
 		);
+	});
+});
+
+describe("updatePullRequestReview", () => {
+	function actionResponses() {
+		return [
+			{ stdout: "feature/x\n" },
+			{ stdout: "https://github.com/o/r.git\n" },
+			{ stdout: JSON.stringify({ number: 7 }) },
+			{ stdout: "{}" },
+		];
+	}
+
+	it("posts comments, replies to threads, and toggles thread resolution through gh", async () => {
+		const commentExec = fakeExec(actionResponses());
+		await updatePullRequestReview(
+			"C:\\work",
+			{ type: "comment", body: "Ship it." },
+			{ ...fsOk, execFileImpl: commentExec.execFileImpl },
+		);
+		assert.deepEqual(commentExec.calls.at(-1).args, [
+			"pr",
+			"comment",
+			"7",
+			"--repo",
+			"github.com/o/r",
+			"--body",
+			"Ship it.",
+		]);
+
+		const replyExec = fakeExec(actionResponses());
+		await updatePullRequestReview(
+			"C:\\work",
+			{ type: "reply", threadId: "PRRT_test", body: "Fixed." },
+			{ ...fsOk, execFileImpl: replyExec.execFileImpl },
+		);
+		const replyArgs = replyExec.calls.at(-1).args;
+		assert.deepEqual(replyArgs.slice(0, 4), ["api", "graphql", "--hostname", "github.com"]);
+		assert.ok(replyArgs.includes("threadId=PRRT_test"));
+		assert.ok(replyArgs.includes("body=Fixed."));
+		assert.ok(replyArgs.some((arg) => arg.includes("addPullRequestReviewThreadReply")));
+
+		for (const resolved of [true, false]) {
+			const resolveExec = fakeExec(actionResponses());
+			await updatePullRequestReview(
+				"C:\\work",
+				{ type: "resolve", threadId: "PRRT_test", resolved },
+				{ ...fsOk, execFileImpl: resolveExec.execFileImpl },
+			);
+			assert.ok(resolveExec.calls.at(-1).args.some((arg) =>
+				arg.includes(resolved ? "resolveReviewThread" : "unresolveReviewThread")));
+		}
+	});
+
+	it("validates review actions before touching the workspace", async () => {
+		const exec = fakeExec([]);
+		await assert.rejects(
+			updatePullRequestReview("C:\\work", { type: "comment", body: " " }, { ...fsOk, execFileImpl: exec.execFileImpl }),
+			/comment is required/,
+		);
+		await assert.rejects(
+			updatePullRequestReview(
+				"C:\\work",
+				{ type: "reply", threadId: "", body: "x" },
+				{ ...fsOk, execFileImpl: exec.execFileImpl },
+			),
+			/thread is required/,
+		);
+		await assert.rejects(
+			updatePullRequestReview(
+				"C:\\work",
+				{ type: "resolve", threadId: "PRRT_test" },
+				{ ...fsOk, execFileImpl: exec.execFileImpl },
+			),
+			/thread state is required/,
+		);
+		assert.equal(exec.calls.length, 0);
 	});
 });
 
