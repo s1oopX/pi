@@ -848,6 +848,8 @@ function createClient(
 	dynamicHeaders?: Record<string, string>,
 	sessionId?: string,
 ): { client: Anthropic; isOAuthToken: boolean } {
+	// The SDK appends /v1/messages, so tolerate endpoint URLs that already end in /v1.
+	const baseURL = model.baseUrl.replace(/\/v1\/?$/u, "");
 	// Adaptive thinking models have interleaved thinking built in, so skip the beta header.
 	const needsInterleavedBeta = interleavedThinking && model.compat?.forceAdaptiveThinking !== true;
 	const betaFeatures: string[] = [];
@@ -863,7 +865,7 @@ function createClient(
 		const client = new Anthropic({
 			apiKey: null,
 			authToken: apiKey ?? null,
-			baseURL: model.baseUrl,
+			baseURL,
 			dangerouslyAllowBrowser: true,
 			defaultHeaders: mergeHeaders(
 				{
@@ -885,7 +887,7 @@ function createClient(
 		const client = new Anthropic({
 			apiKey: null,
 			authToken: apiKey,
-			baseURL: model.baseUrl,
+			baseURL,
 			dangerouslyAllowBrowser: true,
 			defaultHeaders: mergeHeaders(
 				{
@@ -919,7 +921,7 @@ function createClient(
 	const client = new Anthropic({
 		apiKey: apiKey ?? null,
 		authToken: null,
-		baseURL: model.baseUrl,
+		baseURL,
 		dangerouslyAllowBrowser: true,
 		defaultHeaders,
 	});

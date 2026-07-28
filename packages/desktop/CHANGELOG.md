@@ -70,6 +70,7 @@ client (Electron main process and the `renderer-next` React renderer).
 
 ### Fixed
 
+- Fixed Anthropic-compatible custom providers whose base URL ends in `/v1`; requests no longer target the duplicated `/v1/v1/messages` path and fail with 404.
 - Fixed `aria-label` on 12 elements that had no semantic role. Screen readers ignore those labels, so the announcements never happened — including two `aria-live` regions meant to report agent status.
 - Fixed an invalid `role="note"` and four `role="img"` elements that do not support `aria-label`.
 - Fixed two `<label>` elements that wrapped no form control, which misleads screen readers into expecting one.

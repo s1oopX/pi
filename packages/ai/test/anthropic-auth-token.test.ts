@@ -74,7 +74,17 @@ afterEach(() => {
 	mockState.createParams = undefined;
 });
 
-describe("Anthropic auth token env", () => {
+describe("Anthropic client configuration", () => {
+	it("avoids duplicating /v1 for compatible endpoints", async () => {
+		await streamAnthropic(
+			{ ...anthropicModel, provider: "custom", baseUrl: "https://proxy.example.com/v1" },
+			context,
+			{ apiKey: "test-api-key" },
+		).result();
+
+		expect(mockState.constructorOpts?.baseURL).toBe("https://proxy.example.com");
+	});
+
 	it("resolves ANTHROPIC_AUTH_TOKEN as a bearer Authorization header", async () => {
 		const provider = anthropicProvider();
 		const auth = await provider.auth.apiKey?.resolve({
