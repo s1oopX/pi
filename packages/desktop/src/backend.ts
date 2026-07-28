@@ -17,6 +17,7 @@ import { SessionManager } from "../../coding-agent/src/core/session-manager.ts";
 import { SettingsManager } from "../../coding-agent/src/core/settings-manager.ts";
 import { hasTrustRequiringProjectResources, ProjectTrustStore } from "../../coding-agent/src/core/trust-manager.ts";
 import { runRpcMode } from "../../coding-agent/src/modes/rpc/rpc-mode.ts";
+import { taskPlanExtension } from "./task-plan.ts";
 import { toolApprovalExtension } from "./tool-approval.ts";
 import { directoriesShareIdentity, resolveWorktreeSourceRoot } from "./worktree-trust.js";
 
@@ -76,7 +77,10 @@ const createRuntime: CreateAgentSessionRuntimeFactory = async ({
 		settingsManager,
 		modelRuntime,
 		resourceLoaderOptions: {
-			extensionFactories: [{ name: "tool-approval", factory: toolApprovalExtension }],
+			extensionFactories: [
+				{ name: "tool-approval", factory: toolApprovalExtension },
+				{ name: "task-plan", factory: taskPlanExtension },
+			],
 		},
 		resourceLoaderReloadOptions: {
 			resolveProjectTrust: async () => resolveTrust(),

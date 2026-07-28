@@ -1,4 +1,4 @@
-import { useMemo, useState, type ReactNode } from "react";
+import { useMemo, useState, type MouseEvent as ReactMouseEvent, type ReactNode } from "react";
 import { html, parse } from "diff2html";
 import type { DiffFile } from "diff2html/lib/types";
 import { useI18n } from "../../i18n";
@@ -8,6 +8,7 @@ import {
   summarizeDiffStats,
   type DiffFileStat,
 } from "./diffStats";
+import { addDiffLineAnchors } from "./lineAnchors";
 
 type OutputFormat = "side-by-side" | "line-by-line";
 
@@ -15,6 +16,14 @@ interface DiffViewProps {
   patch: string;
   defaultFormat?: OutputFormat;
   renderHunkActions?: (hunkIndex: number) => ReactNode;
+  onLineSelect?: (line: DiffLineSelection) => void;
+}
+
+export interface DiffLineSelection {
+  path: string;
+  side: "old" | "new";
+  line: number;
+  text: string;
 }
 
 interface RenderedDiffFile {
@@ -22,7 +31,7 @@ interface RenderedDiffFile {
   hunks: string[];
 }
 
-export function DiffView({ patch, defaultFormat = "line-by-line", renderHunkActions }: DiffViewProps) {
+export function DiffView({ patch, defaultFormat = "line-by-line", renderHunkActions, onLineSelect }: DiffViewProps) {
   const { t } = useI18n();
   const [format, setFormat] = useState<OutputFormat>(defaultFormat);
   // Files the user has explicitly collapsed. Keyed by display path so the set
@@ -36,6 +45,7 @@ export function DiffView({ patch, defaultFormat = "line-by-line", renderHunkActi
 
   const summary = useMemo(() => summarizeDiffStats(diffFiles), [diffFiles]);
   const renderByHunk = Boolean(renderHunkActions);
+  const lineSelectionEnabled = Boolean(onLineSelect);
   const hunkOffsets = useMemo(() => {
     let offset = 0;
     return diffFiles.map((file) => {
@@ -55,15 +65,25 @@ export function DiffView({ patch, defaultFormat = "line-by-line", renderHunkActi
         matching: "lines",
         outputFormat: format,
       } as const;
+      const render = (files: DiffFile[]) => {
+        const markup = html(files, options);
+        return lineSelectionEnabled && format === "line-by-line"
+          ? addDiffLineAnchors(
+              markup,
+              t("Comment on old line", "评论旧行"),
+              t("Comment on new line", "评论新行"),
+            )
+          : markup;
+      };
       map.set(diffFileDisplayPath(file), {
-        whole: html([file], options),
+        whole: render([file]),
         hunks: renderByHunk
-          ? file.blocks.map((block) => html([{ ...file, blocks: [block] }], options))
+          ? file.blocks.map((block) => render([{ ...file, blocks: [block] }]))
           : [],
       });
     }
     return map;
-  }, [diffFiles, format, renderByHunk]);
+  }, [diffFiles, format, lineSelectionEnabled, renderByHunk, t]);
 
   function toggleFile(path: string) {
     setCollapsed((current) => {
@@ -127,6 +147,7 @@ export function DiffView({ patch, defaultFormat = "line-by-line", renderHunkActi
               renderHunkActions={renderHunkActions
                 ? (hunkIndex) => renderHunkActions(hunkOffsets[fileIndex] + hunkIndex)
                 : undefined}
+              onLineSelect={onLineSelect}
             />
           );
         })}
@@ -141,12 +162,14 @@ function DiffFileSection({
   collapsed,
   onToggle,
   renderHunkActions,
+  onLineSelect,
 }: {
   stat: DiffFileStat;
   rendered: RenderedDiffFile;
   collapsed: boolean;
   onToggle: () => void;
   renderHunkActions?: (hunkIndex: number) => ReactNode;
+  onLineSelect?: (line: DiffLineSelection) => void;
 }) {
   const { t } = useI18n();
   const kindLabel = diffKindLabel(stat.kind, t);
@@ -168,15 +191,37 @@ function DiffFileSection({
           {rendered.hunks.map((hunk, hunkIndex) => (
             <div className="diff-hunk" key={hunkIndex}>
               <div className="diff-hunk-actions">{renderHunkActions(hunkIndex)}</div>
-              <div dangerouslySetInnerHTML={{ __html: hunk }} />
+              <div
+                onClick={(event) => selectDiffLine(event, stat.path, onLineSelect)}
+                dangerouslySetInnerHTML={{ __html: hunk }}
+              />
             </div>
           ))}
         </div>
       ) : !collapsed ? (
-        <div className="diff-content" dangerouslySetInnerHTML={{ __html: rendered.whole }} />
+        <div
+          className="diff-content"
+          onClick={(event) => selectDiffLine(event, stat.path, onLineSelect)}
+          dangerouslySetInnerHTML={{ __html: rendered.whole }}
+        />
       ) : null}
     </div>
   );
+}
+
+function selectDiffLine(
+  event: ReactMouseEvent<HTMLDivElement>,
+  path: string,
+  onLineSelect: ((line: DiffLineSelection) => void) | undefined,
+): void {
+  if (!onLineSelect || !(event.target instanceof Element)) return;
+  const anchor = event.target.closest<HTMLButtonElement>(".diff-line-anchor");
+  if (!anchor || !event.currentTarget.contains(anchor)) return;
+  const line = Number(anchor.dataset.diffLine);
+  const side = anchor.dataset.diffSide;
+  if (!Number.isInteger(line) || line < 1 || (side !== "old" && side !== "new")) return;
+  const text = anchor.closest("tr")?.querySelector<HTMLElement>(".d2h-code-line-ctn")?.textContent?.trimEnd() ?? "";
+  onLineSelect({ path, side, line, text });
 }
 
 function DiffStatBadge({ added, deleted }: { added: number; deleted: number }) {

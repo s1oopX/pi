@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { DiffView } from "../DiffView";
+import { DiffView, type DiffLineSelection } from "../DiffView";
 import { useI18n } from "../../i18n";
 import * as api from "../../ipc/api";
 import type {
@@ -24,6 +24,8 @@ interface GitPanelProps {
   onClose: () => void;
 }
 
+type LineCommentTarget = DiffLineSelection & { section: GitDiffSectionName };
+
 export function GitPanel({ onClose }: GitPanelProps) {
   const { t } = useI18n();
   const workspaceGitStatus = useStore((s) => s.workspaceGitStatus);
@@ -43,6 +45,8 @@ export function GitPanel({ onClose }: GitPanelProps) {
   const [restoringFile, setRestoringFile] = useState<string | null>(null);
   const [armedHunkDiscard, setArmedHunkDiscard] = useState<string | null>(null);
   const [applyingHunk, setApplyingHunk] = useState<string | null>(null);
+  const [lineCommentTarget, setLineCommentTarget] = useState<LineCommentTarget | null>(null);
+  const [lineComment, setLineComment] = useState("");
   const [branchesOpen, setBranchesOpen] = useState(false);
   const [switchingBranch, setSwitchingBranch] = useState<string | null>(null);
   const [newBranchName, setNewBranchName] = useState("");
@@ -217,6 +221,7 @@ export function GitPanel({ onClose }: GitPanelProps) {
   async function toggleFileDiff(path: string) {
     setArmedRestore(null);
     setArmedHunkDiscard(null);
+    clearLineComment();
     if (expandedFile === path) {
       setExpandedFile(null);
       setExpandedDiff(null);
@@ -241,6 +246,7 @@ export function GitPanel({ onClose }: GitPanelProps) {
     hunkIndex: number,
     patchHash: string,
   ) {
+    clearLineComment();
     const discardKey = `${section}:${hunkIndex}`;
     if (action === "discard" && armedHunkDiscard !== discardKey) {
       setArmedHunkDiscard(discardKey);
@@ -289,6 +295,36 @@ export function GitPanel({ onClose }: GitPanelProps) {
     onClose();
   }
 
+  function clearLineComment() {
+    setLineCommentTarget(null);
+    setLineComment("");
+  }
+
+  function handleAskLineComment() {
+    const comment = lineComment.trim();
+    if (!lineCommentTarget || !comment) return;
+    const section = lineCommentTarget.section === "staged"
+      ? t("staged changes", "已暂存更改")
+      : t("unstaged changes", "未暂存更改");
+    const side = lineCommentTarget.side === "new" ? t("new", "新") : t("old", "旧");
+    const prompt = t(
+      "Address this review comment in @{path} ({section}, {side} line {line}):\n\n{comment}",
+      "请处理 @{path} 的这条审阅评论（{section}，{side}第 {line} 行）：\n\n{comment}",
+      {
+        path: lineCommentTarget.path,
+        section,
+        side,
+        line: lineCommentTarget.line,
+        comment,
+      },
+    );
+    const excerpt = lineCommentTarget.text.trim();
+    setComposerDraft(prompt + (excerpt
+      ? t("\n\nDiff line:\n{excerpt}", "\n\n差异行：\n{excerpt}", { excerpt })
+      : ""));
+    onClose();
+  }
+
   async function handleRestoreFile(path: string) {
     if (armedRestore !== path) {
       setArmedRestore(path);
@@ -307,6 +343,7 @@ export function GitPanel({ onClose }: GitPanelProps) {
       setExpandedFile(null);
       setExpandedDiff(null);
       setArmedHunkDiscard(null);
+      clearLineComment();
       refreshWorkspaceGitStatus();
       await loadChanges();
     } catch (error) {
@@ -579,9 +616,13 @@ export function GitPanel({ onClose }: GitPanelProps) {
                     <>
                       {expandedSections.map(({ name, label, data }) => (
                         <div className="git-panel-diff-section" key={name}>
-                          <div className="git-panel-diff-section-title">{label}</div>
+                          <div className="git-panel-diff-section-title">
+                            <span>{label}</span>
+                            <span>{t("Select a line number to comment", "选择行号添加评论")}</span>
+                          </div>
                           <DiffView
                             patch={data.patch}
+                            onLineSelect={(line) => setLineCommentTarget({ ...line, path: file.path, section: name })}
                             renderHunkActions={(hunkIndex) => {
                               const primaryAction = name === "staged" ? "unstage" : "stage";
                               const primaryKey = `${name}:${hunkIndex}:${primaryAction}`;
@@ -636,6 +677,45 @@ export function GitPanel({ onClose }: GitPanelProps) {
                           />
                         </div>
                       ))}
+                      {lineCommentTarget && (
+                        <form
+                          className="git-panel-line-comment"
+                          aria-label={t("Diff line comment", "差异行评论")}
+                          onSubmit={(event) => {
+                            event.preventDefault();
+                            handleAskLineComment();
+                          }}
+                        >
+                          <div className="git-panel-line-comment-meta">
+                            <span title={lineCommentTarget.path}>@{lineCommentTarget.path}</span>
+                            <span>
+                              {lineCommentTarget.section === "staged"
+                                ? t("Staged", "已暂存")
+                                : t("Unstaged", "未暂存")}
+                              {" · "}
+                              {lineCommentTarget.side === "new" ? t("New", "新") : t("Old", "旧")}
+                              {" "}
+                              {t("line {line}", "第 {line} 行", { line: lineCommentTarget.line })}
+                            </span>
+                          </div>
+                          {lineCommentTarget.text && (
+                            <code className="git-panel-line-comment-code">{lineCommentTarget.text}</code>
+                          )}
+                          <textarea
+                            value={lineComment}
+                            rows={3}
+                            maxLength={4000}
+                            placeholder={t("Review comment", "审阅评论")}
+                            aria-label={t("Review comment", "审阅评论")}
+                            autoFocus
+                            onChange={(event) => setLineComment(event.target.value)}
+                          />
+                          <div className="git-panel-line-comment-actions">
+                            <button type="button" onClick={clearLineComment}>{t("Cancel", "取消")}</button>
+                            <button type="submit" disabled={!lineComment.trim()}>{t("Ask agent", "让智能体处理")}</button>
+                          </div>
+                        </form>
+                      )}
                       <div className="git-panel-file-diff-actions">
                         <button
                           className="git-panel-ask-btn"

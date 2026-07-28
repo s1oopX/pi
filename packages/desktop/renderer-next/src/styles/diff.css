@@ -246,6 +246,22 @@
   font-family: var(--font-mono);
 }
 
+.diff-line-anchor {
+  border-radius: 2px;
+  color: inherit;
+  cursor: pointer;
+  font: inherit;
+  line-height: inherit;
+  text-align: right;
+}
+
+.diff-line-anchor:hover,
+.diff-line-anchor:focus-visible {
+  outline: 0;
+  background: var(--accent-soft);
+  color: var(--accent);
+}
+
 .diff-content .d2h-info {
   border-color: var(--border);
   background: var(--surface);

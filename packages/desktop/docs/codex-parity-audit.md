@@ -15,17 +15,17 @@ continuous alignment loop; one row lands per iteration.
 | Review pane: per-file diffs of the working tree | Git panel file rows expand to a diff | ✅ (this audit's landing) |
 | Review pane: discard/revert per file | Armed two-click discard; HEAD files restored, new files recycled (recoverable) | ✅ (this audit's landing) |
 | Review pane: stage/revert per **chunk** | Staged/unstaged sections with stage, unstage, and armed discard per hunk; main process re-reads and hash-validates every patch | ✅ |
-| Inline diff comments → ask the agent to address | "Ask agent" on a file's diff drafts an @file prompt | 🟡 file-level landed; chunk/line comments open |
+| Inline diff comments → ask the agent to address | Select an old/new line number, write a review comment, and draft the exact file/section/line context into the composer | ✅ |
 | GitHub PR review comments in-app (PR Chat) | — | ❌ heavy (GitHub API + auth); deliberate non-goal for now |
 | Multiple terminal tabs | Concurrent workbench tabs with preserved output/drafts/history and per-command Stop | ✅ |
-| Task sidebar: live plan/sources/artifacts | Live tool cards, turn summary, streaming status | 🟡 partial (no plan pane) |
+| Task sidebar: live plan/sources/artifacts | Workbench Plan reads the latest real `update_plan` tool call; live tool cards, turn summary, streaming status | 🟡 plan landed; sources/artifacts open |
 | Summary pane | Turn summary | ✅ |
 | Session naming/rename, thread search | Inline rename (double-click), search | ✅ |
 | Copy last reply, per-message copy | Command palette + Mod+Shift+C; hover copy | ✅ |
 | What's-new/changelog view | About → What's New | ✅ |
 | Drag-drop folder to open; drop narration | Window-level drop + narration overlay | ✅ |
 | Contextual window title | session — app | ✅ |
-| In-app browser for frontend iteration | Workbench browser actions (open URLs) | 🟡 partial (no embedded browser) |
+| In-app browser for frontend iteration | Sandboxed HTTP(S) frame with URL navigation, back/forward, reload, and external fallback | ✅ |
 | Artifact viewer (PDF/spreadsheet outputs) | — | ❌ low priority (rare output shape here) |
 | Computer use / plugins / memory / image generation | — | ➖ platform-scope non-goals for a BYO-endpoint client |
 | SSH remote devboxes | — | ➖ non-goal (local-first product) |
@@ -33,8 +33,8 @@ continuous alignment loop; one row lands per iteration.
 
 ## Loop backlog (ordered)
 
-1. Plan pane fed from turn structure.
-2. Line-anchored diff comments feeding the agent prompt.
-3. Embedded browser for frontend iteration.
+1. Task-sidebar sources and first-class artifacts.
+2. Artifact viewer for supported output files.
+3. Automations / scheduled tasks.
 
 Sources: [OpenAI — Introducing the Codex app](https://openai.com/index/introducing-the-codex-app/), [SmartScope — Codex desktop April 2026 update](https://smartscope.blog/en/generative-ai/chatgpt/codex-desktop-major-update-april-2026/), [Codex KB — workspace/review pane](https://codex.danielvaughan.com/2026/04/17/codex-app-workspace-pr-review-task-sidebar-artifact-viewer/), [Macaron — Codex review pane guide](https://macaron.im/blog/codex-app-review-pane), [Releasebot — Codex updates July 2026](https://releasebot.io/updates/openai/codex)

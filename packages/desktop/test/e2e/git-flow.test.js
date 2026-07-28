@@ -116,6 +116,24 @@ test("git flow: create a branch and push to a bare remote", async (t) => {
 		const fileDiff = studio.page.locator(".git-panel-file-diff");
 		await fileDiff.waitFor({ state: "visible", timeout: LAUNCH_TIMEOUT_MS });
 		await fileDiff.getByText("scratch").first().waitFor({ state: "visible", timeout: LAUNCH_TIMEOUT_MS });
+		// Line-anchored review: selecting the added line opens a comment form;
+		// submitting drafts the exact file, side, line, comment, and diff text.
+		const lineAnchor = fileDiff.locator('.diff-line-anchor[data-diff-side="new"][data-diff-line="1"]');
+		await lineAnchor.focus();
+		await lineAnchor.press("Enter");
+		await studio.page.locator(".git-panel-line-comment textarea").fill("Keep this note durable.");
+		await studio.page.locator('.git-panel-line-comment-actions button[type="submit"]').click();
+		await studio.page
+			.locator(".composer-input")
+			.evaluate((el) => /** @type {HTMLTextAreaElement} */ (el).value)
+			.then((value) => {
+				for (const expected of ["@notes.txt", "1", "Keep this note durable.", "scratch"]) {
+					assert.ok(value.includes(expected), `line comment draft should include ${expected}, got: ${value}`);
+				}
+			});
+		await studio.page.locator(".top-bar-git").click();
+		await studio.page.locator(".git-panel-file-path", { hasText: "notes.txt" }).first().click();
+		await studio.page.locator(".git-panel-file-diff").waitFor({ state: "visible", timeout: LAUNCH_TIMEOUT_MS });
 		// "Ask agent" drafts an @file prompt into the composer and closes the
 		// panel; reopen and re-expand for the discard flow below.
 		await studio.page.locator(".git-panel-ask-btn").click();

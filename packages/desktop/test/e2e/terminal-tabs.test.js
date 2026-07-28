@@ -14,7 +14,7 @@ test("workbench terminals run concurrently and stop by tab", async (t) => {
 	try {
 		await studio.waitUntilReady();
 		await studio.page.locator(".top-bar-workbench-toggle").click();
-		await studio.page.locator(".workbench-launcher-item").nth(1).click();
+		await studio.page.locator('[data-workbench-view="terminal"]').click();
 
 		const tabs = studio.page.locator(".workbench-terminal-tab");
 		const activeInput = studio.page.locator(".workbench-terminal-session:not([hidden]) input");

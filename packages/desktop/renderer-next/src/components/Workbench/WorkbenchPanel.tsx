@@ -9,8 +9,9 @@ import * as api from "../../ipc/api";
 import { createBashExecutionId, subscribeBashExecution } from "../../ipc/bashExecutionStream";
 import { useStore } from "../../store";
 import { createCommandHistoryState, pushCommand, recallNext, recallPrevious } from "./commandHistory";
+import { findLatestTaskPlan } from "./planState";
 
-export type WorkbenchView = "launcher" | "review" | "terminal" | "browser" | "files" | "side-task";
+export type WorkbenchView = "launcher" | "plan" | "review" | "terminal" | "browser" | "files" | "side-task";
 
 export type WorkbenchKeybindingLabels = Partial<Record<WorkbenchView | "toggle", string>>;
 
@@ -25,7 +26,7 @@ interface WorkbenchEntry {
   view: WorkbenchView;
   label: string;
   shortcut?: string;
-  icon: "review" | "terminal" | "browser" | "files" | "task";
+  icon: "plan" | "review" | "terminal" | "browser" | "files" | "task";
 }
 
 interface BashResult {
@@ -48,6 +49,11 @@ export function WorkbenchPanel({ activeView, keybindingLabels, onClose, onSelect
   const title = getWorkbenchTitle(activeView, t);
   const entries = useMemo<WorkbenchEntry[]>(() => [
     {
+      view: "plan",
+      label: t("Plan", "计划"),
+      icon: "plan",
+    },
+    {
       view: "review",
       label: t("Review", "审阅"),
       shortcut: keybindingLabels.review,
@@ -61,7 +67,7 @@ export function WorkbenchPanel({ activeView, keybindingLabels, onClose, onSelect
     },
     {
       view: "browser",
-      label: t("System browser", "系统浏览器"),
+      label: t("Browser", "浏览器"),
       shortcut: keybindingLabels.browser,
       icon: "browser",
     },
@@ -127,6 +133,8 @@ export function WorkbenchPanel({ activeView, keybindingLabels, onClose, onSelect
       <div className="workbench-body">
         {activeView === "launcher" ? (
           <WorkbenchLauncher entries={entries} onSelectView={onSelectView} />
+        ) : activeView === "plan" ? (
+          <WorkbenchPlan />
         ) : activeView === "review" ? (
           <WorkbenchReview />
         ) : activeView === "terminal" ? (
@@ -140,6 +148,64 @@ export function WorkbenchPanel({ activeView, keybindingLabels, onClose, onSelect
         )}
       </div>
     </aside>
+  );
+}
+
+function WorkbenchPlan() {
+  const { t } = useI18n();
+  const messages = useStore((state) => state.messages);
+  const taskPlan = useMemo(() => findLatestTaskPlan(messages), [messages]);
+
+  if (!taskPlan || taskPlan.steps.length === 0) {
+    return (
+      <div className="workbench-state workbench-plan-empty" role="status">
+        {t("No active plan. Pi will create one for multi-step tasks.", "暂无活动计划。Pi 会为多步骤任务创建计划。")}
+      </div>
+    );
+  }
+
+  const completed = taskPlan.steps.filter((step) => step.status === "completed").length;
+  const progressLabel = t("{completed} of {total} completed", "已完成 {completed}/{total}", {
+    completed,
+    total: taskPlan.steps.length,
+  });
+
+  return (
+    <div className="workbench-plan workbench-scroll">
+      <div className="workbench-plan-summary" aria-live="polite">
+        {taskPlan.explanation && <p className="workbench-plan-explanation">{taskPlan.explanation}</p>}
+        <div className="workbench-plan-progress-row">
+          <strong>{t("Progress", "进度")}</strong>
+          <span>{progressLabel}</span>
+        </div>
+        <progress
+          className="workbench-plan-progress"
+          max={taskPlan.steps.length}
+          value={completed}
+          aria-label={progressLabel}
+        />
+      </div>
+      <ol className="workbench-plan-list">
+        {taskPlan.steps.map((step, index) => {
+          const statusLabel = step.status === "completed"
+            ? t("Completed", "已完成")
+            : step.status === "in_progress"
+              ? t("In progress", "进行中")
+              : t("Pending", "待处理");
+          return (
+            <li
+              className={`workbench-plan-step ${step.status}`}
+              aria-current={step.status === "in_progress" ? "step" : undefined}
+              key={`${index}:${step.step}`}
+            >
+              <span className="workbench-plan-marker" aria-hidden="true" />
+              <span className="workbench-plan-step-text">{step.step}</span>
+              <span className="workbench-plan-step-status">{statusLabel}</span>
+            </li>
+          );
+        })}
+      </ol>
+    </div>
   );
 }
 
@@ -157,6 +223,7 @@ function WorkbenchLauncher({
           className="workbench-launcher-item"
           type="button"
           key={entry.view}
+          data-workbench-view={entry.view}
           autoFocus={index === 0}
           onClick={() => onSelectView(entry.view)}
         >
@@ -415,17 +482,37 @@ function WorkbenchTerminalSession({
 
 function WorkbenchBrowser() {
   const { t } = useI18n();
-  const [url, setUrl] = useState("");
+  const [address, setAddress] = useState("");
+  const [history, setHistory] = useState<{ urls: string[]; index: number }>({ urls: [], index: -1 });
+  const [frameVersion, setFrameVersion] = useState(0);
+  const currentUrl = history.urls[history.index];
 
-  async function openBrowser(event: FormEvent) {
+  function navigate(event: FormEvent) {
     event.preventDefault();
-    const normalized = normalizeBrowserUrl(url);
+    const normalized = normalizeBrowserUrl(address);
     if (!normalized) {
       showToast(t("Enter a valid URL", "请输入有效 URL"), "error");
       return;
     }
+    setAddress(normalized);
+    setHistory((current) => {
+      const urls = [...current.urls.slice(0, current.index + 1), normalized];
+      return { urls, index: urls.length - 1 };
+    });
+  }
+
+  function moveHistory(offset: -1 | 1) {
+    const index = history.index + offset;
+    const nextUrl = history.urls[index];
+    if (!nextUrl) return;
+    setHistory({ ...history, index });
+    setAddress(nextUrl);
+  }
+
+  async function openExternal() {
+    if (!currentUrl) return;
     try {
-      await api.openExternal(normalized);
+      await api.openExternal(currentUrl);
     } catch (error) {
       showToast(t("Could not open URL: {error}", "无法打开 URL：{error}", {
         error: error instanceof Error ? error.message : String(error),
@@ -434,25 +521,84 @@ function WorkbenchBrowser() {
   }
 
   return (
-    <form
-      className="workbench-form"
-      onSubmit={openBrowser}
-      aria-label={t("Open URL in system browser", "在系统浏览器中打开 URL")}
-    >
-      <label>
-        <span>{t("URL", "URL")}</span>
+    <div className="workbench-browser">
+      <form className="workbench-browser-toolbar" onSubmit={navigate} aria-label={t("Browser navigation", "浏览器导航")}>
+        <button
+          className="icon-button workbench-browser-action"
+          type="button"
+          disabled={history.index <= 0}
+          onClick={() => moveHistory(-1)}
+          aria-label={t("Back", "后退")}
+          title={t("Back", "后退")}
+        >
+          <Icon name="chevron-left" size={17} />
+        </button>
+        <button
+          className="icon-button workbench-browser-action"
+          type="button"
+          disabled={history.index >= history.urls.length - 1}
+          onClick={() => moveHistory(1)}
+          aria-label={t("Forward", "前进")}
+          title={t("Forward", "前进")}
+        >
+          <Icon name="chevron-right" size={17} />
+        </button>
+        <button
+          className="icon-button workbench-browser-action"
+          type="button"
+          disabled={!currentUrl}
+          onClick={() => setFrameVersion((version) => version + 1)}
+          aria-label={t("Reload", "刷新")}
+          title={t("Reload", "刷新")}
+        >
+          <Icon name="rotate-cw" size={16} />
+        </button>
         <input
-          value={url}
-          onChange={(event) => setUrl(event.target.value)}
-          placeholder="https://"
+          className="workbench-search workbench-browser-address"
+          value={address}
+          onChange={(event) => setAddress(event.target.value)}
+          placeholder="http://localhost:3000"
           autoCapitalize="none"
           autoCorrect="off"
           spellCheck={false}
           autoFocus
+          aria-label={t("URL", "URL")}
         />
-      </label>
-      <button className="workbench-primary" type="submit">{t("Open", "打开")}</button>
-    </form>
+        <button className="workbench-primary workbench-browser-go" type="submit">
+          {t("Go", "前往")}
+        </button>
+        <button
+          className="icon-button workbench-browser-action"
+          type="button"
+          disabled={!currentUrl}
+          onClick={() => void openExternal()}
+          aria-label={t("Open externally", "在外部浏览器中打开")}
+          title={t("Open externally", "在外部浏览器中打开")}
+        >
+          <Icon name="monitor" size={16} />
+        </button>
+      </form>
+      {currentUrl ? (
+        <iframe
+          key={`${history.index}:${frameVersion}`}
+          className="workbench-browser-frame"
+          src={currentUrl}
+          title={t("Embedded browser", "内嵌浏览器")}
+          sandbox="allow-forms allow-modals allow-popups allow-popups-to-escape-sandbox allow-same-origin allow-scripts"
+          referrerPolicy="no-referrer"
+        />
+      ) : (
+        <div className="workbench-browser-empty">
+          {t("Enter an HTTP(S) URL to preview it here.", "输入 HTTP(S) URL 在此预览。")}
+        </div>
+      )}
+      <p className="workbench-browser-hint">
+        {t(
+          "Some sites block embedding; use Open externally when needed.",
+          "部分网站禁止内嵌；需要时请在外部浏览器中打开。",
+        )}
+      </p>
+    </div>
   );
 }
 
@@ -564,8 +710,10 @@ function WorkbenchSideTask() {
 }
 
 function WorkbenchIcon({ icon }: { icon: WorkbenchEntry["icon"] }) {
-  const path = icon === "review"
-    ? "M8 7h8M8 12h8M8 17h5M5 7h.01M5 12h.01M5 17h.01"
+  const path = icon === "plan"
+    ? "M9 6h11M9 12h11M9 18h11M4 6l1 1 2-2M4 12l1 1 2-2M4 18l1 1 2-2"
+    : icon === "review"
+      ? "M8 7h8M8 12h8M8 17h5M5 7h.01M5 12h.01M5 17h.01"
     : icon === "terminal"
       ? "m5 7 5 5-5 5M12 17h7"
       : icon === "browser"
@@ -577,9 +725,10 @@ function WorkbenchIcon({ icon }: { icon: WorkbenchEntry["icon"] }) {
 }
 
 function getWorkbenchTitle(view: WorkbenchView, t: (en: string, zhCN: string, values?: Record<string, string | number>) => string): string {
+  if (view === "plan") return t("Plan", "计划");
   if (view === "review") return t("Review", "审阅");
   if (view === "terminal") return t("Terminals", "终端");
-  if (view === "browser") return t("System browser", "系统浏览器");
+  if (view === "browser") return t("Browser", "浏览器");
   if (view === "files") return t("Files", "文件");
   if (view === "side-task") return t("Side task", "侧边任务");
   return t("Workbench", "工作台");
@@ -603,8 +752,8 @@ function normalizeBrowserUrl(rawUrl: string): string | null {
   const trimmed = rawUrl.trim();
   if (!trimmed) return null;
   try {
-    const url = new URL(/^[a-z][a-z0-9+.-]*:/i.test(trimmed) ? trimmed : `https://${trimmed}`);
-    return ["http:", "https:", "mailto:"].includes(url.protocol) ? url.toString() : null;
+    const url = new URL(/^[a-z][a-z0-9+.-]*:\/\//i.test(trimmed) ? trimmed : `http://${trimmed}`);
+    return ["http:", "https:"].includes(url.protocol) ? url.toString() : null;
   } catch {
     return null;
   }
