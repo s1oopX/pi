@@ -515,10 +515,16 @@ This means:
 
 #### abort_bash
 
-Abort a running bash command.
+Abort all running bash commands.
 
 ```json
 {"type": "abort_bash"}
+```
+
+Pass the original `bash` request id as `executionId` to abort only that command:
+
+```json
+{"type": "abort_bash", "executionId": "bash_7"}
 ```
 
 Response:

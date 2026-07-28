@@ -36,6 +36,11 @@ interface BashResult {
   fullOutputPath?: string;
 }
 
+interface WorkbenchTerminalTab {
+  id: number;
+  running: boolean;
+}
+
 export function WorkbenchPanel({ activeView, keybindingLabels, onClose, onSelectView }: WorkbenchPanelProps) {
   const { t } = useI18n();
   const backButtonRef = useRef<HTMLButtonElement>(null);
@@ -50,7 +55,7 @@ export function WorkbenchPanel({ activeView, keybindingLabels, onClose, onSelect
     },
     {
       view: "terminal",
-      label: t("Shell command", "Shell 命令"),
+      label: t("Terminals", "终端"),
       shortcut: keybindingLabels.terminal,
       icon: "terminal",
     },
@@ -175,10 +180,130 @@ function WorkbenchReview() {
 
 function WorkbenchTerminal() {
   const { t } = useI18n();
+  const [tabs, setTabs] = useState<WorkbenchTerminalTab[]>([{ id: 1, running: false }]);
+  const [activeTabId, setActiveTabId] = useState(1);
+  const nextTabIdRef = useRef(2);
+  const activeTab = tabs.find((tab) => tab.id === activeTabId) ?? tabs[0];
+
+  function addTerminal() {
+    const id = nextTabIdRef.current++;
+    setTabs((current) => [...current, { id, running: false }]);
+    setActiveTabId(id);
+  }
+
+  function closeActiveTerminal() {
+    const index = tabs.findIndex((tab) => tab.id === activeTabId);
+    if (index < 0 || tabs.length === 1 || tabs[index].running) return;
+    const nextTabs = tabs.filter((tab) => tab.id !== activeTabId);
+    const nextActiveId = nextTabs[Math.min(index, nextTabs.length - 1)].id;
+    setTabs(nextTabs);
+    setActiveTabId(nextActiveId);
+    requestAnimationFrame(() => document.getElementById(`workbench-terminal-tab-${nextActiveId}`)?.focus());
+  }
+
+  function setTabRunning(id: number, running: boolean) {
+    setTabs((current) => current.map((tab) => tab.id === id ? { ...tab, running } : tab));
+  }
+
+  function handleTabKeyDown(event: KeyboardEvent<HTMLButtonElement>, index: number) {
+    let nextIndex: number | undefined;
+    if (event.key === "ArrowLeft") nextIndex = (index - 1 + tabs.length) % tabs.length;
+    if (event.key === "ArrowRight") nextIndex = (index + 1) % tabs.length;
+    if (event.key === "Home") nextIndex = 0;
+    if (event.key === "End") nextIndex = tabs.length - 1;
+    if (nextIndex === undefined) return;
+    event.preventDefault();
+    const id = tabs[nextIndex].id;
+    setActiveTabId(id);
+    requestAnimationFrame(() => document.getElementById(`workbench-terminal-tab-${id}`)?.focus());
+  }
+
+  return (
+    <div className="workbench-terminal">
+      <div className="workbench-terminal-toolbar">
+        <div className="workbench-terminal-tabs" role="tablist" aria-label={t("Terminals", "终端")}>
+          {tabs.map((tab, index) => {
+            const active = tab.id === activeTabId;
+            const label = t("Terminal {number}", "终端 {number}", { number: tab.id });
+            return (
+              <button
+                id={`workbench-terminal-tab-${tab.id}`}
+                className={`workbench-terminal-tab${active ? " active" : ""}`}
+                type="button"
+                role="tab"
+                aria-selected={active}
+                aria-controls={`workbench-terminal-panel-${tab.id}`}
+                aria-label={tab.running ? t("{label}, running", "{label}，运行中", { label }) : label}
+                tabIndex={active ? 0 : -1}
+                key={tab.id}
+                onClick={() => setActiveTabId(tab.id)}
+                onKeyDown={(event) => handleTabKeyDown(event, index)}
+              >
+                {tab.running && <span className="workbench-terminal-running" aria-hidden="true" />}
+                <span>{label}</span>
+              </button>
+            );
+          })}
+        </div>
+        <button
+          className="icon-button workbench-terminal-action"
+          type="button"
+          disabled={tabs.length === 1 || activeTab.running}
+          onClick={closeActiveTerminal}
+          aria-label={t("Close current terminal", "关闭当前终端")}
+          title={activeTab.running
+            ? t("Stop the command before closing", "停止命令后才能关闭")
+            : t("Close current terminal", "关闭当前终端")}
+        >
+          <Icon name="close" size={16} />
+        </button>
+        <button
+          className="icon-button workbench-terminal-action"
+          type="button"
+          onClick={addTerminal}
+          aria-label={t("New terminal", "新建终端")}
+          title={t("New terminal", "新建终端")}
+        >
+          <Icon name="plus" size={16} />
+        </button>
+      </div>
+      <div className="workbench-terminal-panels">
+        {tabs.map((tab) => {
+          const active = tab.id === activeTabId;
+          return (
+            <div
+              id={`workbench-terminal-panel-${tab.id}`}
+              className="workbench-terminal-session"
+              role="tabpanel"
+              aria-labelledby={`workbench-terminal-tab-${tab.id}`}
+              hidden={!active}
+              key={tab.id}
+            >
+              <WorkbenchTerminalSession active={active} onRunningChange={(running) => setTabRunning(tab.id, running)} />
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+function WorkbenchTerminalSession({
+  active,
+  onRunningChange,
+}: {
+  active: boolean;
+  onRunningChange: (running: boolean) => void;
+}) {
+  const { t } = useI18n();
   const terminalRef = useRef<TerminalPanelHandle>(null);
+  const inputRef = useRef<HTMLInputElement>(null);
+  const executionIdRef = useRef<string | null>(null);
+  const activeRef = useRef(active);
   const [command, setCommand] = useState("");
   const [running, setRunning] = useState(false);
   const historyRef = useRef(createCommandHistoryState());
+  activeRef.current = active;
 
   useEffect(() => {
     terminalRef.current?.writeln("Pi Studio");
@@ -213,10 +338,12 @@ function WorkbenchTerminal() {
     historyRef.current = pushCommand(historyRef.current, trimmed);
     setCommand("");
     setRunning(true);
+    onRunningChange(true);
     terminalRef.current?.writeln(`$ ${trimmed}`);
     // Stream output live via bash_execution_update events correlated by the
     // request id; the final response only fills in what was not streamed.
     const executionId = createBashExecutionId();
+    executionIdRef.current = executionId;
     let streamed = "";
     const unsubscribe = subscribeBashExecution(executionId, (delta) => {
       streamed += delta;
@@ -240,15 +367,18 @@ function WorkbenchTerminal() {
       terminalRef.current?.writeln(error instanceof Error ? error.message : String(error));
     } finally {
       unsubscribe();
+      if (executionIdRef.current === executionId) executionIdRef.current = null;
       setRunning(false);
-      terminalRef.current?.focus();
+      onRunningChange(false);
+      if (activeRef.current) requestAnimationFrame(() => inputRef.current?.focus());
     }
   }
 
   async function abortCommand() {
-    if (!running) return;
+    const executionId = executionIdRef.current;
+    if (!running || !executionId) return;
     try {
-      await api.abortBash();
+      await api.abortBash(executionId);
     } catch (error) {
       showToast(t("Failed to stop terminal command: {error}", "停止终端命令失败：{error}", {
         error: error instanceof Error ? error.message : String(error),
@@ -257,16 +387,17 @@ function WorkbenchTerminal() {
   }
 
   return (
-    <div className="workbench-terminal">
+    <>
       <TerminalPanel ref={terminalRef} className="workbench-terminal-output" />
       <form className="workbench-command-row" onSubmit={runCommand}>
         <input
+          ref={inputRef}
           value={command}
           onChange={(event) => setCommand(event.target.value)}
           onKeyDown={handleCommandKeyDown}
           placeholder={t("Command", "命令")}
           disabled={running}
-          autoFocus
+          autoFocus={active}
         />
         {running ? (
           <button className="workbench-primary secondary" type="button" onClick={abortCommand}>
@@ -278,7 +409,7 @@ function WorkbenchTerminal() {
           </button>
         )}
       </form>
-    </div>
+    </>
   );
 }
 
@@ -447,7 +578,7 @@ function WorkbenchIcon({ icon }: { icon: WorkbenchEntry["icon"] }) {
 
 function getWorkbenchTitle(view: WorkbenchView, t: (en: string, zhCN: string, values?: Record<string, string | number>) => string): string {
   if (view === "review") return t("Review", "审阅");
-  if (view === "terminal") return t("Shell (one-shot)", "Shell（单次命令）");
+  if (view === "terminal") return t("Terminals", "终端");
   if (view === "browser") return t("System browser", "系统浏览器");
   if (view === "files") return t("Files", "文件");
   if (view === "side-task") return t("Side task", "侧边任务");

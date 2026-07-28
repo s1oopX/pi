@@ -131,7 +131,7 @@ export type RpcCommand =
 
 	// Bash
 	| { id?: string; type: "bash"; command: string; excludeFromContext?: boolean }
-	| { id?: string; type: "abort_bash" }
+	| { id?: string; type: "abort_bash"; executionId?: string }
 
 	// Session
 	| { id?: string; type: "get_session_stats" }

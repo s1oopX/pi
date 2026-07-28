@@ -17,7 +17,7 @@ continuous alignment loop; one row lands per iteration.
 | Review pane: stage/revert per **chunk** | Staged/unstaged sections with stage, unstage, and armed discard per hunk; main process re-reads and hash-validates every patch | ✅ |
 | Inline diff comments → ask the agent to address | "Ask agent" on a file's diff drafts an @file prompt | 🟡 file-level landed; chunk/line comments open |
 | GitHub PR review comments in-app (PR Chat) | — | ❌ heavy (GitHub API + auth); deliberate non-goal for now |
-| Multiple terminal tabs | Single workbench terminal | ❌ candidate |
+| Multiple terminal tabs | Concurrent workbench tabs with preserved output/drafts/history and per-command Stop | ✅ |
 | Task sidebar: live plan/sources/artifacts | Live tool cards, turn summary, streaming status | 🟡 partial (no plan pane) |
 | Summary pane | Turn summary | ✅ |
 | Session naming/rename, thread search | Inline rename (double-click), search | ✅ |
@@ -33,8 +33,8 @@ continuous alignment loop; one row lands per iteration.
 
 ## Loop backlog (ordered)
 
-1. Multiple terminal tabs in the workbench.
-2. Plan pane fed from turn structure.
-3. Line-anchored diff comments feeding the agent prompt.
+1. Plan pane fed from turn structure.
+2. Line-anchored diff comments feeding the agent prompt.
+3. Embedded browser for frontend iteration.
 
 Sources: [OpenAI — Introducing the Codex app](https://openai.com/index/introducing-the-codex-app/), [SmartScope — Codex desktop April 2026 update](https://smartscope.blog/en/generative-ai/chatgpt/codex-desktop-major-update-april-2026/), [Codex KB — workspace/review pane](https://codex.danielvaughan.com/2026/04/17/codex-app-workspace-pr-review-task-sidebar-artifact-viewer/), [Macaron — Codex review pane guide](https://macaron.im/blog/codex-app-review-pane), [Releasebot — Codex updates July 2026](https://releasebot.io/updates/openai/codex)

@@ -286,6 +286,7 @@ export interface BashCommand {
 
 export interface AbortBashCommand {
   type: "abort_bash";
+  executionId?: string;
 }
 
 // Steering / follow-up

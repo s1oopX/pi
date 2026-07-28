@@ -334,7 +334,7 @@ export class AgentSession {
 	private _retryAttempt = 0;
 
 	// Bash execution state
-	private _bashAbortController: AbortController | undefined = undefined;
+	private _bashAbortControllers = new Map<string | symbol, AbortController>();
 	private _pendingBashMessages: BashExecutionMessage[] = [];
 
 	// Extension system
@@ -2782,7 +2782,9 @@ export class AgentSession {
 		onChunk?: (chunk: string) => void,
 		options?: { excludeFromContext?: boolean; id?: string; operations?: BashOperations },
 	): Promise<BashResult> {
-		this._bashAbortController = new AbortController();
+		const executionKey = options?.id ?? Symbol("bash");
+		const abortController = new AbortController();
+		this._bashAbortControllers.set(executionKey, abortController);
 
 		// Apply command prefix if configured (e.g., "shopt -s expand_aliases" for alias support)
 		const prefix = this.settingsManager.getShellCommandPrefix();
@@ -2799,14 +2801,16 @@ export class AgentSession {
 						onChunk?.(delta);
 						this._emit({ type: "bash_execution_update", id: options?.id, delta });
 					},
-					signal: this._bashAbortController.signal,
+					signal: abortController.signal,
 				},
 			);
 
 			this.recordBashResult(command, result, options);
 			return result;
 		} finally {
-			this._bashAbortController = undefined;
+			if (this._bashAbortControllers.get(executionKey) === abortController) {
+				this._bashAbortControllers.delete(executionKey);
+			}
 		}
 	}
 
@@ -2841,15 +2845,21 @@ export class AgentSession {
 	}
 
 	/**
-	 * Cancel running bash command.
+	 * Cancel one bash command by execution id, or all commands when omitted.
 	 */
-	abortBash(): void {
-		this._bashAbortController?.abort();
+	abortBash(executionId?: string): void {
+		if (executionId !== undefined) {
+			this._bashAbortControllers.get(executionId)?.abort();
+			return;
+		}
+		for (const abortController of this._bashAbortControllers.values()) {
+			abortController.abort();
+		}
 	}
 
-	/** Whether a bash command is currently running */
+	/** Whether any bash command is currently running */
 	get isBashRunning(): boolean {
-		return this._bashAbortController !== undefined;
+		return this._bashAbortControllers.size > 0;
 	}
 
 	/** Whether there are pending bash messages waiting to be flushed */

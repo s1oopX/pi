@@ -1490,7 +1490,7 @@ export async function runRpcMode(runtimeHost: AgentSessionRuntime): Promise<neve
 			}
 
 			case "abort_bash": {
-				session.abortBash();
+				session.abortBash(command.executionId);
 				return success(id, "abort_bash");
 			}
 

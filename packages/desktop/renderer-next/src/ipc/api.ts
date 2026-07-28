@@ -481,8 +481,8 @@ export async function bash(command: string, excludeFromContext?: boolean, id?: s
   return backendRequest({ type: "bash", command, excludeFromContext, ...(id ? { id } : {}) });
 }
 
-export async function abortBash(): Promise<void> {
-  await backendRequest({ type: "abort_bash" });
+export async function abortBash(executionId?: string): Promise<void> {
+  await backendRequest({ type: "abort_bash", executionId });
 }
 
 // --- Fire-and-forget ---
