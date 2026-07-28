@@ -1,6 +1,6 @@
 # Codex Desktop Parity Audit
 
-Status: living document · Last verified against public Codex information 2026-07 (see sources)
+Status: living document · Last verified against Codex Desktop 26.721.4979.0 and public information 2026-07 (see sources)
 
 Feature-by-feature comparison against the OpenAI Codex desktop app (launched
 2026-02, major "Codex for (almost) everything" update 2026-04). Drives the
@@ -29,11 +29,11 @@ continuous alignment loop; one row lands per iteration.
 | Artifact viewer (PDF/spreadsheet outputs) | Inline text, Markdown, HTML, image, and PDF preview with source toggle, refresh, open, reveal, and copy-path actions; Office binaries open in the system app | 🟡 core landed; Office preview delegated |
 | Computer use / plugins / memory / image generation | — | ➖ platform-scope non-goals for a BYO-endpoint client |
 | SSH remote devboxes | — | ➖ non-goal (local-first product) |
-| Automations / scheduled tasks | — | ❌ candidate (long-term; backend cron-like runs) |
+| Automations / scheduled tasks | Dedicated page with persistent RRULE schedules, common presets, search/filter, edit, pause/resume, Run now, delete, next/last state, OS completion notices, and reopenable per-run sessions. Runs use isolated backends and safe `auto` tool permissions; due timestamps advance before execution to prevent duplicate wakeups. | 🟡 core parity; plugin templates and archive/unread run triage remain |
 
 ## Loop backlog (ordered)
 
-1. Automations / scheduled tasks.
+1. Automation template discovery plus archived/unread run triage.
 2. Revisit inline Office/spreadsheet preview only if the system-app fallback proves insufficient.
 
 Sources: [OpenAI — Introducing the Codex app](https://openai.com/index/introducing-the-codex-app/), [SmartScope — Codex desktop April 2026 update](https://smartscope.blog/en/generative-ai/chatgpt/codex-desktop-major-update-april-2026/), [Codex KB — workspace/review pane](https://codex.danielvaughan.com/2026/04/17/codex-app-workspace-pr-review-task-sidebar-artifact-viewer/), [Macaron — Codex review pane guide](https://macaron.im/blog/codex-app-review-pane), [Releasebot — Codex updates July 2026](https://releasebot.io/updates/openai/codex)

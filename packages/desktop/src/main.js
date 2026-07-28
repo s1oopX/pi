@@ -9,6 +9,7 @@ import {
 	describeBackendCommandRejection,
 } from "./backend-command-allowlist.js";
 import { BackendHandle } from "./backend-handle.js";
+import { createAutomationService } from "./automations.js";
 import { sanitizeDiagnostics } from "./diagnostics.js";
 import {
 	applyGitHunk,
@@ -52,8 +53,11 @@ const WINDOW_STATE_FILE = "window-state.json";
 const WORKSPACE_STATE_FILE = "workspace-state.json";
 const TASK_WORKSPACE_DIRECTORY = "tasks";
 const TASK_SETTINGS_FILE = "task-settings.json";
+const AUTOMATIONS_FILE = "automations.json";
 const MAX_IDLE_MINUTES = 240;
 const DEFAULT_TASK_SETTINGS = { maxTasks: 3, idleMinutes: 30 };
+const AUTOMATION_START_TIMEOUT_MS = 30_000;
+const AUTOMATION_RUN_TIMEOUT_MS = 30 * 60 * 1000;
 
 /** @type {import("electron").BrowserWindow | undefined} */
 let mainWindow;
@@ -62,6 +66,10 @@ let windowCreationPromise;
 let backendCwd = process.env.PI_DESKTOP_CWD || process.cwd();
 let isQuitting = false;
 let workspaceStateInitialized = false;
+/** @type {ReturnType<typeof createAutomationService> | undefined} */
+let automationService;
+/** @type {Set<BackendHandle>} */
+const automationHandles = new Set();
 
 // Every backend child and its per-process state lives in a BackendHandle
 // (src/backend-handle.js); the task registry owns the pool of them
@@ -103,6 +111,10 @@ function getTaskWorkspacePath() {
 	const taskWorkspacePath = join(app.getPath("userData"), TASK_WORKSPACE_DIRECTORY);
 	mkdirSync(taskWorkspacePath, { recursive: true });
 	return taskWorkspacePath;
+}
+
+function getAutomationsPath() {
+	return join(app.getPath("userData"), AUTOMATIONS_FILE);
 }
 
 function initializeBackendCwd() {
@@ -478,6 +490,186 @@ function maybeNotify(payload, taskLabel) {
 	}
 }
 
+/**
+ * @template T
+ * @param {Promise<T>} promise
+ * @param {number} timeoutMs
+ * @param {string} message
+ * @returns {Promise<T>}
+ */
+function waitWithTimeout(promise, timeoutMs, message) {
+	return new Promise((resolve, reject) => {
+		const timer = setTimeout(() => reject(new Error(message)), timeoutMs);
+		promise.then(
+			(value) => {
+				clearTimeout(timer);
+				resolve(value);
+			},
+			(error) => {
+				clearTimeout(timer);
+				reject(error);
+			},
+		);
+	});
+}
+
+/**
+ * @param {BackendHandle} handle
+ * @param {Record<string, unknown>} command
+ * @param {{ timeoutMs?: number }} [options]
+ * @returns {Promise<unknown>}
+ */
+async function requestAutomationBackend(handle, command, options = {}) {
+	const response = /** @type {{ success?: boolean, error?: string, command?: string, data?: unknown }} */ (
+		await handle.request(command, options)
+	);
+	if (!response.success) throw new Error(response.error || `Command failed: ${response.command ?? command.type}`);
+	return response.data;
+}
+
+/**
+ * @param {{ id: string, name: string, prompt: string, cwd: string }} automation
+ * @param {{ id: string, startedAt: string }} run
+ * @returns {Promise<{ sessionId?: string, sessionFile?: string, error?: string }>}
+ */
+async function runAutomation(automation, run) {
+	let ready = false;
+	let runFailure;
+	/** @type {{ sessionId?: string, sessionFile?: string }} */
+	let session = {};
+	/** @type {() => void} */
+	let resolveReady = () => {};
+	/** @type {(error: Error) => void} */
+	let rejectReady = () => {};
+	/** @type {() => void} */
+	let resolveFinished = () => {};
+	/** @type {(error: Error) => void} */
+	let rejectFinished = () => {};
+	/** @type {Promise<void>} */
+	const readyPromise = new Promise((resolve, reject) => {
+		resolveReady = resolve;
+		rejectReady = reject;
+	});
+	/** @type {Promise<void>} */
+	const finishedPromise = new Promise((resolve, reject) => {
+		resolveFinished = resolve;
+		rejectFinished = reject;
+	});
+	const handle = new BackendHandle({
+		id: `automation_${automation.id}_${run.id}`,
+		getCwd: () => automation.cwd,
+		getBackendPath,
+		sendToRenderer: (channel, payload) => {
+			mirrorToFileLog(channel, /** @type {Record<string, unknown>} */ (payload));
+			if (channel !== "backend:status") return;
+			const status = /** @type {{ ready?: boolean, error?: string }} */ (payload);
+			if (status.ready) {
+				ready = true;
+				resolveReady();
+				return;
+			}
+			if (!status.error) return;
+			const error = new Error(status.error);
+			if (ready) rejectFinished(error);
+			else rejectReady(error);
+		},
+		notify: (payload) => {
+			const event = /** @type {Record<string, unknown>} */ (payload);
+			if (event.type === "auto_retry_end" && event.success === false) {
+				runFailure = String(event.finalError ?? "The provider retry budget was exhausted");
+			}
+			if (event.type === "extension_error") {
+				runFailure = String(event.error ?? "An extension failed during the automation");
+			}
+			if (event.type === "agent_end" && !event.willRetry) resolveFinished();
+		},
+		isQuitting: () => isQuitting,
+	});
+	automationHandles.add(handle);
+
+	async function captureSession() {
+		if (!handle.ready) return;
+		const state = await requestAutomationBackend(handle, { type: "get_state" });
+		if (!state || typeof state !== "object") return;
+		const record = /** @type {Record<string, unknown>} */ (state);
+		session = {
+			...(typeof record.sessionId === "string" && record.sessionId ? { sessionId: record.sessionId } : {}),
+			...(typeof record.sessionFile === "string" && record.sessionFile ? { sessionFile: record.sessionFile } : {}),
+		};
+	}
+
+	try {
+		handle.start();
+		await waitWithTimeout(readyPromise, AUTOMATION_START_TIMEOUT_MS, "Automation backend did not become ready");
+		const changed = await requestAutomationBackend(handle, { type: "new_session", cwd: automation.cwd });
+		if (changed && typeof changed === "object" && /** @type {Record<string, unknown>} */ (changed).cancelled) {
+			throw new Error("Automation session creation was cancelled");
+		}
+		await requestAutomationBackend(handle, { type: "set_extension_flag", name: "permission-mode", value: "auto" });
+		await requestAutomationBackend(handle, {
+			type: "set_session_name",
+			name: `Automation: ${automation.name.slice(0, 80)} — ${new Date(run.startedAt).toLocaleString()}`,
+		});
+		await captureSession();
+		await requestAutomationBackend(handle, { type: "prompt", message: automation.prompt }, { timeoutMs: PROMPT_REQUEST_TIMEOUT_MS });
+		await waitWithTimeout(finishedPromise, AUTOMATION_RUN_TIMEOUT_MS, "Automation run timed out after 30 minutes");
+		await captureSession();
+		if (runFailure) throw new Error(runFailure);
+		return session;
+	} catch (error) {
+		try {
+			await captureSession();
+		} catch {
+			// Keep the original run failure; the session path is best-effort on a dead backend.
+		}
+		return { ...session, error: error instanceof Error ? error.message : String(error) };
+	} finally {
+		automationHandles.delete(handle);
+		handle.stop();
+	}
+}
+
+/**
+ * @param {{ name: string }} automation
+ * @param {{ status: string, error?: string }} run
+ */
+function notifyAutomationResult(automation, run) {
+	getFileLog().append(
+		run.status === "success" ? "info" : "error",
+		"automations",
+		`${automation.name}: ${run.status}${run.error ? ` (${run.error})` : ""}`,
+	);
+	if (!Notification.isSupported() || (mainWindow && !mainWindow.isDestroyed() && mainWindow.isFocused())) return;
+	try {
+		const notification = new Notification({
+			title: `${PRODUCT_NAME} Automation`,
+			body: run.status === "success"
+				? `${automation.name} finished.`
+				: `${automation.name} failed: ${run.error ?? "Unknown error"}`,
+			icon: getWindowIconPath(),
+		});
+		notification.on("click", () => focusMainWindow());
+		notification.show();
+	} catch {
+		// Notifications are best-effort; the persisted run record remains authoritative.
+	}
+}
+
+function getAutomationService() {
+	if (!automationService) {
+		automationService = createAutomationService({
+			filePath: getAutomationsPath(),
+			runAutomation,
+			onChange: (automations) => sendToRenderer("automation:changed", { automations }),
+			onRunComplete: notifyAutomationResult,
+			onError: (error) => {
+				getFileLog().append("error", "automations", error instanceof Error ? error.message : String(error));
+			},
+		});
+	}
+	return automationService;
+}
+
 async function createWindow() {
 	const isDark = nativeTheme.shouldUseDarkColors;
 	const { workAreaSize } = screen.getPrimaryDisplay();
@@ -553,6 +745,7 @@ async function createWindow() {
 function ensureWindow() {
 	initializeBackendCwd();
 	initializeTaskSettings();
+	getAutomationService();
 	if (mainWindow && !mainWindow.isDestroyed()) return Promise.resolve(mainWindow);
 	if (windowCreationPromise) return windowCreationPromise;
 	windowCreationPromise = createWindow().finally(() => {
@@ -856,6 +1049,33 @@ ipcMain.handle("task:configure", async (_event, settings) => {
 		persistTaskSettings();
 	}
 	return { ...taskSettings, maxTasks: taskRegistry.getMaxTasks() };
+});
+
+ipcMain.handle("automation:list", async () => ({ automations: getAutomationService().list() }));
+
+ipcMain.handle("automation:create", async (_event, input) => getAutomationService().create(input));
+
+ipcMain.handle("automation:update", async (_event, id, input) => getAutomationService().update(id, input));
+
+ipcMain.handle("automation:set-status", async (_event, id, status) => getAutomationService().setStatus(id, status));
+
+ipcMain.handle("automation:delete", async (_event, id) => getAutomationService().delete(id));
+
+ipcMain.handle("automation:run-now", async (_event, id) => getAutomationService().runNow(id));
+
+ipcMain.handle("automation:open-run", async (_event, automationId, runId) => {
+	return serializeSessionMutation(async () => {
+		const automation = getAutomationService().list().find((candidate) => candidate.id === String(automationId ?? ""));
+		const run = automation?.runs.find((candidate) => candidate.id === String(runId ?? ""));
+		if (!run?.sessionFile) throw new Error("This run does not have a session file");
+		const state = await primaryBackend.request({ type: "get_state" });
+		if (!state.success) throw new Error(state.error || "Could not read the primary session");
+		if (state.data?.isStreaming) throw new Error("Finish or stop the primary run before opening automation history");
+		const switched = await primaryBackend.request({ type: "switch_session", sessionPath: run.sessionFile });
+		if (!switched.success) throw new Error(switched.error || "Could not open the automation session");
+		if (typeof switched.data?.cwd === "string") syncBackendCwd(switched.data.cwd);
+		return switched.data;
+	});
 });
 
 ipcMain.handle("worktrees:list-leftovers", async () => {
@@ -1268,6 +1488,9 @@ ipcMain.handle("logs:reveal", async () => {
 app.on("before-quit", () => {
 	isQuitting = true;
 	getFileLog().append("info", "main", "quitting");
+	automationService?.stop();
+	for (const handle of automationHandles) handle.stop();
+	automationHandles.clear();
 	taskRegistry.stopAll();
 });
 

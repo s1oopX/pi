@@ -56,6 +56,30 @@ contextBridge.exposeInMainWorld("piDesktop", {
 	onTaskChanged(/** @type {PayloadListener} */ listener) {
 		return subscribe("task:changed", listener);
 	},
+	listAutomations() {
+		return ipcRenderer.invoke("automation:list");
+	},
+	createAutomation(/** @type {unknown} */ input) {
+		return ipcRenderer.invoke("automation:create", input);
+	},
+	updateAutomation(/** @type {unknown} */ id, /** @type {unknown} */ input) {
+		return ipcRenderer.invoke("automation:update", id, input);
+	},
+	setAutomationStatus(/** @type {unknown} */ id, /** @type {unknown} */ status) {
+		return ipcRenderer.invoke("automation:set-status", id, status);
+	},
+	deleteAutomation(/** @type {unknown} */ id) {
+		return ipcRenderer.invoke("automation:delete", id);
+	},
+	runAutomationNow(/** @type {unknown} */ id) {
+		return ipcRenderer.invoke("automation:run-now", id);
+	},
+	openAutomationRun(/** @type {unknown} */ automationId, /** @type {unknown} */ runId) {
+		return ipcRenderer.invoke("automation:open-run", automationId, runId);
+	},
+	onAutomationsChanged(/** @type {PayloadListener} */ listener) {
+		return subscribe("automation:changed", listener);
+	},
 	restartBackend() {
 		return ipcRenderer.invoke("backend:restart");
 	},

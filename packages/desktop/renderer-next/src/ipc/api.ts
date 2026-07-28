@@ -53,6 +53,14 @@ export interface PiDesktopApi {
   getTaskSettings?: () => Promise<TaskPoolSettings>;
   configureTasks?: (settings: Partial<TaskPoolSettings>) => Promise<TaskPoolSettings>;
   onTaskChanged?: (listener: (payload: TaskChangedEvent) => void) => () => void;
+  listAutomations?: () => Promise<{ automations: AutomationRecord[] }>;
+  createAutomation?: (input: AutomationInput) => Promise<AutomationRecord>;
+  updateAutomation?: (id: string, input: AutomationInput) => Promise<AutomationRecord>;
+  setAutomationStatus?: (id: string, status: AutomationStatus) => Promise<AutomationRecord>;
+  deleteAutomation?: (id: string) => Promise<AutomationRecord>;
+  runAutomationNow?: (id: string) => Promise<AutomationRecord>;
+  openAutomationRun?: (automationId: string, runId: string) => Promise<{ cancelled: boolean; cwd: string }>;
+  onAutomationsChanged?: (listener: (payload: AutomationsChangedEvent) => void) => () => void;
   listWorktreeLeftovers?: () => Promise<{ leftovers: WorktreeLeftover[] }>;
   deleteWorktreeLeftover?: (targetPath: string) => Promise<{ deleted: boolean }>;
   restartBackend(): Promise<void>;
@@ -182,6 +190,47 @@ export interface TaskChangedEvent {
   worktreeKeptReason?: string;
 }
 
+export type AutomationStatus = "active" | "paused";
+export type AutomationRunStatus = "running" | "success" | "error";
+
+export interface AutomationRun {
+  id: string;
+  startedAt: string;
+  finishedAt?: string;
+  status: AutomationRunStatus;
+  sessionId?: string;
+  sessionFile?: string;
+  error?: string;
+}
+
+export interface AutomationRecord {
+  id: string;
+  name: string;
+  prompt: string;
+  cwd: string;
+  rrule: string;
+  status: AutomationStatus;
+  createdAt: string;
+  updatedAt: string;
+  nextRunAt: string | null;
+  lastRunAt?: string;
+  lastRunStatus?: AutomationRunStatus;
+  lastError?: string;
+  runs: AutomationRun[];
+}
+
+export interface AutomationInput {
+  name: string;
+  prompt: string;
+  cwd: string;
+  rrule: string;
+  status?: AutomationStatus;
+}
+
+export interface AutomationsChangedEvent {
+  automations: AutomationRecord[];
+}
+
 export async function listTasks(): Promise<{ tasks: TaskSnapshot[]; maxTasks?: number }> {
   const api = getApi();
   if (!api?.listTasks) return { tasks: [] };
@@ -238,6 +287,58 @@ export async function pickTaskFolder(): Promise<{ canceled: boolean; cwd?: strin
   const api = requireApi();
   if (!api.pickTaskFolder) throw new Error("Parallel tasks need a newer Pi Studio build");
   return api.pickTaskFolder();
+}
+
+export async function listAutomations(): Promise<AutomationRecord[]> {
+  const api = requireApi();
+  if (!api.listAutomations) throw new Error("Automations need a newer Pi Studio build");
+  const result = await api.listAutomations();
+  return result.automations ?? [];
+}
+
+export async function createAutomation(input: AutomationInput): Promise<AutomationRecord> {
+  const api = requireApi();
+  if (!api.createAutomation) throw new Error("Automations need a newer Pi Studio build");
+  return api.createAutomation(input);
+}
+
+export async function updateAutomation(id: string, input: AutomationInput): Promise<AutomationRecord> {
+  const api = requireApi();
+  if (!api.updateAutomation) throw new Error("Automations need a newer Pi Studio build");
+  return api.updateAutomation(id, input);
+}
+
+export async function setAutomationStatus(id: string, status: AutomationStatus): Promise<AutomationRecord> {
+  const api = requireApi();
+  if (!api.setAutomationStatus) throw new Error("Automations need a newer Pi Studio build");
+  return api.setAutomationStatus(id, status);
+}
+
+export async function deleteAutomation(id: string): Promise<AutomationRecord> {
+  const api = requireApi();
+  if (!api.deleteAutomation) throw new Error("Automations need a newer Pi Studio build");
+  return api.deleteAutomation(id);
+}
+
+export async function runAutomationNow(id: string): Promise<AutomationRecord> {
+  const api = requireApi();
+  if (!api.runAutomationNow) throw new Error("Automations need a newer Pi Studio build");
+  return api.runAutomationNow(id);
+}
+
+export async function openAutomationRun(
+  automationId: string,
+  runId: string,
+): Promise<{ cancelled: boolean; cwd: string }> {
+  const api = requireApi();
+  if (!api.openAutomationRun) throw new Error("Automation history needs a newer Pi Studio build");
+  return api.openAutomationRun(automationId, runId);
+}
+
+export function onAutomationsChanged(listener: (payload: AutomationsChangedEvent) => void): () => void {
+  const api = getApi();
+  if (!api?.onAutomationsChanged) return () => {};
+  return api.onAutomationsChanged(listener);
 }
 
 // --- State ---

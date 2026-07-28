@@ -16,6 +16,7 @@ import "./styles/dialog.css";
 import "./styles/settings.css";
 import "./styles/diff.css";
 import "./styles/terminal.css";
+import "./styles/automations.css";
 
 const root = document.getElementById("root");
 if (!root) throw new Error("Root element not found");

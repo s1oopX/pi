@@ -27,6 +27,9 @@ import {
 interface SidebarProps {
   collapsed: boolean;
   onToggle: () => void;
+  automationsOpen: boolean;
+  onOpenAutomations: () => void;
+  onOpenConversation: () => void;
 }
 
 interface SessionMenuState {
@@ -45,7 +48,7 @@ interface FailedSwitchState {
   error: string;
 }
 
-export function Sidebar({ collapsed, onToggle }: SidebarProps) {
+export function Sidebar({ collapsed, onToggle, automationsOpen, onOpenAutomations, onOpenConversation }: SidebarProps) {
   const { t } = useI18n();
   const sessions = useStore((state) => state.sessions);
   const sessionsHasMore = useStore((state) => state.sessionsHasMore);
@@ -370,6 +373,7 @@ export function Sidebar({ collapsed, onToggle }: SidebarProps) {
       const result = await api.newSession(targetCwd);
       if (result.cancelled) return;
       await useStore.getState().resetForWorkspace(result.cwd);
+      onOpenConversation();
       requestAnimationFrame(() => document.querySelector<HTMLTextAreaElement>(".composer-input")?.focus());
     } catch (error) {
       showToast(
@@ -423,6 +427,7 @@ export function Sidebar({ collapsed, onToggle }: SidebarProps) {
       const result = await api.switchSession(sessionPath);
       if (result.cancelled) return;
       useStore.getState().resetForWorkspace(result.cwd);
+      onOpenConversation();
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
       setFailedSwitch({ path: sessionPath, error: message });
@@ -618,6 +623,7 @@ export function Sidebar({ collapsed, onToggle }: SidebarProps) {
     setWorkspaceMenu(null);
     if (isSameWorkspace(cwd, workspaceCwd)) {
       if (!taskCwd || !isSameWorkspace(cwd, taskCwd)) retainWorkspace(workspaceCwd);
+      onOpenConversation();
       return;
     }
 
@@ -628,8 +634,10 @@ export function Sidebar({ collapsed, onToggle }: SidebarProps) {
       if (result.changed) {
         setSwitchingWorkspaceCwd(result.cwd);
         useStore.getState().resetForWorkspace(result.cwd);
+        onOpenConversation();
       } else {
         setSwitchingWorkspaceCwd(null);
+        onOpenConversation();
       }
     } catch (error) {
       setSwitchingWorkspaceCwd(null);
@@ -872,6 +880,16 @@ export function Sidebar({ collapsed, onToggle }: SidebarProps) {
               <Icon name="download" size={18} strokeWidth={1.5} />
             </button>
           )}
+          <button
+            className={`icon-button sidebar-rail-action sidebar-automations-button ${automationsOpen ? "active" : ""}`}
+            type="button"
+            aria-label={t("Scheduled tasks", "定时任务")}
+            aria-current={automationsOpen ? "page" : undefined}
+            title={t("Scheduled tasks", "定时任务")}
+            onClick={onOpenAutomations}
+          >
+            <Icon name="calendar" size={18} strokeWidth={1.5} />
+          </button>
           <span className="sidebar-rail-spacer" />
           <button
             ref={workspaceTriggerRef}
@@ -1143,6 +1161,16 @@ export function Sidebar({ collapsed, onToggle }: SidebarProps) {
           </div>
 
           <div className="sidebar-footer">
+            <button
+              className={`sidebar-automations-link sidebar-automations-button ${automationsOpen ? "active" : ""}`}
+              type="button"
+              aria-current={automationsOpen ? "page" : undefined}
+              onClick={onOpenAutomations}
+              title={t("Open scheduled tasks", "打开定时任务")}
+            >
+              <Icon name="calendar" size={14} strokeWidth={1.5} />
+              <span>{t("Automations", "自动任务")}</span>
+            </button>
             <button
               className="sidebar-action-btn"
               type="button"

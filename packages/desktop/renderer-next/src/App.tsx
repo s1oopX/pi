@@ -2,6 +2,7 @@ import { type CSSProperties, useCallback, useEffect, useMemo, useRef, useState }
 import { usePanelResize } from "./hooks/usePanelResize";
 import { getSidebarBoundsForViewport, getWorkbenchBoundsForViewport } from "./lib/panelSizing";
 import { Layout } from "./components/Layout";
+import { Automations } from "./components/Automations";
 import {
   CommandPalette,
   COMMAND_PALETTE_ENTRIES,
@@ -32,6 +33,7 @@ const SIDEBAR_COLLAPSED_WIDTH = 52;
 export function App() {
   const { t } = useI18n();
   const [commandPaletteOpen, setCommandPaletteOpen] = useState(false);
+  const [automationsOpen, setAutomationsOpen] = useState(false);
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [workbenchView, setWorkbenchView] = useState<WorkbenchView | "closed">("closed");
   const workbenchReturnFocusRef = useRef<HTMLElement | null>(null);
@@ -42,6 +44,11 @@ export function App() {
 
   const collapseSidebar = useCallback(() => setSidebarCollapsed(true), []);
   const closeWorkbench = useCallback(() => setWorkbenchView("closed"), []);
+  const openAutomations = useCallback(() => {
+    setWorkbenchView("closed");
+    setCommandPaletteOpen(false);
+    setAutomationsOpen(true);
+  }, []);
   const sidebarBounds = useMemo(() => getSidebarBoundsForViewport(viewportWidth), [viewportWidth]);
   const sidebarResize = usePanelResize({
     storageKey: "sidebar",
@@ -217,51 +224,60 @@ export function App() {
           onSidebarResizePointerDown={sidebarResize.onHandlePointerDown}
           onSidebarResizeKeyDown={sidebarResize.onHandleKeyDown}
           onToggleSidebar={() => setSidebarCollapsed((collapsed) => !collapsed)}
+          automationsOpen={automationsOpen}
+          onOpenAutomations={openAutomations}
+          onOpenConversation={() => setAutomationsOpen(false)}
         >
-          <TopBar
-            commandPaletteShortcut={formatAppKeybinding(keybindings["open-command-palette"], platform)}
-            workbenchOpen={workbenchView !== "closed"}
-            workbenchShortcut={workbenchKeybindingLabels.toggle ?? ""}
-            onOpenCommandPalette={() => handleAppCommand("open-command-palette")}
-            onOpenWorkbench={openWorkbench}
-            onToggleWorkbench={toggleWorkbench}
-          />
-          <div
-            className={`main-workspace ${workbenchView !== "closed" ? "with-workbench" : ""} ${workbenchResize.dragging ? "resizing" : ""}`}
-            style={
-              workbenchView !== "closed" && workbenchResize.width !== null
-                ? ({ "--workbench-width": `${workbenchResize.width}px` } as CSSProperties)
-                : undefined
-            }
-          >
-            <section className="conversation-pane" aria-label={t("Conversation", "对话")}>
-              <TrustBanner />
-              <MessageList />
-              <Composer />
-            </section>
-            {workbenchView !== "closed" && (
-              <>
-                <div
-                  className={`panel-resize-handle workbench-resize ${workbenchResize.willCollapse ? "will-collapse" : ""}`}
-                  role="separator"
-                  tabIndex={0}
-                  aria-label={t("Resize workbench", "调整工作台宽度")}
-                  aria-orientation="vertical"
-                  aria-valuemin={workbenchBounds.min}
-                  aria-valuemax={workbenchBounds.max}
-                  aria-valuenow={workbenchResize.width ?? undefined}
-                  onPointerDown={workbenchResize.onHandlePointerDown}
-                  onKeyDown={workbenchResize.onHandleKeyDown}
-                />
-                <WorkbenchPanel
-                  activeView={workbenchView}
-                  keybindingLabels={workbenchKeybindingLabels}
-                  onClose={() => setWorkbenchView("closed")}
-                  onSelectView={openWorkbench}
-                />
-              </>
-            )}
-          </div>
+          {automationsOpen ? (
+            <Automations onClose={() => setAutomationsOpen(false)} />
+          ) : (
+            <>
+              <TopBar
+                commandPaletteShortcut={formatAppKeybinding(keybindings["open-command-palette"], platform)}
+                workbenchOpen={workbenchView !== "closed"}
+                workbenchShortcut={workbenchKeybindingLabels.toggle ?? ""}
+                onOpenCommandPalette={() => handleAppCommand("open-command-palette")}
+                onOpenWorkbench={openWorkbench}
+                onToggleWorkbench={toggleWorkbench}
+              />
+              <div
+                className={`main-workspace ${workbenchView !== "closed" ? "with-workbench" : ""} ${workbenchResize.dragging ? "resizing" : ""}`}
+                style={
+                  workbenchView !== "closed" && workbenchResize.width !== null
+                    ? ({ "--workbench-width": `${workbenchResize.width}px` } as CSSProperties)
+                    : undefined
+                }
+              >
+                <section className="conversation-pane" aria-label={t("Conversation", "对话")}>
+                  <TrustBanner />
+                  <MessageList />
+                  <Composer />
+                </section>
+                {workbenchView !== "closed" && (
+                  <>
+                    <div
+                      className={`panel-resize-handle workbench-resize ${workbenchResize.willCollapse ? "will-collapse" : ""}`}
+                      role="separator"
+                      tabIndex={0}
+                      aria-label={t("Resize workbench", "调整工作台宽度")}
+                      aria-orientation="vertical"
+                      aria-valuemin={workbenchBounds.min}
+                      aria-valuemax={workbenchBounds.max}
+                      aria-valuenow={workbenchResize.width ?? undefined}
+                      onPointerDown={workbenchResize.onHandlePointerDown}
+                      onKeyDown={workbenchResize.onHandleKeyDown}
+                    />
+                    <WorkbenchPanel
+                      activeView={workbenchView}
+                      keybindingLabels={workbenchKeybindingLabels}
+                      onClose={() => setWorkbenchView("closed")}
+                      onSelectView={openWorkbench}
+                    />
+                  </>
+                )}
+              </div>
+            </>
+          )}
         </Layout>
       </div>
       {settingsRoute && <Settings />}

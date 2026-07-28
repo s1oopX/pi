@@ -44,6 +44,7 @@ export type IconName =
   | "moon"
   | "info"
   | "activity"
+  | "calendar"
   | "file"
   | "download"
   | "upload"
@@ -168,6 +169,12 @@ const GLYPHS: Record<IconName, ReactNode> = {
     </>
   ),
   activity: <path d="M3 12h4l2-6 4 12 2-6h6" />,
+  calendar: (
+    <>
+      <rect x="3" y="5" width="18" height="16" rx="2" />
+      <path d="M8 3v4M16 3v4M3 10h18M8 14h3M8 17h6" />
+    </>
+  ),
   file: (
     <>
       <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />

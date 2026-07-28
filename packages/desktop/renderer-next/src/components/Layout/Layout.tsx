@@ -13,6 +13,9 @@ interface LayoutProps {
   onSidebarResizePointerDown: (event: PointerEvent) => void;
   onSidebarResizeKeyDown: (event: KeyboardEvent) => void;
   onToggleSidebar: () => void;
+  automationsOpen: boolean;
+  onOpenAutomations: () => void;
+  onOpenConversation: () => void;
 }
 
 export function Layout({
@@ -25,6 +28,9 @@ export function Layout({
   onSidebarResizePointerDown,
   onSidebarResizeKeyDown,
   onToggleSidebar,
+  automationsOpen,
+  onOpenAutomations,
+  onOpenConversation,
 }: LayoutProps) {
   const { t } = useI18n();
   const style =
@@ -36,7 +42,13 @@ export function Layout({
       className={`app-shell ${sidebarCollapsed ? "sidebar-collapsed" : ""} ${sidebarResizing ? "resizing" : ""}`}
       style={style}
     >
-      <Sidebar collapsed={sidebarCollapsed} onToggle={onToggleSidebar} />
+      <Sidebar
+        collapsed={sidebarCollapsed}
+        onToggle={onToggleSidebar}
+        automationsOpen={automationsOpen}
+        onOpenAutomations={onOpenAutomations}
+        onOpenConversation={onOpenConversation}
+      />
       {!sidebarCollapsed && (
         <div
           className={`panel-resize-handle sidebar-resize ${sidebarWillCollapse ? "will-collapse" : ""}`}
