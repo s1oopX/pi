@@ -53,6 +53,10 @@ test("synchronizes private dependencies without touching registry aliases, gener
 				"@earendil-works/pi-coding-agent": "^1.0.0",
 			},
 		});
+		await writeManifest(root, "packages/desktop/release/win-unpacked/resources/pi-backend", {
+			name: "@earendil-works/pi-coding-agent",
+			version: "1.0.0",
+		});
 
 		const result = runSyncVersions(root);
 		assert.equal(result.status, 0, result.stderr);
@@ -62,6 +66,19 @@ test("synchronizes private dependencies without touching registry aliases, gener
 		assert.equal(evalsManifest.dependencies["@mariozechner/pi-ai"], "npm:@earendil-works/pi-ai@1.0.0");
 		const generatedManifest = await readManifest(root, "packages/coding-agent/install-lock");
 		assert.equal(generatedManifest.dependencies["@earendil-works/pi-coding-agent"], "^1.0.0");
+
+		await writeManifest(root, "packages/ai", {
+			name: "@earendil-works/pi-ai",
+			version: "2.1.0-dev.1",
+		});
+		await writeManifest(root, "packages/coding-agent", {
+			name: "@earendil-works/pi-coding-agent",
+			version: "2.1.0-dev.1",
+		});
+		const prereleaseResult = runSyncVersions(root);
+		assert.equal(prereleaseResult.status, 0, prereleaseResult.stderr);
+		const prereleaseEvalsManifest = await readManifest(root, "packages/evals");
+		assert.equal(prereleaseEvalsManifest.dependencies["@earendil-works/pi-coding-agent"], "2.1.0-dev.1");
 
 		await writeManifest(root, "packages/ai", {
 			name: "@earendil-works/pi-ai",

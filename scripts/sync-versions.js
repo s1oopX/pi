@@ -51,7 +51,9 @@ for (const pkg of workspacePackages) {
 			// Registry aliases such as `npm:@earendil-works/pi-ai@0.1.2` are never workspace-linked,
 			// so lockstep bumping them would point at a version that is not published yet.
 			const version = versionMap.get(dependencyName);
-			const newSpecifier = version ? `^${version}` : null;
+			// A caret prerelease range also admits the stable version, which can make npm install
+			// the registry package instead of linking the local prerelease workspace.
+			const newSpecifier = version ? (version.includes("-") ? version : `^${version}`) : null;
 			if (!newSpecifier || currentSpecifier === newSpecifier) {
 				continue;
 			}
