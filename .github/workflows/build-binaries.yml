@@ -180,13 +180,26 @@ jobs:
           npm --prefix packages/desktop run build:backend
           npm --prefix packages/desktop test
           Push-Location packages/desktop
-          npx --no-install electron-builder --win portable --x64 --config.electronDist=../../node_modules/electron/dist --config.forceCodeSigning=true
+          # Upstream forces code signing via a certificate in WIN_CSC_LINK. A
+          # fork that lacks that secret must build unsigned (the SmartScreen
+          # "still run" path), so only pass forceCodeSigning when a cert exists.
+          if ($env:WIN_CSC_LINK) {
+            npx --no-install electron-builder --win portable --x64 --config.electronDist=../../node_modules/electron/dist --config.forceCodeSigning=true
+          } else {
+            npx --no-install electron-builder --win portable --x64 --config.electronDist=../../node_modules/electron/dist
+          }
           Pop-Location
 
-          $artifact = "packages/desktop/release/PiStudio-$desktopVersion.exe"
-          $signature = Get-AuthenticodeSignature $artifact
-          if ($signature.Status -ne "Valid") {
-            throw "Desktop artifact signature is $($signature.Status): $($signature.StatusMessage)"
+          # The artifact name follows packages/desktop/package.json build.artifactName
+          # (PiStudio-Dev-<version>.exe on this fork). Resolve the real file rather
+          # than hardcoding a name, and only verify the signature when we signed.
+          $artifact = Get-ChildItem "packages/desktop/release/PiStudio*$desktopVersion.exe" | Select-Object -First 1
+          if (-not $artifact) { throw "Desktop artifact not found for $desktopVersion" }
+          if ($env:WIN_CSC_LINK) {
+            $signature = Get-AuthenticodeSignature $artifact.FullName
+            if ($signature.Status -ne "Valid") {
+              throw "Desktop artifact signature is $($signature.Status): $($signature.StatusMessage)"
+            }
           }
 
       - name: Prepare desktop release payload
@@ -194,7 +207,11 @@ jobs:
         run: |
           $version = node -p "require('./packages/desktop/package.json').version"
           New-Item -ItemType Directory -Force release-assets | Out-Null
-          Copy-Item "packages/desktop/release/PiStudio-$version.exe" "release-assets/PiStudio-$version.exe"
+          # The artifact name follows packages/desktop/package.json build.artifactName;
+          # resolve the real file via glob rather than hardcoding a prefix.
+          $artifact = Get-ChildItem "packages/desktop/release/PiStudio*$version.exe" | Select-Object -First 1
+          if (-not $artifact) { throw "Desktop artifact not found for $version" }
+          Copy-Item $artifact.FullName "release-assets/$($artifact.Name)"
 
       - name: Upload desktop release payload
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
