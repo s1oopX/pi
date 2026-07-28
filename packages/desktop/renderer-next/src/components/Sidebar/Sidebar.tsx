@@ -18,10 +18,21 @@ import {
   getWorkspaceDisplayParts,
   getWorkspaceName,
   groupSessionsByOwnership,
+  hasUnloadedOrganizedThreads,
   isSameWorkspace,
+  isThreadArchived,
+  isThreadPinned,
+  loadThreadOrganization,
   loadWorkspaces,
+  organizeSessions,
+  pruneThreadOrganization,
   removeWorkspace,
+  removeThreadOrganization,
+  saveThreadOrganization,
   saveWorkspaces,
+  setThreadArchived,
+  setThreadPinned,
+  type ThreadOrganization,
 } from "./sidebarState";
 
 interface SidebarProps {
@@ -51,6 +62,7 @@ interface FailedSwitchState {
 export function Sidebar({ collapsed, onToggle, automationsOpen, onOpenAutomations, onOpenConversation }: SidebarProps) {
   const { t } = useI18n();
   const sessions = useStore((state) => state.sessions);
+  const sessionsTotal = useStore((state) => state.sessionsTotal);
   const sessionsHasMore = useStore((state) => state.sessionsHasMore);
   const sessionsQuery = useStore((state) => state.sessionsQuery);
   const sessionsLoading = useStore((state) => state.sessionsLoading);
@@ -80,6 +92,10 @@ export function Sidebar({ collapsed, onToggle, automationsOpen, onOpenAutomation
   const [switchingWorkspaceCwd, setSwitchingWorkspaceCwd] = useState<string | null>(null);
   const [sessionQuery, setSessionQuery] = useState("");
   const [workspaces, setWorkspaces] = useState<string[]>(() => loadWorkspaces(localStorage));
+  const [threadOrganization, setThreadOrganization] = useState<ThreadOrganization>(() =>
+    loadThreadOrganization(localStorage)
+  );
+  const [showArchived, setShowArchived] = useState(false);
   const [expandedProjects, setExpandedProjects] = useState<string[]>([]);
   const menuRef = useRef<HTMLDivElement>(null);
   const menuTriggerRef = useRef<HTMLButtonElement | null>(null);
@@ -165,7 +181,14 @@ export function Sidebar({ collapsed, onToggle, automationsOpen, onOpenAutomation
     : workspaceCwd
       ? getWorkspaceName(workspaceCwd)
       : t("No workspace", "未选择工作区");
-  const sessionOwnership = useMemo(() => groupSessionsByOwnership(sessions, taskCwd), [sessions, taskCwd]);
+  const organizedSessions = useMemo(
+    () => organizeSessions(sessions, threadOrganization, showArchived),
+    [sessions, showArchived, threadOrganization],
+  );
+  const sessionOwnership = useMemo(
+    () => groupSessionsByOwnership(organizedSessions, taskCwd),
+    [organizedSessions, taskCwd],
+  );
   const workspaceNavigationItems = useMemo(
     () => getProjectNavigationItems(workspaces, workspaceCwd, taskCwd),
     [taskCwd, workspaceCwd, workspaces],
@@ -293,6 +316,20 @@ export function Sidebar({ collapsed, onToggle, automationsOpen, onOpenAutomation
     }, 250);
     return () => window.clearTimeout(timeout);
   }, [normalizedSessionQuery, searchSessions, sessionSearchPending]);
+
+  useEffect(() => {
+    if (sessionsQuery || sessionsLoading || !sessionsHasMore) return;
+    if (hasUnloadedOrganizedThreads(threadOrganization, sessions)) void loadMoreSessions();
+  }, [loadMoreSessions, sessions, sessionsHasMore, sessionsLoading, sessionsQuery, threadOrganization]);
+
+  useEffect(() => {
+    if (sessionsQuery || sessionsLoading || sessionsHasMore || sessionsTotal === 0) return;
+    setThreadOrganization((current) => {
+      const next = pruneThreadOrganization(current, sessions);
+      if (next !== current) saveThreadOrganization(localStorage, next);
+      return next;
+    });
+  }, [sessions, sessionsHasMore, sessionsLoading, sessionsQuery, sessionsTotal]);
 
   useEffect(() => {
     if (!workspaceMenu) return;
@@ -447,7 +484,7 @@ export function Sidebar({ collapsed, onToggle, automationsOpen, onOpenAutomation
     }
     const triggerBounds = event.currentTarget.getBoundingClientRect();
     const menuWidth = 196;
-    const estimatedMenuHeight = candidate.id === activeSessionId ? 210 : 86;
+    const estimatedMenuHeight = candidate.id === activeSessionId ? 290 : 170;
     const left = Math.max(8, Math.min(triggerBounds.right - menuWidth, window.innerWidth - menuWidth - 8));
     const top =
       window.innerHeight - triggerBounds.bottom >= estimatedMenuHeight + 8
@@ -588,6 +625,7 @@ export function Sidebar({ collapsed, onToggle, automationsOpen, onOpenAutomation
     setDeleting(true);
     try {
       await api.trashSessionFile(target.path);
+      updateThreadOrganization((current) => removeThreadOrganization(current, target.path));
       await refreshSessions();
       useStore.getState().refreshSession();
       setDeleteTarget(null);
@@ -734,10 +772,32 @@ export function Sidebar({ collapsed, onToggle, automationsOpen, onOpenAutomation
   }
 
   const deletingActiveSession = deleteTarget?.id === activeSessionId;
+  const menuSessionPinned = sessionMenu ? isThreadPinned(threadOrganization, sessionMenu.session.path) : false;
+  const menuSessionArchived = sessionMenu ? isThreadArchived(threadOrganization, sessionMenu.session.path) : false;
 
   function closeDeleteDialog() {
     setDeleteTarget(null);
     requestAnimationFrame(() => menuTriggerRef.current?.focus());
+  }
+
+  function updateThreadOrganization(update: (current: ThreadOrganization) => ThreadOrganization) {
+    setThreadOrganization((current) => {
+      const next = update(current);
+      saveThreadOrganization(localStorage, next);
+      return next;
+    });
+  }
+
+  function handleTogglePinned(candidate: SessionInfo) {
+    const pinned = isThreadPinned(threadOrganization, candidate.path);
+    closeSessionMenu();
+    updateThreadOrganization((current) => setThreadPinned(current, candidate.path, !pinned));
+  }
+
+  function handleToggleArchived(candidate: SessionInfo) {
+    const archived = isThreadArchived(threadOrganization, candidate.path);
+    closeSessionMenu();
+    updateThreadOrganization((current) => setThreadArchived(current, candidate.path, !archived));
   }
 
   function toggleProject(cwd: string) {
@@ -750,6 +810,7 @@ export function Sidebar({ collapsed, onToggle, automationsOpen, onOpenAutomation
 
   function renderSessionRow(candidate: SessionInfo, nested: boolean) {
     const isActive = activeSessionId != null && candidate.id === activeSessionId;
+    const pinned = isThreadPinned(threadOrganization, candidate.path);
     if (isActive && renaming) {
       return (
         <div className={`agent-row-shell active ${nested ? "nested" : ""}`} key={candidate.path} role="listitem">
@@ -787,6 +848,7 @@ export function Sidebar({ collapsed, onToggle, automationsOpen, onOpenAutomation
               ? t("Finish or stop the current run before switching threads", "请先完成或停止当前运行，再切换会话")
               : undefined}
         >
+          {pinned && <Icon className="agent-row-pin" name="pin" size={12} strokeWidth={1.8} />}
           <span className="agent-row-title">
             {candidate.name ?? candidate.firstMessage ?? t("Untitled", "未命名")}
           </span>
@@ -974,6 +1036,24 @@ export function Sidebar({ collapsed, onToggle, automationsOpen, onOpenAutomation
                 </button>
               )}
             </div>
+            <div className="thread-view-tabs" role="group" aria-label={t("Thread view", "会话视图")}>
+              <button
+                className={!showArchived ? "active" : ""}
+                type="button"
+                aria-pressed={!showArchived}
+                onClick={() => setShowArchived(false)}
+              >
+                {t("Active", "当前")}
+              </button>
+              <button
+                className={showArchived ? "active" : ""}
+                type="button"
+                aria-pressed={showArchived}
+                onClick={() => setShowArchived(true)}
+              >
+                {t("Archived ({count})", "已归档（{count}）", { count: threadOrganization.archived.length })}
+              </button>
+            </div>
             <div className="agent-list ownership-list" aria-busy={sessionsLoading || sessionSearchPending}>
               {sessionsError && (
                 <div className="agent-list-error" role="alert">
@@ -1134,8 +1214,12 @@ export function Sidebar({ collapsed, onToggle, automationsOpen, onOpenAutomation
                   {!sessionsError && !sessionsLoading && !sessionSearchPending && taskSessions.length === 0 && (
                     <div className="agent-empty-state">
                       {normalizedSessionQuery
-                        ? t("No tasks match “{query}”", "没有与“{query}”匹配的任务", { query: sessionsQuery })
-                        : t("No tasks yet", "尚无任务")}
+                        ? showArchived
+                          ? t("No archived tasks match “{query}”", "没有与“{query}”匹配的已归档任务", { query: sessionsQuery })
+                          : t("No tasks match “{query}”", "没有与“{query}”匹配的任务", { query: sessionsQuery })
+                        : showArchived
+                          ? t("No archived tasks", "没有已归档任务")
+                          : t("No tasks yet", "尚无任务")}
                     </div>
                   )}
                 </div>
@@ -1209,6 +1293,25 @@ export function Sidebar({ collapsed, onToggle, automationsOpen, onOpenAutomation
             closeSessionMenu();
           }}
         >
+          {!menuSessionArchived && (
+            <button
+              className="session-actions-item"
+              type="button"
+              role="menuitem"
+              onClick={() => handleTogglePinned(sessionMenu.session)}
+            >
+              {menuSessionPinned ? t("Unpin", "取消置顶") : t("Pin", "置顶")}
+            </button>
+          )}
+          <button
+            className="session-actions-item"
+            type="button"
+            role="menuitem"
+            onClick={() => handleToggleArchived(sessionMenu.session)}
+          >
+            {menuSessionArchived ? t("Restore", "恢复") : t("Archive", "归档")}
+          </button>
+          <div className="session-actions-separator" role="separator" />
           {sessionMenu.session.id === activeSessionId && (
             <>
               <button

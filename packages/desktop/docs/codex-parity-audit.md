@@ -20,7 +20,7 @@ continuous alignment loop; one row lands per iteration.
 | Multiple terminal tabs | Concurrent workbench tabs with preserved output/drafts/history and per-command Stop | ✅ |
 | Task sidebar: live plan/sources/artifacts | Workbench Plan reads the latest real `update_plan` tool call; Sources de-duplicates cited HTTP(S) links; Artifacts tracks written, edited, and linked workspace files | ✅ |
 | Summary pane | Turn summary | ✅ |
-| Session naming/rename, thread search | Inline rename (double-click), search | ✅ |
+| Session naming/rename, thread search, pinning, archiving | Inline rename (double-click), server-backed search, persistent pin ordering, and a searchable archived/restore view | ✅ |
 | Copy last reply, per-message copy | Command palette + Mod+Shift+C; hover copy | ✅ |
 | What's-new/changelog view | About → What's New | ✅ |
 | Drag-drop folder to open; drop narration | Window-level drop + narration overlay | ✅ |

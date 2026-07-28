@@ -49,6 +49,7 @@ export type IconName =
   | "download"
   | "upload"
   | "more-horizontal"
+  | "pin"
   | "eye"
   | "eye-off";
 
@@ -147,6 +148,7 @@ const GLYPHS: Record<IconName, ReactNode> = {
       <circle cx="19" cy="12" r="1.4" fill="currentColor" />
     </>
   ),
+  pin: <path d="M9 3h6l-1 5 3 3v2H7v-2l3-3zM12 13v8" />,
   pencil: <path d="M12 20h9M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4z" />,
   trash: <path d="M4 7h16M9 7V5a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2M7 7l1 12a1 1 0 0 0 1 1h6a1 1 0 0 0 1-1l1-12" />,
   settings: (

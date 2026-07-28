@@ -9,10 +9,21 @@ import {
   getWorkspaceName,
   getWorkspaceParentPath,
   groupSessionsByOwnership,
+  hasUnloadedOrganizedThreads,
   isSameWorkspace,
+  isThreadArchived,
+  isThreadPinned,
+  loadThreadOrganization,
   loadWorkspaces,
+  organizeSessions,
+  pruneThreadOrganization,
   removeWorkspace,
+  removeThreadOrganization,
+  saveThreadOrganization,
   saveWorkspaces,
+  setThreadArchived,
+  setThreadPinned,
+  type ThreadOrganization,
   type WorkspaceStorage,
 } from "./sidebarState";
 
@@ -147,6 +158,56 @@ describe("sidebar state", () => {
       ...ownership.tasks,
       ...ownership.projects.flatMap(({ sessions }) => sessions),
     ].map(({ id }) => id).sort()).toEqual(["alias", "one", "task", "two"]);
+  });
+
+  it("persists valid thread organization and ignores malformed entries", () => {
+    const storage = memoryStorage({
+      "pi-studio-thread-organization": JSON.stringify({
+        pinned: ["C:\\sessions\\one.jsonl", "c:/sessions/ONE.jsonl", 1],
+        archived: ["C:\\sessions\\two.jsonl", ""],
+      }),
+    });
+
+    expect(loadThreadOrganization(storage)).toEqual({
+      pinned: ["C:\\sessions\\one.jsonl"],
+      archived: ["C:\\sessions\\two.jsonl"],
+    });
+
+    const organization: ThreadOrganization = { pinned: ["one"], archived: ["two"] };
+    saveThreadOrganization(storage, organization);
+    expect(storage.values.get("pi-studio-thread-organization")).toBe(JSON.stringify(organization));
+
+    storage.values.set("pi-studio-thread-organization", "not-json");
+    expect(loadThreadOrganization(storage)).toEqual({ pinned: [], archived: [] });
+  });
+
+  it("pins active threads first and keeps archived threads in their own view", () => {
+    const one = session({ id: "one", path: "C:\\sessions\\one.jsonl" });
+    const two = session({ id: "two", path: "C:\\sessions\\two.jsonl" });
+    const three = session({ id: "three", path: "C:\\sessions\\three.jsonl" });
+    const organization = {
+      pinned: [three.path, one.path],
+      archived: [two.path],
+    };
+
+    expect(organizeSessions([one, two, three], organization, false).map(({ id }) => id)).toEqual(["three", "one"]);
+    expect(organizeSessions([one, two, three], organization, true).map(({ id }) => id)).toEqual(["two"]);
+  });
+
+  it("updates, unloads, and prunes thread organization by session path", () => {
+    const one = session({ id: "one", path: "C:\\sessions\\one.jsonl" });
+    const two = session({ id: "two", path: "C:\\sessions\\two.jsonl" });
+    let organization = setThreadPinned({ pinned: [], archived: [] }, one.path, true);
+    expect(isThreadPinned(organization, "c:/sessions/ONE.jsonl")).toBe(true);
+
+    organization = setThreadArchived(organization, one.path, true);
+    expect(isThreadPinned(organization, one.path)).toBe(false);
+    expect(isThreadArchived(organization, one.path)).toBe(true);
+    expect(hasUnloadedOrganizedThreads(organization, [two])).toBe(true);
+    expect(pruneThreadOrganization(organization, [two])).toEqual({ pinned: [], archived: [] });
+
+    organization = removeThreadOrganization({ pinned: [one.path], archived: [one.path] }, one.path);
+    expect(organization).toEqual({ pinned: [], archived: [] });
   });
 
   it("shows only explicitly added projects plus the current project", () => {

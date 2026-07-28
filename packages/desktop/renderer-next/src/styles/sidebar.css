@@ -209,6 +209,37 @@
   height: 14px;
 }
 
+.thread-view-tabs {
+  display: flex;
+  gap: 2px;
+  margin: calc(-1 * var(--space-2)) 2px var(--space-2);
+  padding: 2px;
+  border-radius: var(--radius-sm);
+  background: var(--control-bg);
+}
+
+.thread-view-tabs button {
+  min-width: 0;
+  flex: 1;
+  min-height: 24px;
+  padding: 3px 7px;
+  border-radius: var(--radius-xs);
+  color: var(--muted);
+  font-size: var(--font-size-meta);
+}
+
+.thread-view-tabs button:hover,
+.thread-view-tabs button.active {
+  color: var(--text);
+  background: var(--surface-hover);
+}
+
+.agent-row-pin {
+  flex: 0 0 auto;
+  margin-right: 6px;
+  color: var(--muted);
+}
+
 .agent-list-pagination {
   display: flex;
   justify-content: center;
