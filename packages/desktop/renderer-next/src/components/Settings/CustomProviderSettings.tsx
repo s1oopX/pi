@@ -382,57 +382,6 @@ export function CustomProviderSettings({ onDirtyChange }: { onDirtyChange?: (dir
     });
   }
 
-  async function handleSaveFetched() {
-    const provider = getProviderOrToast();
-    const headers = getCustomHeadersOrToast();
-    if (!provider || !validateEndpointFields() || headers === null) return;
-
-    const chosen = fetchedModels.filter((model) => selectedIds.has(model.id));
-    if (chosen.length === 0) {
-      showToast(t("Select at least one model", "请至少选择一个模型"), "error");
-      return;
-    }
-    setSaving(true);
-    try {
-      for (const model of chosen) {
-        await api.upsertCustomModel({
-          provider,
-          baseUrl: baseUrl.trim(),
-          api: apiType,
-          authKind,
-          apiKey: authKind === "api_key" ? apiKey.trim() || undefined : undefined,
-          headers,
-          proxyUrl: proxyUrl.trim(),
-          model: {
-            id: model.id,
-            name: model.name,
-            reasoning: apiType === "anthropic-messages" || undefined,
-            input: buildCustomModelInput(fetchedImageInput),
-            contextWindow: 200000,
-            maxTokens: 16384,
-          },
-        });
-      }
-      showToast(
-        t("Saved {count} model(s) to \"{provider}\"", "已将 {count} 个模型保存到“{provider}”", {
-          count: chosen.length,
-          provider,
-        }),
-        "success",
-      );
-      useStore.getState().refresh();
-      setFetchedModels([]);
-      setSelectedIds(new Set());
-      resetForm();
-    } catch (error) {
-      const message = error instanceof Error ? error.message : String(error);
-      showToast(t("Save failed: {message}", "保存失败：{message}", { message }), "error");
-      useStore.getState().refresh();
-    } finally {
-      setSaving(false);
-    }
-  }
-
   function addModel() {
     setModels((prev) => [...prev, createModelDraft()]);
   }
@@ -494,7 +443,22 @@ export function CustomProviderSettings({ onDirtyChange }: { onDirtyChange?: (dir
     const headers = getCustomHeadersOrToast();
     if (!provider || !validateEndpointFields() || headers === null) return;
 
-    const validModels = models.filter((model) => model.id.trim());
+    const validManualModels = models.filter((model) => model.id.trim());
+    const manualModelIds = new Set(validManualModels.map((model) => model.id.trim()));
+    const validModels = [
+      ...validManualModels,
+      ...fetchedModels
+        .filter((model) => model.id.trim().length > 0 && selectedIds.has(model.id) && !manualModelIds.has(model.id.trim()))
+        .map((model) =>
+          createModelDraft({
+            id: model.id.trim(),
+            name: model.name ?? "",
+            reasoning: apiType === "anthropic-messages",
+            imageInput: fetchedImageInput,
+            contextWindow: 200000,
+          }),
+        ),
+    ];
     if (validModels.length === 0) {
       showToast(t("At least one model with an ID is required", "至少需要一个带 ID 的模型"), "error");
       return;
@@ -1022,7 +986,7 @@ export function CustomProviderSettings({ onDirtyChange }: { onDirtyChange?: (dir
                 <button
                   className="settings-btn settings-btn-primary"
                   type="button"
-                  onClick={handleSaveFetched}
+                  onClick={handleSave}
                   disabled={saving || selectedIds.size === 0}
                 >
                   {saving
