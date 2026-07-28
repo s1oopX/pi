@@ -83,6 +83,9 @@ contextBridge.exposeInMainWorld("piDesktop", {
 	getGitFileDiff(/** @type {unknown} */ filePath, /** @type {string | undefined} */ taskId) {
 		return ipcRenderer.invoke("git:file-diff", filePath, taskId);
 	},
+	applyGitHunk(/** @type {unknown} */ params, /** @type {string | undefined} */ taskId) {
+		return ipcRenderer.invoke("git:apply-hunk", params, taskId);
+	},
 	restoreGitFile(/** @type {unknown} */ filePath, /** @type {string | undefined} */ taskId) {
 		return ipcRenderer.invoke("git:restore-file", filePath, taskId);
 	},

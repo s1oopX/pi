@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useMemo, useState, type ReactNode } from "react";
 import { html, parse } from "diff2html";
 import type { DiffFile } from "diff2html/lib/types";
 import { useI18n } from "../../i18n";
@@ -14,9 +14,15 @@ type OutputFormat = "side-by-side" | "line-by-line";
 interface DiffViewProps {
   patch: string;
   defaultFormat?: OutputFormat;
+  renderHunkActions?: (hunkIndex: number) => ReactNode;
 }
 
-export function DiffView({ patch, defaultFormat = "line-by-line" }: DiffViewProps) {
+interface RenderedDiffFile {
+  whole: string;
+  hunks: string[];
+}
+
+export function DiffView({ patch, defaultFormat = "line-by-line", renderHunkActions }: DiffViewProps) {
   const { t } = useI18n();
   const [format, setFormat] = useState<OutputFormat>(defaultFormat);
   // Files the user has explicitly collapsed. Keyed by display path so the set
@@ -29,20 +35,35 @@ export function DiffView({ patch, defaultFormat = "line-by-line" }: DiffViewProp
   }, [patch]);
 
   const summary = useMemo(() => summarizeDiffStats(diffFiles), [diffFiles]);
+  const renderByHunk = Boolean(renderHunkActions);
+  const hunkOffsets = useMemo(() => {
+    let offset = 0;
+    return diffFiles.map((file) => {
+      const current = offset;
+      offset += file.blocks.length;
+      return current;
+    });
+  }, [diffFiles]);
 
   // Render each file independently so it can live inside its own collapsible
   // section, instead of diff2html's single monolithic block.
   const renderedByPath = useMemo(() => {
-    const map = new Map<string, string>();
+    const map = new Map<string, RenderedDiffFile>();
     for (const file of diffFiles) {
-      map.set(diffFileDisplayPath(file), html([file], {
+      const options = {
         drawFileList: false,
         matching: "lines",
         outputFormat: format,
-      }));
+      } as const;
+      map.set(diffFileDisplayPath(file), {
+        whole: html([file], options),
+        hunks: renderByHunk
+          ? file.blocks.map((block) => html([{ ...file, blocks: [block] }], options))
+          : [],
+      });
     }
     return map;
-  }, [diffFiles, format]);
+  }, [diffFiles, format, renderByHunk]);
 
   function toggleFile(path: string) {
     setCollapsed((current) => {
@@ -92,9 +113,9 @@ export function DiffView({ patch, defaultFormat = "line-by-line" }: DiffViewProp
         </div>
       </div>
       <div className="diff-files">
-        {diffFiles.map((file) => {
+        {diffFiles.map((file, fileIndex) => {
           const stat = diffFileStat(file);
-          const rendered = renderedByPath.get(stat.path) ?? "";
+          const rendered = renderedByPath.get(stat.path) ?? { whole: "", hunks: [] };
           const isCollapsed = collapsed.has(stat.path);
           return (
             <DiffFileSection
@@ -103,6 +124,9 @@ export function DiffView({ patch, defaultFormat = "line-by-line" }: DiffViewProp
               rendered={rendered}
               collapsed={isCollapsed}
               onToggle={() => toggleFile(stat.path)}
+              renderHunkActions={renderHunkActions
+                ? (hunkIndex) => renderHunkActions(hunkOffsets[fileIndex] + hunkIndex)
+                : undefined}
             />
           );
         })}
@@ -116,11 +140,13 @@ function DiffFileSection({
   rendered,
   collapsed,
   onToggle,
+  renderHunkActions,
 }: {
   stat: DiffFileStat;
-  rendered: string;
+  rendered: RenderedDiffFile;
   collapsed: boolean;
   onToggle: () => void;
+  renderHunkActions?: (hunkIndex: number) => ReactNode;
 }) {
   const { t } = useI18n();
   const kindLabel = diffKindLabel(stat.kind, t);
@@ -137,9 +163,18 @@ function DiffFileSection({
         {kindLabel && <span className={`diff-file-kind kind-${stat.kind}`}>{kindLabel}</span>}
         <DiffStatBadge added={stat.addedLines} deleted={stat.deletedLines} />
       </button>
-      {!collapsed && (
-        <div className="diff-content" dangerouslySetInnerHTML={{ __html: rendered }} />
-      )}
+      {!collapsed && renderHunkActions && rendered.hunks.length > 0 ? (
+        <div className="diff-content">
+          {rendered.hunks.map((hunk, hunkIndex) => (
+            <div className="diff-hunk" key={hunkIndex}>
+              <div className="diff-hunk-actions">{renderHunkActions(hunkIndex)}</div>
+              <div dangerouslySetInnerHTML={{ __html: hunk }} />
+            </div>
+          ))}
+        </div>
+      ) : !collapsed ? (
+        <div className="diff-content" dangerouslySetInnerHTML={{ __html: rendered.whole }} />
+      ) : null}
     </div>
   );
 }

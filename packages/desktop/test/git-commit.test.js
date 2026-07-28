@@ -1,13 +1,16 @@
 import assert from "node:assert/strict";
+import { createHash } from "node:crypto";
 import { describe, it } from "node:test";
 import {
+	applyGitHunk,
 	commitAllChanges,
 	getFileDiff,
-	restoreFileChanges,
 	listGitBranches,
 	listGitChanges,
 	parseGitPorcelainChanges,
 	pushCurrentBranch,
+	restoreFileChanges,
+	selectPatchHunk,
 	switchGitBranch,
 	validateBranchName,
 	validateCommitMessage,
@@ -20,12 +23,43 @@ const fsOk = {
 
 function fakeGit(responses) {
 	const calls = [];
+	const inputs = [];
 	const execFileImpl = (_cmd, args, _options, callback) => {
 		calls.push(args);
 		const response = responses.shift() ?? { stdout: "" };
 		callback(response.error ?? null, response.stdout ?? "", response.stderr ?? "");
+		return {
+			stdin: {
+				on() {},
+				end(input) {
+					inputs.push(String(input));
+				},
+			},
+		};
 	};
-	return { calls, execFileImpl };
+	return { calls, execFileImpl, inputs };
+}
+
+const twoHunkPatch = [
+	"diff --git a/src/x.ts b/src/x.ts",
+	"index 1111111..2222222 100644",
+	"--- a/src/x.ts",
+	"+++ b/src/x.ts",
+	"@@ -1,3 +1,3 @@",
+	" one",
+	"-old one",
+	"+new one",
+	" three",
+	"@@ -10,3 +10,3 @@",
+	" ten",
+	"-old two",
+	"+new two",
+	" twelve",
+	"",
+].join("\n");
+
+function hashPatch(patch) {
+	return createHash("sha256").update(patch).digest("hex");
 }
 
 describe("parseGitPorcelainChanges", () => {
@@ -77,15 +111,31 @@ describe("listGitChanges", () => {
 
 describe("commitAllChanges", () => {
 	it("stages everything then commits with the message as a single argument", async () => {
-		const git = fakeGit([{ stdout: "" }, { stdout: "[main abc123] fix: thing\n 1 file changed\n" }]);
+		const git = fakeGit([
+			{ stdout: "" },
+			{ stdout: "" },
+			{ stdout: "[main abc123] fix: thing\n 1 file changed\n" },
+		]);
 		const result = await commitAllChanges("C:\\work", "fix: thing", { ...fsOk, execFileImpl: git.execFileImpl });
 		assert.deepEqual(result, { committed: true, summary: "[main abc123] fix: thing" });
-		assert.deepEqual(git.calls[0].slice(-2), ["add", "--all"]);
-		assert.deepEqual(git.calls[1].slice(-3), ["commit", "-m", "fix: thing"]);
+		assert.deepEqual(git.calls[0].slice(-3), ["diff", "--cached", "--name-only"]);
+		assert.deepEqual(git.calls[1].slice(-2), ["add", "--all"]);
+		assert.deepEqual(git.calls[2].slice(-3), ["commit", "-m", "fix: thing"]);
+	});
+
+	it("commits the index without staging unrelated worktree changes", async () => {
+		const git = fakeGit([
+			{ stdout: "src/x.ts\n" },
+			{ stdout: "[main abc123] fix: partial\n 1 file changed\n" },
+		]);
+		await commitAllChanges("C:\\work", "fix: partial", { ...fsOk, execFileImpl: git.execFileImpl });
+		assert.equal(git.calls.length, 2);
+		assert.equal(git.calls.some((args) => args.includes("add")), false);
 	});
 
 	it("maps an empty commit to a friendly error", async () => {
 		const git = fakeGit([
+			{ stdout: "" },
 			{ stdout: "" },
 			{ error: new Error("exit 1"), stdout: "nothing to commit, working tree clean" },
 		]);
@@ -194,25 +244,112 @@ describe("switchGitBranch", () => {
 });
 
 describe("getFileDiff", () => {
-	it("returns the HEAD diff for a tracked file", async () => {
-		const git = fakeGit([{ stdout: "diff --git a/x b/x\n+new\n" }]);
+	it("returns separate staged and unstaged patches for a tracked file", async () => {
+		const stagedPatch = "diff --git a/src/x.ts b/src/x.ts\n@@ -1 +1 @@\n-old\n+staged\n";
+		const unstagedPatch = "diff --git a/src/x.ts b/src/x.ts\n@@ -1 +1 @@\n-staged\n+worktree\n";
+		const git = fakeGit([
+			{ stdout: "100644 blob abc\tsrc/x.ts\n" },
+			{ stdout: stagedPatch },
+			{ stdout: unstagedPatch },
+		]);
 		const result = await getFileDiff("C:\\work", "src/x.ts", { ...fsOk, execFileImpl: git.execFileImpl });
-		assert.equal(result.patch.includes("+new"), true);
-		assert.deepEqual(git.calls[0].slice(-4), ["diff", "HEAD", "--", "src/x.ts"]);
+		assert.equal(result.staged.patch, stagedPatch);
+		assert.equal(result.unstaged.patch, unstagedPatch);
+		assert.equal(result.staged.canDiscard, true);
+		assert.deepEqual(git.calls[1].slice(-4), ["diff", "--cached", "--", "src/x.ts"]);
 	});
 
 	it("falls back to a no-index diff for an untracked file", async () => {
 		const git = fakeGit([
 			{ stdout: "" },
+			{ stdout: "" },
+			{ stdout: "" },
 			{ error: new Error("exit 1"), stdout: "diff --git a/dev/null b/n.txt\n+hello\n" },
 		]);
 		const result = await getFileDiff("C:\\work", "n.txt", { ...fsOk, execFileImpl: git.execFileImpl });
-		assert.equal(result.patch.includes("+hello"), true);
-		assert.equal(git.calls[1].includes("--no-index"), true);
+		assert.equal(result.unstaged.patch.includes("+hello"), true);
+		assert.equal(result.unstaged.canDiscard, false);
+		assert.equal(git.calls[3].includes("--no-index"), true);
 	});
 
 	it("rejects empty paths", async () => {
 		await assert.rejects(getFileDiff("C:\\work", " ", { ...fsOk, execFileImpl: fakeGit([]).execFileImpl }), /path/iu);
+	});
+
+	it("rejects paths outside the workspace", async () => {
+		await assert.rejects(
+			getFileDiff("C:\\work", "../secret.txt", { ...fsOk, execFileImpl: fakeGit([]).execFileImpl }),
+			/inside the workspace/iu,
+		);
+	});
+});
+
+describe("selectPatchHunk", () => {
+	it("keeps the file header and only the selected hunk", () => {
+		const selected = selectPatchHunk(twoHunkPatch, 1);
+		assert.match(selected, /diff --git a\/src\/x\.ts b\/src\/x\.ts/u);
+		assert.match(selected, /@@ -10,3 \+10,3 @@/u);
+		assert.doesNotMatch(selected, /@@ -1,3 \+1,3 @@/u);
+	});
+});
+
+describe("applyGitHunk", () => {
+	it("unstages only the current server-selected staged hunk", async () => {
+		const git = fakeGit([
+			{ stdout: "100644 blob abc\tsrc/x.ts\n" },
+			{ stdout: twoHunkPatch },
+			{ stdout: "" },
+			{ stdout: "" },
+		]);
+		const result = await applyGitHunk(
+			"C:\\work",
+			"src/x.ts",
+			{ section: "staged", action: "unstage", hunkIndex: 1, patchHash: hashPatch(twoHunkPatch) },
+			{ ...fsOk, execFileImpl: git.execFileImpl },
+		);
+		assert.deepEqual(result, { applied: true, section: "staged", action: "unstage" });
+		assert.deepEqual(git.calls[3].slice(-4), ["apply", "--cached", "--reverse", "-"]);
+		assert.equal(git.inputs.length, 1);
+		assert.match(git.inputs[0], /@@ -10,3 \+10,3 @@/u);
+		assert.doesNotMatch(git.inputs[0], /@@ -1,3 \+1,3 @@/u);
+	});
+
+	it("rejects a stale renderer hash before applying", async () => {
+		const git = fakeGit([
+			{ stdout: "100644 blob abc\tsrc/x.ts\n" },
+			{ stdout: "" },
+			{ stdout: twoHunkPatch },
+		]);
+		await assert.rejects(
+			applyGitHunk(
+				"C:\\work",
+				"src/x.ts",
+				{ section: "unstaged", action: "stage", hunkIndex: 0, patchHash: "stale" },
+				{ ...fsOk, execFileImpl: git.execFileImpl },
+			),
+			/Diff changed/,
+		);
+		assert.equal(git.inputs.length, 0);
+	});
+
+	it("refuses to hard-delete an untracked file hunk", async () => {
+		const untrackedPatch = "diff --git a/dev/null b/notes.txt\n@@ -0,0 +1 @@\n+hello\n";
+		const git = fakeGit([
+			{ stdout: "" },
+			{ stdout: "" },
+			{ stdout: "" },
+			{ error: new Error("exit 1"), stdout: untrackedPatch },
+		]);
+		await assert.rejects(
+			applyGitHunk(
+				"C:\\work",
+				"notes.txt",
+				{ section: "unstaged", action: "discard", hunkIndex: 0, patchHash: hashPatch(untrackedPatch) },
+				{ ...fsOk, execFileImpl: git.execFileImpl },
+			),
+			/Recycle Bin/,
+		);
+		assert.equal(git.inputs.length, 0);
 	});
 });
 

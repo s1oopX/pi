@@ -8,6 +8,7 @@ client (Electron main process and the `renderer-next` React renderer).
 
 ### Added
 
+- Chunk-level Git review actions: staged and unstaged patches render separately with per-hunk stage, unstage, and armed discard controls. The main process re-reads the current diff, rejects stale hashes, selects the hunk server-side, and pipes it to `git apply`; renderer-supplied patch text is never trusted. New files remain recoverable: destructive hunk actions are blocked and whole-file discard moves them to the Recycle Bin. When the index already contains changes, the commit action now commits only those staged changes; otherwise it preserves the prior stage-all convenience.
 - "Ask agent" on a file's diff: drafts an `@file` prompt into the composer (which focuses and lets you finish the instruction) and closes the panel — the lightweight version of Codex's comment-on-diff-and-address workflow, built on the existing composer-draft and @file-reference machinery.
 - Per-file review in the git panel: clicking a changed file expands its uncommitted diff inline (staged + unstaged vs HEAD; untracked files render as pure additions via a no-index diff), with an armed two-click "Discard changes". Files known to HEAD are restored in index and worktree; newly staged files are unstaged; files git never knew about are moved to the Recycle Bin — never hard-deleted — with workspace containment enforced. Covered by unit tests on the diff/restore state machine and an e2e that discards an untracked file and watches it leave the disk. A living Codex-parity audit matrix now drives the alignment loop (docs/codex-parity-audit.md).
 - The window title now carries the current context — "session — Pi Studio", falling back to the workspace folder — so the taskbar and Alt-Tab stay identifiable; an extension-set title still wins verbatim. The four scattered `document.title` writes collapsed into one store subscription with a pure, unit-tested compose function.
@@ -70,6 +71,7 @@ client (Electron main process and the `renderer-next` React renderer).
 
 ### Fixed
 
+- Fixed the custom-provider editor rejecting a selected fetched model because the blank manual-model row was validated first; saving now includes the checked remote models.
 - Fixed Anthropic-compatible custom providers whose base URL ends in `/v1`; requests no longer target the duplicated `/v1/v1/messages` path and fail with 404.
 - Fixed `aria-label` on 12 elements that had no semantic role. Screen readers ignore those labels, so the announcements never happened — including two `aria-live` regions meant to report agent status.
 - Fixed an invalid `role="note"` and four `role="img"` elements that do not support `aria-label`.

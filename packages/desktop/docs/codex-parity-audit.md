@@ -14,7 +14,7 @@ continuous alignment loop; one row lands per iteration.
 | In-app git: commit, push, branches, PR creation | Git panel + gh PR flow | ✅ |
 | Review pane: per-file diffs of the working tree | Git panel file rows expand to a diff | ✅ (this audit's landing) |
 | Review pane: discard/revert per file | Armed two-click discard; HEAD files restored, new files recycled (recoverable) | ✅ (this audit's landing) |
-| Review pane: stage/revert per **chunk** | — | ❌ next candidate (needs `git apply --cached` on chunk slices) |
+| Review pane: stage/revert per **chunk** | Staged/unstaged sections with stage, unstage, and armed discard per hunk; main process re-reads and hash-validates every patch | ✅ |
 | Inline diff comments → ask the agent to address | "Ask agent" on a file's diff drafts an @file prompt | 🟡 file-level landed; chunk/line comments open |
 | GitHub PR review comments in-app (PR Chat) | — | ❌ heavy (GitHub API + auth); deliberate non-goal for now |
 | Multiple terminal tabs | Single workbench terminal | ❌ candidate |
@@ -33,9 +33,8 @@ continuous alignment loop; one row lands per iteration.
 
 ## Loop backlog (ordered)
 
-1. Chunk-level stage/discard in the file diff.
-2. Multiple terminal tabs in the workbench.
-3. Plan pane fed from turn structure.
-4. Line-anchored diff comments feeding the agent prompt.
+1. Multiple terminal tabs in the workbench.
+2. Plan pane fed from turn structure.
+3. Line-anchored diff comments feeding the agent prompt.
 
 Sources: [OpenAI — Introducing the Codex app](https://openai.com/index/introducing-the-codex-app/), [SmartScope — Codex desktop April 2026 update](https://smartscope.blog/en/generative-ai/chatgpt/codex-desktop-major-update-april-2026/), [Codex KB — workspace/review pane](https://codex.danielvaughan.com/2026/04/17/codex-app-workspace-pr-review-task-sidebar-artifact-viewer/), [Macaron — Codex review pane guide](https://macaron.im/blog/codex-app-review-pane), [Releasebot — Codex updates July 2026](https://releasebot.io/updates/openai/codex)

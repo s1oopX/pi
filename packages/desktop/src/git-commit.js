@@ -5,7 +5,9 @@
  */
 
 import { execFile } from "node:child_process";
+import { createHash } from "node:crypto";
 import { realpath, stat } from "node:fs/promises";
+import { isAbsolute, relative, resolve, sep } from "node:path";
 
 const GIT_TIMEOUT_MS = 15000;
 const GIT_MAX_BUFFER_BYTES = 1024 * 1024;
@@ -111,6 +113,51 @@ export function runGit(cwd, args, execFileImpl, timeoutMs) {
 }
 
 /**
+ * @param {string} cwd
+ * @param {string[]} args
+ * @param {string} input
+ * @param {import("node:child_process").execFile} execFileImpl
+ * @param {number} timeoutMs
+ * @returns {Promise<GitRunResult>}
+ */
+export function runGitWithInput(cwd, args, input, execFileImpl, timeoutMs) {
+	return new Promise((resolveResult) => {
+		const complete = (/** @type {unknown} */ error, stdout = "", stderr = "") => {
+			resolveResult({ error, stdout: String(stdout ?? ""), stderr: String(stderr ?? "") });
+		};
+		try {
+			const child = execFileImpl(
+				"git",
+				[...GIT_BASE_ARGS, ...args],
+				{
+					cwd,
+					encoding: "utf8",
+					env: {
+						...process.env,
+						GIT_OPTIONAL_LOCKS: "0",
+						LANG: "C",
+						LC_ALL: "C",
+					},
+					maxBuffer: GIT_MAX_BUFFER_BYTES,
+					shell: false,
+					timeout: timeoutMs,
+					windowsHide: true,
+				},
+				complete,
+			);
+			if (!child.stdin) {
+				complete(new Error("Could not open git stdin"));
+				return;
+			}
+			child.stdin.on("error", () => {});
+			child.stdin.end(input);
+		} catch (error) {
+			complete(error);
+		}
+	});
+}
+
+/**
  * @param {string} action
  * @param {GitRunResult} result
  */
@@ -164,8 +211,12 @@ export async function commitAllChanges(
 	if (!validated.ok) throw new Error(validated.reason);
 	const cwd = await resolveWorkspaceDir(workspace, realpathImpl, statImpl);
 
-	const addResult = await runGit(cwd, ["add", "--all"], execFileImpl, timeoutMs);
-	if (addResult.error) throw describeGitFailure("Could not stage changes", addResult);
+	const stagedResult = await runGit(cwd, ["diff", "--cached", "--name-only"], execFileImpl, timeoutMs);
+	if (stagedResult.error) throw describeGitFailure("Could not inspect staged changes", stagedResult);
+	if (!stagedResult.stdout.trim()) {
+		const addResult = await runGit(cwd, ["add", "--all"], execFileImpl, timeoutMs);
+		if (addResult.error) throw describeGitFailure("Could not stage changes", addResult);
+	}
 
 	const commitResult = await runGit(cwd, ["commit", "-m", validated.message], execFileImpl, timeoutMs);
 	if (commitResult.error) {
@@ -274,18 +325,103 @@ export async function switchGitBranch(
 
 
 /**
- * A worktree path argument for git, required non-empty.
+ * A worktree-relative path argument for git, required non-empty and contained
+ * by the resolved workspace.
+ * @param {string} cwd
  * @param {unknown} filePath
  */
-function validateFilePath(filePath) {
-	const trimmed = String(filePath ?? "").trim();
-	if (!trimmed) throw new Error("A file path is required");
-	return trimmed;
+function validateFilePath(cwd, filePath) {
+	const target = String(filePath ?? "");
+	if (!target.trim()) throw new Error("A file path is required");
+	if (target.includes("\0") || isAbsolute(target)) throw new Error("File path must be relative to the workspace");
+	const relativeTarget = relative(cwd, resolve(cwd, target));
+	if (!relativeTarget || relativeTarget === ".." || relativeTarget.startsWith(`..${sep}`) || isAbsolute(relativeTarget)) {
+		throw new Error("File path must stay inside the workspace");
+	}
+	return target;
+}
+
+/** @param {string} patch */
+function patchHash(patch) {
+	return createHash("sha256").update(patch).digest("hex");
+}
+
+/** @param {string} patch */
+function patchHunkStarts(patch) {
+	const lines = (patch.endsWith("\n") ? patch.slice(0, -1) : patch).split("\n");
+	const starts = [];
+	for (let index = 0; index < lines.length; index += 1) {
+		if (lines[index].startsWith("@@ ")) starts.push(index);
+	}
+	return { lines, starts };
 }
 
 /**
- * Uncommitted diff for one file (staged + unstaged vs HEAD). Untracked files
- * fall back to a no-index diff so new files render as pure additions.
+ * Select one unified-diff hunk while retaining the file header git needs.
+ * @param {string} patch
+ * @param {number} hunkIndex
+ */
+export function selectPatchHunk(patch, hunkIndex) {
+	if (!Number.isSafeInteger(hunkIndex) || hunkIndex < 0) throw new Error("Invalid hunk index");
+	const { lines, starts } = patchHunkStarts(patch);
+	if (hunkIndex >= starts.length) throw new Error("Diff hunk is no longer available");
+	const firstHunk = starts[0];
+	const start = starts[hunkIndex];
+	const end = starts[hunkIndex + 1] ?? lines.length;
+	return `${[...lines.slice(0, firstHunk), ...lines.slice(start, end)].join("\n")}\n`;
+}
+
+/**
+ * @param {string} patch
+ * @param {boolean} canDiscard
+ */
+function describePatch(patch, canDiscard) {
+	return {
+		patch,
+		hash: patchHash(patch),
+		canDiscard,
+	};
+}
+
+/**
+ * @param {string} cwd
+ * @param {string} target
+ * @param {import("node:child_process").execFile} execFileImpl
+ * @param {number} timeoutMs
+ */
+async function readFileDiff(cwd, target, execFileImpl, timeoutMs) {
+	const inHeadResult = await runGit(cwd, ["ls-tree", "HEAD", "--", target], execFileImpl, timeoutMs);
+	const inHead = !inHeadResult.error && Boolean(inHeadResult.stdout.trim());
+	const stagedResult = await runGit(cwd, ["diff", "--cached", "--", target], execFileImpl, timeoutMs);
+	if (stagedResult.error) throw describeGitFailure("Could not read staged changes", stagedResult);
+	const unstagedResult = await runGit(cwd, ["diff", "--", target], execFileImpl, timeoutMs);
+	if (unstagedResult.error) throw describeGitFailure("Could not read unstaged changes", unstagedResult);
+
+	let unstagedPatch = unstagedResult.stdout;
+	let untracked = false;
+	if (!stagedResult.stdout.trim() && !unstagedPatch.trim()) {
+		// `--no-index` exits 1 when the sides differ, so the output matters more
+		// than the error flag here.
+		const nullDevice = process.platform === "win32" ? "NUL" : "/dev/null";
+		const untrackedResult = await runGit(
+			cwd,
+			["diff", "--no-index", "--", nullDevice, target],
+			execFileImpl,
+			timeoutMs,
+		);
+		unstagedPatch = untrackedResult.stdout;
+		untracked = Boolean(unstagedPatch.trim());
+	}
+
+	return {
+		staged: describePatch(stagedResult.stdout, inHead),
+		unstaged: describePatch(unstagedPatch, !untracked),
+	};
+}
+
+/**
+ * Separate staged (HEAD to index) and unstaged (index to worktree) patches for
+ * one file. Untracked files fall back to a no-index pure-addition patch.
  * @param {string} workspace
  * @param {string} filePath
  */
@@ -294,17 +430,51 @@ export async function getFileDiff(
 	filePath,
 	{ execFileImpl = execFile, realpathImpl = realpath, statImpl = stat, timeoutMs = GIT_TIMEOUT_MS } = {},
 ) {
-	const target = validateFilePath(filePath);
 	const cwd = await resolveWorkspaceDir(workspace, realpathImpl, statImpl);
-	const tracked = await runGit(cwd, ["diff", "HEAD", "--", target], execFileImpl, timeoutMs);
-	if (tracked.stdout.trim()) {
-		return { patch: tracked.stdout, tracked: true };
+	const target = validateFilePath(cwd, filePath);
+	return readFileDiff(cwd, target, execFileImpl, timeoutMs);
+}
+
+/**
+ * Apply one server-selected hunk from the current staged or unstaged patch.
+ * The renderer supplies only an index and hash; arbitrary patch text never
+ * crosses the trust boundary.
+ * @param {string} workspace
+ * @param {string} filePath
+ * @param {{ section?: unknown, action?: unknown, hunkIndex?: unknown, patchHash?: unknown }} selection
+ */
+export async function applyGitHunk(
+	workspace,
+	filePath,
+	selection,
+	{ execFileImpl = execFile, realpathImpl = realpath, statImpl = stat, timeoutMs = GIT_TIMEOUT_MS } = {},
+) {
+	const cwd = await resolveWorkspaceDir(workspace, realpathImpl, statImpl);
+	const target = validateFilePath(cwd, filePath);
+	const section = selection?.section;
+	const action = selection?.action;
+	const hunkIndex = typeof selection?.hunkIndex === "number" ? selection.hunkIndex : Number.NaN;
+	const requestedHash = String(selection?.patchHash ?? "");
+	/** @type {Record<string, string[]>} */
+	const argsBySelection = {
+		"unstaged:stage": ["apply", "--cached", "-"],
+		"unstaged:discard": ["apply", "--reverse", "-"],
+		"staged:unstage": ["apply", "--cached", "--reverse", "-"],
+		"staged:discard": ["apply", "--index", "--reverse", "-"],
+	};
+	const args = argsBySelection[`${section}:${action}`];
+	if (!args) throw new Error("Unsupported hunk action");
+
+	const diff = await readFileDiff(cwd, target, execFileImpl, timeoutMs);
+	const patchSection = section === "staged" ? diff.staged : diff.unstaged;
+	if (requestedHash !== patchSection.hash) throw new Error("Diff changed; refresh it and try again");
+	if (action === "discard" && !patchSection.canDiscard) {
+		throw new Error("Discard the whole new file to move it to the Recycle Bin");
 	}
-	// `--no-index` exits 1 when the sides differ, so the output matters more
-	// than the error flag here.
-	const nullDevice = process.platform === "win32" ? "NUL" : "/dev/null";
-	const untracked = await runGit(cwd, ["diff", "--no-index", "--", nullDevice, target], execFileImpl, timeoutMs);
-	return { patch: untracked.stdout, tracked: false };
+	const patch = selectPatchHunk(patchSection.patch, hunkIndex);
+	const result = await runGitWithInput(cwd, args, patch, execFileImpl, timeoutMs);
+	if (result.error) throw describeGitFailure(`Could not ${String(action)} hunk`, result);
+	return { applied: true, section, action };
 }
 
 /**
@@ -321,8 +491,8 @@ export async function restoreFileChanges(
 	filePath,
 	{ execFileImpl = execFile, realpathImpl = realpath, statImpl = stat, timeoutMs = GIT_TIMEOUT_MS } = {},
 ) {
-	const target = validateFilePath(filePath);
 	const cwd = await resolveWorkspaceDir(workspace, realpathImpl, statImpl);
+	const target = validateFilePath(cwd, filePath);
 
 	const inHead = await runGit(cwd, ["ls-tree", "HEAD", "--", target], execFileImpl, timeoutMs);
 	if (!inHead.error && inHead.stdout.trim()) {

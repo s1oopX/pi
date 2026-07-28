@@ -11,6 +11,10 @@ import type {
   GetSessionsCommand,
   GitBranches,
   GitChanges,
+  GitDiffSectionName,
+  GitFileDiff,
+  GitHunkAction,
+  GitHunkResult,
   GitPrContext,
   GitPrResult,
   GitPushResult,
@@ -60,7 +64,17 @@ export interface PiDesktopApi {
   getWorkspaceGitStatus(taskId?: string): Promise<WorkspaceGitStatus>;
   getGitChanges(taskId?: string): Promise<GitChanges>;
   commitAllGitChanges(message: string, taskId?: string): Promise<{ committed: boolean; summary: string }>;
-  getGitFileDiff?: (filePath: string, taskId?: string) => Promise<{ patch: string; tracked: boolean }>;
+  getGitFileDiff?: (filePath: string, taskId?: string) => Promise<GitFileDiff>;
+  applyGitHunk?: (
+    params: {
+      filePath: string;
+      section: GitDiffSectionName;
+      action: GitHunkAction;
+      hunkIndex: number;
+      patchHash: string;
+    },
+    taskId?: string,
+  ) => Promise<GitHunkResult>;
   restoreGitFile?: (
     filePath: string,
     taskId?: string,
@@ -561,10 +575,22 @@ export async function commitAllGitChanges(message: string): Promise<{ committed:
   return requireApi().commitAllGitChanges(message, activeBackendTaskId);
 }
 
-export async function getGitFileDiff(filePath: string): Promise<{ patch: string; tracked: boolean }> {
+export async function getGitFileDiff(filePath: string): Promise<GitFileDiff> {
   const api = requireApi();
   if (!api.getGitFileDiff) throw new Error("File diffs need a newer Pi Studio build");
   return api.getGitFileDiff(filePath, activeBackendTaskId);
+}
+
+export async function applyGitHunk(params: {
+  filePath: string;
+  section: GitDiffSectionName;
+  action: GitHunkAction;
+  hunkIndex: number;
+  patchHash: string;
+}): Promise<GitHunkResult> {
+  const api = requireApi();
+  if (!api.applyGitHunk) throw new Error("Hunk actions need a newer Pi Studio build");
+  return api.applyGitHunk(params, activeBackendTaskId);
 }
 
 export async function restoreGitFile(

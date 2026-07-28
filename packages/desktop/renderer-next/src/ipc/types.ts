@@ -488,6 +488,26 @@ export interface GitChanges {
   truncated: boolean;
 }
 
+export type GitDiffSectionName = "staged" | "unstaged";
+export type GitHunkAction = "stage" | "unstage" | "discard";
+
+export interface GitDiffSection {
+  patch: string;
+  hash: string;
+  canDiscard: boolean;
+}
+
+export interface GitFileDiff {
+  staged: GitDiffSection;
+  unstaged: GitDiffSection;
+}
+
+export interface GitHunkResult {
+  applied: boolean;
+  section: GitDiffSectionName;
+  action: GitHunkAction;
+}
+
 export interface GitBranch {
   name: string;
   current: boolean;

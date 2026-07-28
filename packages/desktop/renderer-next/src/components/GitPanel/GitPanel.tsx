@@ -2,7 +2,14 @@ import { useEffect, useState } from "react";
 import { DiffView } from "../DiffView";
 import { useI18n } from "../../i18n";
 import * as api from "../../ipc/api";
-import type { GitBranches, GitChanges, GitPrContext } from "../../ipc/types";
+import type {
+  GitBranches,
+  GitChanges,
+  GitDiffSectionName,
+  GitFileDiff,
+  GitHunkAction,
+  GitPrContext,
+} from "../../ipc/types";
 import { useStore } from "../../store";
 import { Icon } from "../Icon";
 import { showToast } from "../Toast";
@@ -31,9 +38,11 @@ export function GitPanel({ onClose }: GitPanelProps) {
   const [pushing, setPushing] = useState(false);
   const [branchData, setBranchData] = useState<GitBranches | null>(null);
   const [expandedFile, setExpandedFile] = useState<string | null>(null);
-  const [expandedPatch, setExpandedPatch] = useState<string | null>(null);
+  const [expandedDiff, setExpandedDiff] = useState<GitFileDiff | null>(null);
   const [armedRestore, setArmedRestore] = useState<string | null>(null);
   const [restoringFile, setRestoringFile] = useState<string | null>(null);
+  const [armedHunkDiscard, setArmedHunkDiscard] = useState<string | null>(null);
+  const [applyingHunk, setApplyingHunk] = useState<string | null>(null);
   const [branchesOpen, setBranchesOpen] = useState(false);
   const [switchingBranch, setSwitchingBranch] = useState<string | null>(null);
   const [newBranchName, setNewBranchName] = useState("");
@@ -47,7 +56,7 @@ export function GitPanel({ onClose }: GitPanelProps) {
   const [creatingPr, setCreatingPr] = useState(false);
 
   const sync = summarizeGitSync(workspaceGitStatus);
-  const busy = committing || pushing || Boolean(switchingBranch) || creatingBranch || creatingPr;
+  const busy = committing || pushing || Boolean(switchingBranch) || creatingBranch || creatingPr || Boolean(applyingHunk);
 
   async function loadChanges() {
     setChangesLoading(true);
@@ -207,21 +216,69 @@ export function GitPanel({ onClose }: GitPanelProps) {
 
   async function toggleFileDiff(path: string) {
     setArmedRestore(null);
+    setArmedHunkDiscard(null);
     if (expandedFile === path) {
       setExpandedFile(null);
-      setExpandedPatch(null);
+      setExpandedDiff(null);
       return;
     }
     setExpandedFile(path);
-    setExpandedPatch(null);
+    setExpandedDiff(null);
     try {
-      const result = await api.getGitFileDiff(path);
-      setExpandedPatch(result.patch);
+      setExpandedDiff(await api.getGitFileDiff(path));
     } catch (error) {
       setExpandedFile(null);
       showToast(t("Could not load the diff: {message}", "无法加载差异：{message}", {
         message: ipcErrorReason(error),
       }), "error");
+    }
+  }
+
+  async function handleHunkAction(
+    path: string,
+    section: GitDiffSectionName,
+    action: GitHunkAction,
+    hunkIndex: number,
+    patchHash: string,
+  ) {
+    const discardKey = `${section}:${hunkIndex}`;
+    if (action === "discard" && armedHunkDiscard !== discardKey) {
+      setArmedHunkDiscard(discardKey);
+      return;
+    }
+    setArmedHunkDiscard(null);
+    const operationKey = `${section}:${hunkIndex}:${action}`;
+    setApplyingHunk(operationKey);
+    try {
+      await api.applyGitHunk({ filePath: path, section, action, hunkIndex, patchHash });
+      showToast(
+        action === "stage"
+          ? t("Staged hunk", "已暂存此块")
+          : action === "unstage"
+            ? t("Unstaged hunk", "已取消暂存此块")
+            : t("Discarded hunk", "已丢弃此块"),
+        "success",
+      );
+      refreshWorkspaceGitStatus();
+      const [nextDiff] = await Promise.all([api.getGitFileDiff(path), loadChanges()]);
+      if (!nextDiff.staged.patch.trim() && !nextDiff.unstaged.patch.trim()) {
+        setExpandedFile(null);
+        setExpandedDiff(null);
+      } else {
+        setExpandedDiff(nextDiff);
+      }
+    } catch (error) {
+      showToast(t("Could not update the hunk: {message}", "无法更新此块：{message}", {
+        message: ipcErrorReason(error),
+      }), "error");
+      try {
+        setExpandedDiff(await api.getGitFileDiff(path));
+      } catch {
+        setExpandedFile(null);
+        setExpandedDiff(null);
+      }
+    } finally {
+      setApplyingHunk(null);
     }
   }
 
@@ -248,7 +305,8 @@ export function GitPanel({ onClose }: GitPanelProps) {
         "success",
       );
       setExpandedFile(null);
-      setExpandedPatch(null);
+      setExpandedDiff(null);
+      setArmedHunkDiscard(null);
       refreshWorkspaceGitStatus();
       await loadChanges();
     } catch (error) {
@@ -266,6 +324,12 @@ export function GitPanel({ onClose }: GitPanelProps) {
   const prReady = Boolean(
     prContext?.isGitHub && !prContext.detached && prContext.hasUpstream && !prOnBase && prBase.trim(),
   );
+  const expandedSections = expandedDiff
+    ? [
+        { name: "staged" as const, label: t("Staged changes", "已暂存更改"), data: expandedDiff.staged },
+        { name: "unstaged" as const, label: t("Unstaged changes", "未暂存更改"), data: expandedDiff.unstaged },
+      ].filter(({ data }) => data.patch.trim())
+    : [];
 
   return (
     <div className="git-panel" role="dialog" aria-label={t("Git", "Git")}>
@@ -509,11 +573,69 @@ export function GitPanel({ onClose }: GitPanelProps) {
               </button>
               {expandedFile === file.path && (
                 <div className="git-panel-file-diff">
-                  {expandedPatch === null ? (
+                  {expandedDiff === null ? (
                     <div className="git-panel-note">{t("Loading...", "正在加载...")}</div>
                   ) : (
                     <>
-                      <DiffView patch={expandedPatch} />
+                      {expandedSections.map(({ name, label, data }) => (
+                        <div className="git-panel-diff-section" key={name}>
+                          <div className="git-panel-diff-section-title">{label}</div>
+                          <DiffView
+                            patch={data.patch}
+                            renderHunkActions={(hunkIndex) => {
+                              const primaryAction = name === "staged" ? "unstage" : "stage";
+                              const primaryKey = `${name}:${hunkIndex}:${primaryAction}`;
+                              const discardKey = `${name}:${hunkIndex}`;
+                              const disabled = Boolean(applyingHunk) || isStreaming;
+                              return (
+                                <>
+                                  <button
+                                    className="git-panel-hunk-action"
+                                    type="button"
+                                    disabled={disabled}
+                                    onClick={() => void handleHunkAction(
+                                      file.path,
+                                      name,
+                                      primaryAction,
+                                      hunkIndex,
+                                      data.hash,
+                                    )}
+                                  >
+                                    {applyingHunk === primaryKey
+                                      ? t("Applying...", "正在应用...")
+                                      : primaryAction === "stage"
+                                        ? t("Stage hunk", "暂存此块")
+                                        : t("Unstage hunk", "取消暂存此块")}
+                                  </button>
+                                  {data.canDiscard && (
+                                    <button
+                                      className="git-panel-hunk-action danger"
+                                      type="button"
+                                      disabled={disabled}
+                                      onBlur={() => setArmedHunkDiscard((current) => (
+                                        current === discardKey ? null : current
+                                      ))}
+                                      onClick={() => void handleHunkAction(
+                                        file.path,
+                                        name,
+                                        "discard",
+                                        hunkIndex,
+                                        data.hash,
+                                      )}
+                                    >
+                                      {applyingHunk === `${name}:${hunkIndex}:discard`
+                                        ? t("Discarding...", "正在丢弃...")
+                                        : armedHunkDiscard === discardKey
+                                          ? t("Confirm discard", "确认丢弃")
+                                          : t("Discard hunk", "丢弃此块")}
+                                    </button>
+                                  )}
+                                </>
+                              );
+                            }}
+                          />
+                        </div>
+                      ))}
                       <div className="git-panel-file-diff-actions">
                         <button
                           className="git-panel-ask-btn"
@@ -574,10 +696,13 @@ export function GitPanel({ onClose }: GitPanelProps) {
           disabled={busy || isStreaming || !commitMessage.trim() || !changes || changes.files.length === 0}
           title={isStreaming
             ? t("Finish or stop the current run before committing", "请先完成或停止当前运行，再提交")
-            : t("Stage all changes and commit (Ctrl+Enter)", "暂存全部更改并提交（Ctrl+Enter）")}
+            : t(
+                "Commit staged changes; if none are staged, stage all first (Ctrl+Enter)",
+                "提交已暂存更改；若无暂存内容则先暂存全部（Ctrl+Enter）",
+              )}
           onClick={() => void handleCommitAll()}
         >
-          {committing ? t("Committing...", "正在提交...") : t("Commit all changes", "提交全部更改")}
+          {committing ? t("Committing...", "正在提交...") : t("Commit changes", "提交更改")}
         </button>
       </div>
     </div>

@@ -11,6 +11,7 @@ import {
 import { BackendHandle } from "./backend-handle.js";
 import { sanitizeDiagnostics } from "./diagnostics.js";
 import {
+	applyGitHunk,
 	commitAllChanges,
 	getFileDiff,
 	listGitBranches,
@@ -28,7 +29,7 @@ import {
 	listWorktreeLeftovers,
 	removeTaskWorktree,
 } from "./git-worktree.js";
-import { applySource, MIRROR_PRESETS, readStatus } from "./mirror-sources.js";
+import { applySource, MIRROR_MANAGERS, MIRROR_PRESETS, readStatus } from "./mirror-sources.js";
 import { describeRevealTarget, resolveWorkspacePath } from "./path-reveal.js";
 import { createProject } from "./project-templates.js";
 import { createRollingLog } from "./rolling-log.js";
@@ -1111,7 +1112,9 @@ ipcMain.handle("mirror:set-source", async (_event, { manager, sourceId } = {}) =
 	if (!sourceId || typeof sourceId !== "string") {
 		throw new Error("A mirror source is required");
 	}
-	return applySource(manager, sourceId);
+	const knownManager = MIRROR_MANAGERS.find((candidate) => candidate === manager);
+	if (!knownManager) throw new Error(`Unknown package manager: ${manager}`);
+	return applySource(knownManager, sourceId);
 });
 
 // Git and workspace-scoped IPC follows the renderer's active task: a pool
@@ -1136,6 +1139,15 @@ ipcMain.handle("git:branches", async (_event, taskId) => listGitBranches(resolve
 
 ipcMain.handle("git:file-diff", async (_event, filePath, taskId) =>
 	getFileDiff(resolveTaskCwd(taskId), String(filePath ?? "")),
+);
+
+ipcMain.handle("git:apply-hunk", async (_event, params, taskId) =>
+	applyGitHunk(resolveTaskCwd(taskId), String(params?.filePath ?? ""), {
+		section: params?.section,
+		action: params?.action,
+		hunkIndex: params?.hunkIndex,
+		patchHash: params?.patchHash,
+	}),
 );
 
 ipcMain.handle("git:restore-file", async (_event, filePath, taskId) => {

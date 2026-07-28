@@ -151,6 +151,19 @@
   line-height: var(--line-height-compact);
 }
 
+.diff-hunk + .diff-hunk {
+  border-top: 1px solid var(--border);
+}
+
+.diff-hunk-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: var(--space-2);
+  padding: 4px 8px;
+  border-bottom: 1px solid var(--border);
+  background: var(--control-bg);
+}
+
 .diff-empty {
   padding: var(--space-8);
   color: var(--muted);

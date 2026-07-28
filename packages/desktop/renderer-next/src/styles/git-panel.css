@@ -429,6 +429,55 @@ button.git-panel-file.expanded {
   display: none;
 }
 
+.git-panel-file-diff .d2h-code-linenumber,
+.git-panel-file-diff .d2h-code-side-linenumber {
+  position: static;
+}
+
+.git-panel-file-diff .d2h-code-line,
+.git-panel-file-diff .d2h-code-side-line {
+  display: block;
+  width: auto;
+  padding-inline: 8px;
+}
+
+.git-panel-diff-section + .git-panel-diff-section {
+  margin-top: 8px;
+}
+
+.git-panel-diff-section-title {
+  margin-bottom: 4px;
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 600;
+}
+
+.git-panel-hunk-action {
+  padding: 3px 8px;
+  border-radius: var(--radius-xs);
+  background: var(--control-hover);
+  color: var(--text-soft);
+  font-size: 11px;
+  font-weight: 600;
+}
+
+.git-panel-hunk-action:hover:not(:disabled) {
+  background: var(--accent-soft);
+  color: var(--accent);
+}
+
+.git-panel-hunk-action.danger {
+  color: var(--danger);
+}
+
+.git-panel-hunk-action.danger:hover:not(:disabled) {
+  background: var(--danger-soft, var(--control-hover));
+}
+
+.git-panel-hunk-action:disabled {
+  opacity: 0.5;
+}
+
 .git-panel-file-diff-actions {
   display: flex;
   justify-content: flex-end;
