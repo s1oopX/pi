@@ -630,7 +630,7 @@ async function runAutomation(automation, run) {
 }
 
 /**
- * @param {{ name: string }} automation
+ * @param {{ name: string, notificationPolicy: "all" | "failures" }} automation
  * @param {{ status: string, error?: string }} run
  */
 function notifyAutomationResult(automation, run) {
@@ -639,6 +639,7 @@ function notifyAutomationResult(automation, run) {
 		"automations",
 		`${automation.name}: ${run.status}${run.error ? ` (${run.error})` : ""}`,
 	);
+	if (run.status === "success" && automation.notificationPolicy === "failures") return;
 	if (!Notification.isSupported() || (mainWindow && !mainWindow.isDestroyed() && mainWindow.isFocused())) return;
 	try {
 		const notification = new Notification({
@@ -1063,6 +1064,10 @@ ipcMain.handle("automation:delete", async (_event, id) => getAutomationService()
 
 ipcMain.handle("automation:run-now", async (_event, id) => getAutomationService().runNow(id));
 
+ipcMain.handle("automation:update-run", async (_event, automationId, runId, action) =>
+	getAutomationService().updateRun(automationId, runId, action),
+);
+
 ipcMain.handle("automation:open-run", async (_event, automationId, runId) => {
 	return serializeSessionMutation(async () => {
 		const automation = getAutomationService().list().find((candidate) => candidate.id === String(automationId ?? ""));
@@ -1074,6 +1079,11 @@ ipcMain.handle("automation:open-run", async (_event, automationId, runId) => {
 		const switched = await primaryBackend.request({ type: "switch_session", sessionPath: run.sessionFile });
 		if (!switched.success) throw new Error(switched.error || "Could not open the automation session");
 		if (typeof switched.data?.cwd === "string") syncBackendCwd(switched.data.cwd);
+		try {
+			getAutomationService().updateRun(automationId, runId, "read");
+		} catch (error) {
+			getFileLog().append("warn", "automations", `Could not mark opened run read: ${error instanceof Error ? error.message : String(error)}`);
+		}
 		return switched.data;
 	});
 });

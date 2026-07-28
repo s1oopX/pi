@@ -59,6 +59,7 @@ export interface PiDesktopApi {
   setAutomationStatus?: (id: string, status: AutomationStatus) => Promise<AutomationRecord>;
   deleteAutomation?: (id: string) => Promise<AutomationRecord>;
   runAutomationNow?: (id: string) => Promise<AutomationRecord>;
+  updateAutomationRun?: (automationId: string, runId: string, action: AutomationRunAction) => Promise<AutomationRecord>;
   openAutomationRun?: (automationId: string, runId: string) => Promise<{ cancelled: boolean; cwd: string }>;
   onAutomationsChanged?: (listener: (payload: AutomationsChangedEvent) => void) => () => void;
   listWorktreeLeftovers?: () => Promise<{ leftovers: WorktreeLeftover[] }>;
@@ -192,6 +193,8 @@ export interface TaskChangedEvent {
 
 export type AutomationStatus = "active" | "paused";
 export type AutomationRunStatus = "running" | "success" | "error";
+export type AutomationNotificationPolicy = "all" | "failures";
+export type AutomationRunAction = "read" | "unread" | "archive" | "restore";
 
 export interface AutomationRun {
   id: string;
@@ -201,6 +204,8 @@ export interface AutomationRun {
   sessionId?: string;
   sessionFile?: string;
   error?: string;
+  readAt?: string;
+  archivedAt?: string;
 }
 
 export interface AutomationRecord {
@@ -210,6 +215,7 @@ export interface AutomationRecord {
   cwd: string;
   rrule: string;
   status: AutomationStatus;
+  notificationPolicy: AutomationNotificationPolicy;
   createdAt: string;
   updatedAt: string;
   nextRunAt: string | null;
@@ -225,6 +231,7 @@ export interface AutomationInput {
   cwd: string;
   rrule: string;
   status?: AutomationStatus;
+  notificationPolicy?: AutomationNotificationPolicy;
 }
 
 export interface AutomationsChangedEvent {
@@ -324,6 +331,16 @@ export async function runAutomationNow(id: string): Promise<AutomationRecord> {
   const api = requireApi();
   if (!api.runAutomationNow) throw new Error("Automations need a newer Pi Studio build");
   return api.runAutomationNow(id);
+}
+
+export async function updateAutomationRun(
+  automationId: string,
+  runId: string,
+  action: AutomationRunAction,
+): Promise<AutomationRecord> {
+  const api = requireApi();
+  if (!api.updateAutomationRun) throw new Error("Automation run triage needs a newer Pi Studio build");
+  return api.updateAutomationRun(automationId, runId, action);
 }
 
 export async function openAutomationRun(

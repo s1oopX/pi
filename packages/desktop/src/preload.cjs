@@ -74,6 +74,9 @@ contextBridge.exposeInMainWorld("piDesktop", {
 	runAutomationNow(/** @type {unknown} */ id) {
 		return ipcRenderer.invoke("automation:run-now", id);
 	},
+	updateAutomationRun(/** @type {unknown} */ automationId, /** @type {unknown} */ runId, /** @type {unknown} */ action) {
+		return ipcRenderer.invoke("automation:update-run", automationId, runId, action);
+	},
 	openAutomationRun(/** @type {unknown} */ automationId, /** @type {unknown} */ runId) {
 		return ipcRenderer.invoke("automation:open-run", automationId, runId);
 	},

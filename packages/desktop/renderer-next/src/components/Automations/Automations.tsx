@@ -1,7 +1,14 @@
 import { useEffect, useMemo, useState, type FormEvent } from "react";
 import { useI18n } from "../../i18n";
 import * as api from "../../ipc/api";
-import type { AutomationInput, AutomationRecord, AutomationRun, AutomationRunStatus } from "../../ipc/api";
+import type {
+  AutomationInput,
+  AutomationNotificationPolicy,
+  AutomationRecord,
+  AutomationRun,
+  AutomationRunAction,
+  AutomationRunStatus,
+} from "../../ipc/api";
 import { useStore } from "../../store";
 import { PRIMARY_TASK_ID } from "../../store/taskRegistry";
 import { Dialog } from "../Dialog";
@@ -17,7 +24,10 @@ interface AutomationDraft {
   prompt: string;
   cwd: string;
   rrule: string;
+  notificationPolicy: AutomationNotificationPolicy;
 }
+
+type RunFilter = "current" | "unread" | "archived";
 
 const SCHEDULE_PRESETS = [
   { id: "hourly", rrule: "FREQ=HOURLY;INTERVAL=1;BYMINUTE=0" },
@@ -39,20 +49,27 @@ function hasRunningRun(automation: AutomationRecord): boolean {
   return automation.runs.some((run) => run.status === "running");
 }
 
+function isUnreadRun(run: AutomationRun): boolean {
+  return run.status !== "running" && !run.readAt && !run.archivedAt;
+}
+
 export function Automations({ onClose }: AutomationsProps) {
   const { resolvedLanguage, t } = useI18n();
   const workspaceCwd = useStore((state) => state.workspaceCwd);
+  const commands = useStore((state) => state.commands);
   const [automations, setAutomations] = useState<AutomationRecord[]>([]);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [query, setQuery] = useState("");
   const [filter, setFilter] = useState<"all" | "active" | "paused">("all");
+  const [runFilter, setRunFilter] = useState<RunFilter>("current");
   const [editorId, setEditorId] = useState<"new" | string | null>(null);
   const [draft, setDraft] = useState<AutomationDraft>({
     name: "",
     prompt: "",
     cwd: workspaceCwd,
     rrule: SCHEDULE_PRESETS[1].rrule,
+    notificationPolicy: "all",
   });
   const [formError, setFormError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
@@ -60,7 +77,9 @@ export function Automations({ onClose }: AutomationsProps) {
   const [deleteTarget, setDeleteTarget] = useState<AutomationRecord | null>(null);
 
   function replaceAutomation(updated: AutomationRecord): void {
-    setAutomations((current) => [updated, ...current.filter((automation) => automation.id !== updated.id)]);
+    setAutomations((current) => current.some((automation) => automation.id === updated.id)
+      ? current.map((automation) => automation.id === updated.id ? updated : automation)
+      : [updated, ...current]);
   }
 
   async function load(): Promise<void> {
@@ -80,15 +99,30 @@ export function Automations({ onClose }: AutomationsProps) {
     return api.onAutomationsChanged((payload) => setAutomations(payload.automations));
   }, []);
 
+  const promptTemplates = useMemo(() => commands.filter((command) =>
+    command.source === "prompt" && (command.sourceInfo.scope !== "project" || draft.cwd === workspaceCwd)),
+  [commands, draft.cwd, workspaceCwd]);
+
+  const unreadCount = useMemo(() => automations.reduce(
+    (count, automation) => count + automation.runs.filter(isUnreadRun).length,
+    0,
+  ), [automations]);
+  const archivedCount = useMemo(() => automations.reduce(
+    (count, automation) => count + automation.runs.filter((run) => Boolean(run.archivedAt)).length,
+    0,
+  ), [automations]);
+
   const filtered = useMemo(() => {
     const normalized = query.trim().toLowerCase();
     return automations.filter((automation) => {
       if (filter !== "all" && automation.status !== filter) return false;
+      if (runFilter === "unread" && !automation.runs.some(isUnreadRun)) return false;
+      if (runFilter === "archived" && !automation.runs.some((run) => run.archivedAt)) return false;
       if (!normalized) return true;
       return [automation.name, automation.prompt, automation.cwd, automation.rrule]
         .some((value) => value.toLowerCase().includes(normalized));
     });
-  }, [automations, filter, query]);
+  }, [automations, filter, query, runFilter]);
 
   const locale = resolvedLanguage === "zh-CN" ? "zh-CN" : "en-US";
   function formatDate(value: string | null | undefined): string {
@@ -115,13 +149,25 @@ export function Automations({ onClose }: AutomationsProps) {
   }
 
   function openNew(): void {
-    setDraft({ name: "", prompt: "", cwd: workspaceCwd, rrule: SCHEDULE_PRESETS[1].rrule });
+    setDraft({
+      name: "",
+      prompt: "",
+      cwd: workspaceCwd,
+      rrule: SCHEDULE_PRESETS[1].rrule,
+      notificationPolicy: "all",
+    });
     setFormError(null);
     setEditorId("new");
   }
 
   function openEdit(automation: AutomationRecord): void {
-    setDraft({ name: automation.name, prompt: automation.prompt, cwd: automation.cwd, rrule: automation.rrule });
+    setDraft({
+      name: automation.name,
+      prompt: automation.prompt,
+      cwd: automation.cwd,
+      rrule: automation.rrule,
+      notificationPolicy: automation.notificationPolicy,
+    });
     setFormError(null);
     setEditorId(automation.id);
   }
@@ -197,6 +243,18 @@ export function Automations({ onClose }: AutomationsProps) {
     }
   }
 
+  async function updateRun(automation: AutomationRecord, run: AutomationRun, action: AutomationRunAction): Promise<void> {
+    if (busyId || run.status === "running") return;
+    setBusyId(automation.id);
+    try {
+      replaceAutomation(await api.updateAutomationRun(automation.id, run.id, action));
+    } catch (error) {
+      showToast(t("Could not update automation run: {error}", "更新自动任务运行记录失败：{error}", { error: errorText(error) }), "error");
+    } finally {
+      setBusyId(null);
+    }
+  }
+
   async function openRun(automation: AutomationRecord, run: AutomationRun): Promise<void> {
     if (!run.sessionFile || busyId) return;
     setBusyId(automation.id);
@@ -255,6 +313,32 @@ export function Automations({ onClose }: AutomationsProps) {
             </button>
           ))}
         </div>
+        <div className="automations-filters automations-run-filters" role="group" aria-label={t("Automation runs", "自动任务运行记录")}>
+          <button
+            className={`automations-run-filter-current ${runFilter === "current" ? "active" : ""}`}
+            type="button"
+            aria-pressed={runFilter === "current"}
+            onClick={() => setRunFilter("current")}
+          >
+            {t("Current", "当前")}
+          </button>
+          <button
+            className={`automations-run-filter-unread ${runFilter === "unread" ? "active" : ""}`}
+            type="button"
+            aria-pressed={runFilter === "unread"}
+            onClick={() => setRunFilter("unread")}
+          >
+            {t("Unread ({count})", "未读（{count}）", { count: unreadCount })}
+          </button>
+          <button
+            className={`automations-run-filter-archived ${runFilter === "archived" ? "active" : ""}`}
+            type="button"
+            aria-pressed={runFilter === "archived"}
+            onClick={() => setRunFilter("archived")}
+          >
+            {t("Archived ({count})", "已归档（{count}）", { count: archivedCount })}
+          </button>
+        </div>
       </div>
 
       <div className="automations-content">
@@ -268,14 +352,18 @@ export function Automations({ onClose }: AutomationsProps) {
         {!loading && !loadError && filtered.length === 0 && (
           <div className="automations-empty">
             <Icon name="calendar" size={24} />
-            <strong>{query || filter !== "all" ? t("No matching automations", "没有匹配的自动任务") : t("No scheduled tasks yet", "尚无定时任务")}</strong>
-            {!query && filter === "all" && <button className="dialog-btn dialog-btn-primary" type="button" onClick={openNew}>{t("Create one", "创建一个")}</button>}
+            <strong>{query || filter !== "all" || runFilter !== "current" ? t("No matching automations", "没有匹配的自动任务") : t("No scheduled tasks yet", "尚无定时任务")}</strong>
+            {!query && filter === "all" && runFilter === "current" && <button className="dialog-btn dialog-btn-primary" type="button" onClick={openNew}>{t("Create one", "创建一个")}</button>}
           </div>
         )}
         <div className="automations-list">
           {filtered.map((automation) => {
             const running = hasRunningRun(automation);
             const busy = busyId === automation.id;
+            const unread = automation.runs.filter(isUnreadRun).length;
+            const visibleRuns = automation.runs.filter((run) =>
+              runFilter === "archived" ? Boolean(run.archivedAt) : runFilter === "unread" ? isUnreadRun(run) : !run.archivedAt,
+            );
             return (
               <article className="automation-card" key={automation.id}>
                 <div className="automation-card-header">
@@ -288,6 +376,7 @@ export function Automations({ onClose }: AutomationsProps) {
                           {runStatusLabel(automation.lastRunStatus)}
                         </span>
                       )}
+                      {unread > 0 && <span className="automation-unread-count">{t("{count} unread", "{count} 条未读", { count: unread })}</span>}
                     </div>
                     <p className="automation-prompt">{automation.prompt}</p>
                   </div>
@@ -310,23 +399,40 @@ export function Automations({ onClose }: AutomationsProps) {
                   <div><dt>{t("Schedule", "计划")}</dt><dd title={automation.rrule}>{scheduleLabel(automation.rrule)}</dd></div>
                   <div><dt>{t("Next run", "下次运行")}</dt><dd>{automation.status === "active" ? formatDate(automation.nextRunAt) : t("Paused", "已暂停")}</dd></div>
                   <div><dt>{t("Workspace", "工作区")}</dt><dd title={automation.cwd}>{automation.cwd}</dd></div>
+                  <div><dt>{t("Notifications", "通知")}</dt><dd>{automation.notificationPolicy === "failures" ? t("Failures only", "仅失败") : t("All runs", "全部运行")}</dd></div>
                 </dl>
                 {automation.lastError && <p className="automation-last-error" role="status">{automation.lastError}</p>}
                 <details className="automation-history">
-                  <summary>{t("Previous runs ({count})", "历史运行（{count}）", { count: automation.runs.length })}</summary>
-                  {automation.runs.length === 0 ? (
-                    <p>{t("This automation has not run yet.", "此自动任务尚未运行。")}</p>
+                  <summary>{runFilter === "archived"
+                    ? t("Archived runs ({count})", "已归档运行（{count}）", { count: visibleRuns.length })
+                    : runFilter === "unread"
+                      ? t("Unread runs ({count})", "未读运行（{count}）", { count: visibleRuns.length })
+                      : t("Previous runs ({count})", "历史运行（{count}）", { count: visibleRuns.length })}</summary>
+                  {visibleRuns.length === 0 ? (
+                    <p>{runFilter === "current" ? t("This automation has not run yet.", "此自动任务尚未运行。") : t("No runs in this view.", "此视图中没有运行记录。")}</p>
                   ) : (
                     <ul>
-                      {automation.runs.map((run) => (
-                        <li key={run.id}>
+                      {visibleRuns.map((run) => (
+                        <li className={`${isUnreadRun(run) ? "automation-run-unread" : ""} ${run.archivedAt ? "automation-run-archived" : ""}`} key={run.id}>
                           <span className={`automation-run-status ${run.status}`}>{runStatusLabel(run.status)}</span>
                           <span>{formatDate(run.startedAt)}</span>
-                          {run.error && <span className="automation-run-error" title={run.error}>{run.error}</span>}
-                          {run.sessionFile && run.status !== "running" && (
-                            <button className="automation-open-run" type="button" disabled={busy} onClick={() => void openRun(automation, run)}>
-                              {t("Open session", "打开会话")}
-                            </button>
+                          <span className="automation-run-error" title={run.error}>{run.error}</span>
+                          {run.status !== "running" && (
+                            <span className="automation-run-actions">
+                              {run.sessionFile && (
+                                <button className="automation-open-run" type="button" disabled={busy} onClick={() => void openRun(automation, run)}>
+                                  {t("Open session", "打开会话")}
+                                </button>
+                              )}
+                              {!run.archivedAt && (
+                                <button className="automation-run-mark-read" type="button" disabled={busy} onClick={() => void updateRun(automation, run, run.readAt ? "unread" : "read")}>
+                                  {run.readAt ? t("Mark unread", "标为未读") : t("Mark read", "标为已读")}
+                                </button>
+                              )}
+                              <button className={run.archivedAt ? "automation-run-restore" : "automation-run-archive"} type="button" disabled={busy} onClick={() => void updateRun(automation, run, run.archivedAt ? "restore" : "archive")}>
+                                {run.archivedAt ? t("Restore", "恢复") : t("Archive", "归档")}
+                              </button>
+                            </span>
                           )}
                         </li>
                       ))}
@@ -356,6 +462,25 @@ export function Automations({ onClose }: AutomationsProps) {
             <span>{t("Name", "名称")}</span>
             <input name="name" value={draft.name} onChange={(event) => setDraft((current) => ({ ...current, name: event.target.value }))} maxLength={120} required autoFocus />
           </label>
+          {promptTemplates.length > 0 && (
+            <label>
+              <span>{t("Prompt template", "提示词模板")}</span>
+              <select
+                name="template"
+                value=""
+                onChange={(event) => {
+                  if (event.target.value) setDraft((current) => ({ ...current, prompt: `/${event.target.value}` }));
+                }}
+              >
+                <option value="">{t("Choose a loaded template…", "选择已加载的模板…")}</option>
+                {promptTemplates.map((template) => (
+                  <option value={template.name} key={`${template.sourceInfo.path}:${template.name}`}>
+                    {template.description ? `${template.name} — ${template.description}` : template.name}
+                  </option>
+                ))}
+              </select>
+            </label>
+          )}
           <label>
             <span>{t("Prompt", "提示词")}</span>
             <textarea name="prompt" value={draft.prompt} onChange={(event) => setDraft((current) => ({ ...current, prompt: event.target.value }))} maxLength={20_000} rows={6} required />
@@ -387,6 +512,20 @@ export function Automations({ onClose }: AutomationsProps) {
           <label>
             <span>{t("RRULE (local time)", "RRULE（本地时间）")}</span>
             <input name="rrule" className="automation-rrule-input" value={draft.rrule} onChange={(event) => setDraft((current) => ({ ...current, rrule: event.target.value }))} maxLength={500} required spellCheck={false} />
+          </label>
+          <label>
+            <span>{t("Notifications", "通知")}</span>
+            <select
+              name="notificationPolicy"
+              value={draft.notificationPolicy}
+              onChange={(event) => setDraft((current) => ({
+                ...current,
+                notificationPolicy: event.target.value as AutomationNotificationPolicy,
+              }))}
+            >
+              <option value="all">{t("All completed and failed runs", "所有完成和失败的运行")}</option>
+              <option value="failures">{t("Failed runs only", "仅失败运行")}</option>
+            </select>
           </label>
           <p className="automation-permission-note">{t("Background runs use Auto tool permissions: normal workspace work proceeds; risky commands and writes outside the workspace are blocked.", "后台运行使用“自动”工具权限：正常工作区操作可继续；危险命令和工作区外写入会被阻止。")}</p>
           {formError && <p className="automation-form-error" role="alert">{formError}</p>}

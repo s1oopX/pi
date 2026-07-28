@@ -16,6 +16,7 @@ let temporaryFileCounter = 0;
 
 /** @typedef {"active" | "paused"} AutomationStatus */
 /** @typedef {"running" | "success" | "error"} AutomationRunStatus */
+/** @typedef {"all" | "failures"} AutomationNotificationPolicy */
 /**
  * @typedef {object} AutomationRun
  * @property {string} id
@@ -25,6 +26,8 @@ let temporaryFileCounter = 0;
  * @property {string | undefined} [sessionId]
  * @property {string | undefined} [sessionFile]
  * @property {string | undefined} [error]
+ * @property {string | undefined} [readAt]
+ * @property {string | undefined} [archivedAt]
  */
 /**
  * @typedef {object} Automation
@@ -34,6 +37,7 @@ let temporaryFileCounter = 0;
  * @property {string} cwd
  * @property {string} rrule
  * @property {AutomationStatus} status
+ * @property {AutomationNotificationPolicy} notificationPolicy
  * @property {string} createdAt
  * @property {string} updatedAt
  * @property {string | null} nextRunAt
@@ -201,7 +205,7 @@ function isDirectory(path) {
 /**
  * @param {unknown} input
  * @param {(path: string) => boolean} directoryCheck
- * @returns {{ name: string, prompt: string, cwd: string, rrule: string, status: AutomationStatus }}
+ * @returns {{ name: string, prompt: string, cwd: string, rrule: string, status: AutomationStatus, notificationPolicy: AutomationNotificationPolicy }}
  */
 function validateInput(input, directoryCheck) {
 	if (!input || typeof input !== "object" || Array.isArray(input)) throw new Error("Automation details are required");
@@ -212,7 +216,13 @@ function validateInput(input, directoryCheck) {
 	if (!directoryCheck(cwd)) throw new Error(`Workspace not found: ${cwd}`);
 	const rrule = parseRRule(record.rrule).canonical;
 	const status = record.status === "paused" ? "paused" : "active";
-	return { name, prompt, cwd, rrule, status };
+	if (record.notificationPolicy !== undefined && record.notificationPolicy !== "all" && record.notificationPolicy !== "failures") {
+		throw new Error("Notification policy must be all or failures");
+	}
+	const notificationPolicy = /** @type {AutomationNotificationPolicy} */ (
+		record.notificationPolicy === "failures" ? "failures" : "all"
+	);
+	return { name, prompt, cwd, rrule, status, notificationPolicy };
 }
 
 /** @param {unknown} value */
@@ -237,6 +247,8 @@ function sanitizeRun(value, recoveredAt) {
 		status: /** @type {AutomationRunStatus} */ (recovered ? "error" : persistedStatus),
 		...(typeof record.sessionId === "string" && record.sessionId ? { sessionId: record.sessionId } : {}),
 		...(typeof record.sessionFile === "string" && record.sessionFile ? { sessionFile: record.sessionFile } : {}),
+		...(isoString(record.readAt) ? { readAt: isoString(record.readAt) } : {}),
+		...(isoString(record.archivedAt) ? { archivedAt: isoString(record.archivedAt) } : {}),
 		...(recovered
 			? { finishedAt: recoveredAt, error: "Pi Studio closed before this run finished." }
 			: typeof record.error === "string" && record.error ? { error: record.error.slice(0, 2000) } : {}),
@@ -271,6 +283,7 @@ function sanitizeAutomation(value, nowMs) {
 		cwd,
 		rrule,
 		status,
+		notificationPolicy: record.notificationPolicy === "failures" ? "failures" : "all",
 		createdAt: isoString(record.createdAt) ?? now,
 		updatedAt: isoString(record.updatedAt) ?? now,
 		nextRunAt: status === "paused" ? null : isoString(record.nextRunAt) ?? nextAutomationRun(rrule, nowMs),
@@ -565,6 +578,38 @@ export function createAutomationService({
 			const deleted = automations[index];
 			commit(automations.filter((automation) => automation.id !== automationId));
 			return snapshot(deleted);
+		},
+
+		/** @param {unknown} id @param {unknown} runId @param {unknown} action */
+		updateRun(id, runId, action) {
+			const automationId = String(id ?? "");
+			const targetRunId = String(runId ?? "");
+			if (action !== "read" && action !== "unread" && action !== "archive" && action !== "restore") {
+				throw new Error("Run action must be read, unread, archive, or restore");
+			}
+			const index = findIndex(automationId);
+			const automation = automations[index];
+			const runIndex = automation.runs.findIndex((run) => run.id === targetRunId);
+			if (runIndex === -1) throw new Error(`Unknown automation run: ${targetRunId}`);
+			const currentRun = automation.runs[runIndex];
+			if (currentRun.status === "running") throw new Error("Wait for the run to finish before updating it");
+			const updatedAt = new Date(now()).toISOString();
+			let readAt = currentRun.readAt;
+			let archivedAt = currentRun.archivedAt;
+			if (action === "read") readAt = updatedAt;
+			if (action === "unread") readAt = undefined;
+			if (action === "archive") {
+				readAt ??= updatedAt;
+				archivedAt = updatedAt;
+			}
+			if (action === "restore") archivedAt = undefined;
+			const runs = [...automation.runs];
+			runs[runIndex] = { ...currentRun, readAt, archivedAt };
+			const updated = { ...automation, updatedAt, runs };
+			const next = [...automations];
+			next[index] = updated;
+			commit(next);
+			return snapshot(updated);
 		},
 
 		/** @param {unknown} id */

@@ -50,8 +50,10 @@ test("automation runs persist their independent session history", async (t) => {
 		prompt: "Review the workspace",
 		cwd: paths.workspace,
 		rrule: "FREQ=DAILY;BYHOUR=9;BYMINUTE=0",
+		notificationPolicy: "failures",
 	});
 	assert.equal(created.status, "active");
+	assert.equal(created.notificationPolicy, "failures");
 	assert.equal(created.runs.length, 0);
 
 	now += 1000;
@@ -61,10 +63,24 @@ test("automation runs persist their independent session history", async (t) => {
 	assert.equal(finished.lastRunStatus, "success");
 	assert.equal(finished.runs[0].sessionId, "session-1");
 	assert.equal(finished.runs[0].sessionFile, join(paths.root, "session.jsonl"));
+	assert.equal(finished.runs[0].readAt, undefined);
+
+	const read = service.updateRun(created.id, finished.runs[0].id, "read");
+	assert.ok(read.runs[0].readAt);
+	const unread = service.updateRun(created.id, finished.runs[0].id, "unread");
+	assert.equal(unread.runs[0].readAt, undefined);
+	const archived = service.updateRun(created.id, finished.runs[0].id, "archive");
+	assert.ok(archived.runs[0].readAt);
+	assert.ok(archived.runs[0].archivedAt);
+	const restored = service.updateRun(created.id, finished.runs[0].id, "restore");
+	assert.equal(restored.runs[0].archivedAt, undefined);
+	service.updateRun(created.id, finished.runs[0].id, "archive");
+	assert.throws(() => service.updateRun(created.id, finished.runs[0].id, "ignore"), /Run action must be/);
 
 	const stored = JSON.parse(readFileSync(paths.statePath, "utf8"));
 	assert.equal(stored.version, 1);
 	assert.equal(stored.automations[0].runs[0].status, "success");
+	assert.ok(stored.automations[0].runs[0].archivedAt);
 
 	const reloaded = createAutomationService({
 		filePath: paths.statePath,
@@ -73,6 +89,8 @@ test("automation runs persist their independent session history", async (t) => {
 	});
 	t.after(() => reloaded.stop());
 	assert.equal(reloaded.list()[0].runs[0].sessionId, "session-1");
+	assert.equal(reloaded.list()[0].notificationPolicy, "failures");
+	assert.ok(reloaded.list()[0].runs[0].archivedAt);
 });
 
 test("due runs advance before execution and cannot start twice", async (t) => {
