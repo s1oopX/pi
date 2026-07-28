@@ -382,6 +382,7 @@ jobs:
     # this preserves the original semantics: if npm publish fails, the release
     # is not promoted. On a fork publish-npm is skipped, so the release still
     # promotes from staging alone.
+    runs-on: ubuntu-latest
     needs:
       - stage-github-release
       - publish-npm
