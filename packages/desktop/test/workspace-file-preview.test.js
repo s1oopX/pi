@@ -7,6 +7,7 @@ import {
 	MAX_WORKSPACE_FILE_PREVIEW_BYTES,
 	readWorkspaceFilePreview,
 } from "../src/workspace-file-preview.js";
+import { createXlsxFixture } from "./xlsx-fixture.js";
 
 describe("workspace file preview", () => {
 	it("previews supported files, caps size, and rejects escaping symlinks", async () => {
@@ -29,6 +30,29 @@ describe("workspace file preview", () => {
 			assert.equal(pdf.kind, "pdf");
 			assert.equal(pdf.mimeType, "application/pdf");
 			assert.equal(Buffer.from(pdf.dataBase64, "base64").toString(), "%PDF-1.4\n");
+
+			await writeFile(join(workspace, "metrics.csv"), 'Name,Note\nAlice,"Line one\nLine two"\n');
+			const csv = await readWorkspaceFilePreview(workspace, "metrics.csv");
+			assert.equal(csv.kind, "spreadsheet");
+			assert.equal(csv.mimeType, "text/csv");
+			assert.deepEqual(csv.sheets, [{
+				name: "metrics",
+				rows: [["Name", "Note"], ["Alice", "Line one\nLine two"]],
+			}]);
+
+			await writeFile(join(workspace, "quarterly.xlsx"), createXlsxFixture());
+			const xlsx = await readWorkspaceFilePreview(workspace, "quarterly.xlsx");
+			assert.equal(xlsx.kind, "spreadsheet");
+			assert.equal(xlsx.mimeType, "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
+			assert.deepEqual(xlsx.sheets, [{
+				name: "Summary",
+				rows: [["Metric", "Value"], ["Revenue", "120"]],
+			}]);
+
+			await writeFile(join(workspace, "legacy.xls"), "legacy");
+			const xls = await readWorkspaceFilePreview(workspace, "legacy.xls");
+			assert.equal(xls.kind, "unsupported");
+			assert.equal(xls.mimeType, "application/vnd.ms-excel");
 
 			const largePath = join(workspace, "large.txt");
 			await writeFile(largePath, "");

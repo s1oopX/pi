@@ -479,7 +479,12 @@ export interface WorkspaceGitStatus {
   behind?: number;
 }
 
-export type WorkspaceFilePreviewKind = "text" | "html" | "image" | "pdf" | "unsupported" | "too-large";
+export type WorkspaceFilePreviewKind = "text" | "html" | "image" | "pdf" | "spreadsheet" | "unsupported" | "too-large";
+
+export interface WorkspaceSpreadsheetSheet {
+  name: string;
+  rows: string[][];
+}
 
 export interface WorkspaceFilePreview {
   path: string;
@@ -489,6 +494,8 @@ export interface WorkspaceFilePreview {
   kind: WorkspaceFilePreviewKind;
   content?: string;
   dataBase64?: string;
+  sheets?: WorkspaceSpreadsheetSheet[];
+  truncated?: boolean;
 }
 
 export interface GitChangeFile {

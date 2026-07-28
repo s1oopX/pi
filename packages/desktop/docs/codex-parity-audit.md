@@ -26,13 +26,13 @@ continuous alignment loop; one row lands per iteration.
 | Drag-drop folder to open; drop narration | Window-level drop + narration overlay | ✅ |
 | Contextual window title | session — app | ✅ |
 | In-app browser for frontend iteration | Sandboxed HTTP(S) frame with URL navigation, back/forward, reload, and external fallback | ✅ |
-| Artifact viewer (PDF/spreadsheet outputs) | Inline text, Markdown, HTML, image, and PDF preview with source toggle, refresh, open, reveal, and copy-path actions; Office binaries open in the system app | 🟡 core landed; Office preview delegated |
+| Artifact viewer (PDF/spreadsheet outputs) | Inline text, Markdown, HTML, image, PDF, CSV, TSV, and XLSX preview with worksheet selection, truncation notices, source toggle where applicable, refresh, open, reveal, and copy-path actions; legacy `.xls` opens in the system app | ✅ core preview; legacy `.xls` delegated |
 | Computer use / plugins / memory / image generation | — | ➖ platform-scope non-goals for a BYO-endpoint client |
 | SSH remote devboxes | — | ➖ non-goal (local-first product) |
 | Automations / scheduled tasks | Persistent RRULE cron tasks and bound-conversation heartbeats with common presets, loaded Pi prompt templates, per-automation model/reasoning, local or dedicated-worktree destinations, notifications, run triage, and reopenable sessions. Heartbeats bind main-process-verified session metadata, reuse an existing owning backend when available, and lock the target session while running; worktree cleanup preserves local changes. | 🟡 advanced parity; core thread/destination/model behavior landed, broader Codex product parity remains ongoing |
 
 ## Loop backlog (ordered)
 
-1. Revisit inline Office/spreadsheet preview only if the system-app fallback proves insufficient.
+1. Revisit inline legacy `.xls` preview only if the system-app fallback proves insufficient.
 
 Sources: [OpenAI Codex — Automations](https://developers.openai.com/codex/app/automations#thread-automations), [OpenAI — Introducing the Codex app](https://openai.com/index/introducing-the-codex-app/), [SmartScope — Codex desktop April 2026 update](https://smartscope.blog/en/generative-ai/chatgpt/codex-desktop-major-update-april-2026/), [Codex KB — workspace/review pane](https://codex.danielvaughan.com/2026/04/17/codex-app-workspace-pr-review-task-sidebar-artifact-viewer/), [Macaron — Codex review pane guide](https://macaron.im/blog/codex-app-review-pane), [Releasebot — Codex updates July 2026](https://releasebot.io/updates/openai/codex)

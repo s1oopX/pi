@@ -1,6 +1,7 @@
 import { readFile, realpath, stat } from "node:fs/promises";
 import { basename, extname } from "node:path";
 import { describeRevealTarget, resolveWorkspacePath } from "./path-reveal.js";
+import { parseDelimitedSpreadsheet, parseXlsxSpreadsheet } from "./spreadsheet-preview.js";
 
 export const MAX_WORKSPACE_FILE_PREVIEW_BYTES = 40 * 1024 * 1024;
 
@@ -10,7 +11,6 @@ const TEXT_MIME_TYPES = new Map([
 	[".cmd", "text/plain"],
 	[".cpp", "text/plain"],
 	[".css", "text/css"],
-	[".csv", "text/csv"],
 	[".go", "text/plain"],
 	[".h", "text/plain"],
 	[".hpp", "text/plain"],
@@ -33,7 +33,6 @@ const TEXT_MIME_TYPES = new Map([
 	[".svg", "image/svg+xml"],
 	[".toml", "text/plain"],
 	[".ts", "text/typescript"],
-	[".tsv", "text/tab-separated-values"],
 	[".tsx", "text/typescript"],
 	[".txt", "text/plain"],
 	[".vue", "text/plain"],
@@ -52,6 +51,13 @@ const BINARY_MIME_TYPES = new Map([
 	[".pdf", "application/pdf"],
 	[".png", "image/png"],
 	[".webp", "image/webp"],
+]);
+
+const SPREADSHEET_MIME_TYPES = new Map([
+	[".csv", "text/csv"],
+	[".tsv", "text/tab-separated-values"],
+	[".xls", "application/vnd.ms-excel"],
+	[".xlsx", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"],
 ]);
 
 /**
@@ -85,7 +91,8 @@ export async function readWorkspaceFilePreview(workspaceCwd, targetPath) {
 	const textMimeType = TEXT_MIME_TYPES.get(extension)
 		?? (/^(?:license|readme)(?:\.|$)/iu.test(basename(realPath)) ? "text/plain" : undefined);
 	const binaryMimeType = BINARY_MIME_TYPES.get(extension);
-	const mimeType = textMimeType ?? binaryMimeType ?? "application/octet-stream";
+	const spreadsheetMimeType = SPREADSHEET_MIME_TYPES.get(extension);
+	const mimeType = textMimeType ?? binaryMimeType ?? spreadsheetMimeType ?? "application/octet-stream";
 	const base = { path: absolutePath, size: info.size, modifiedAt: info.mtimeMs, mimeType };
 
 	if (info.size > MAX_WORKSPACE_FILE_PREVIEW_BYTES) return { ...base, kind: "too-large" };
@@ -94,6 +101,16 @@ export async function readWorkspaceFilePreview(workspaceCwd, targetPath) {
 	}
 	if (binaryMimeType === "application/pdf") {
 		return { ...base, kind: "pdf", dataBase64: (await readFile(realPath)).toString("base64") };
+	}
+	if (extension === ".csv" || extension === ".tsv") {
+		return {
+			...base,
+			kind: "spreadsheet",
+			...parseDelimitedSpreadsheet(await readFile(realPath, "utf8"), extension === ".csv" ? "," : "\t", basename(realPath, extension)),
+		};
+	}
+	if (extension === ".xlsx") {
+		return { ...base, kind: "spreadsheet", ...parseXlsxSpreadsheet(await readFile(realPath)) };
 	}
 	if (textMimeType) {
 		return {

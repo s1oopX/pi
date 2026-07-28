@@ -3,13 +3,17 @@ import { writeFileSync } from "node:fs";
 import { join } from "node:path";
 import test from "node:test";
 import { assertPrerequisites, launchStudio, LAUNCH_TIMEOUT_MS, REPLY_TIMEOUT_MS } from "./harness.mjs";
+import { createXlsxFixture } from "../xlsx-fixture.js";
 
-const FINAL_REPLY = "Artifact ready. Source: [OpenAI docs](https://developers.openai.com/codex/).";
+const FINAL_REPLY = "Artifact ready. Source: [OpenAI docs](https://developers.openai.com/codex/). Workbook: [Quarterly workbook](quarterly.xlsx).";
 
 test("task resources: cited sources and produced files stay available in the workbench", async (t) => {
 	assertPrerequisites();
 
 	const studio = await launchStudio({
+		setupWorkspace(workspaceDir) {
+			writeFileSync(join(workspaceDir, "quarterly.xlsx"), createXlsxFixture());
+		},
 		script: [
 			{
 				toolCalls: [{
@@ -49,6 +53,12 @@ test("task resources: cited sources and produced files stay available in the wor
 		await preview.getByRole("heading", { name: "Refreshed" }).waitFor({ state: "visible", timeout: LAUNCH_TIMEOUT_MS });
 		await preview.locator(".workbench-primary.secondary").click();
 		assert.match(await preview.locator(".workbench-artifact-source").textContent(), /# Refreshed/);
+
+		await preview.locator(".workbench-artifact-toolbar > .icon-button").first().click();
+		await studio.page.locator(".workbench-resources").getByText("Quarterly workbook", { exact: true }).click();
+		await preview.locator(".workbench-spreadsheet-grid").waitFor({ state: "visible", timeout: LAUNCH_TIMEOUT_MS });
+		await preview.getByRole("cell", { name: "Revenue", exact: true }).waitFor({ state: "visible" });
+		await preview.getByRole("cell", { name: "120", exact: true }).waitFor({ state: "visible" });
 	} catch (error) {
 		await studio.dumpDiagnostics();
 		throw error;

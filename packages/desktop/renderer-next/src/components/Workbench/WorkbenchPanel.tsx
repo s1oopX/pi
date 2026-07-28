@@ -367,6 +367,8 @@ function WorkbenchArtifactPreview({ path, onBack }: { path: string; onBack: () =
           <div className="workbench-state" role="status">
             {t("Preview is not available for this file type. Open it with the system application.", "此文件类型无法预览，请使用系统应用打开。")}
           </div>
+        ) : preview?.kind === "spreadsheet" && preview.sheets ? (
+          <WorkbenchSpreadsheetPreview key={`${preview.path}:${preview.modifiedAt}`} preview={preview} />
         ) : preview?.kind === "image" && preview.dataBase64 ? (
           <img className="workbench-artifact-image" src={`data:${preview.mimeType};base64,${preview.dataBase64}`} alt={path} />
         ) : preview?.kind === "pdf" && preview.dataBase64 ? (
@@ -381,6 +383,69 @@ function WorkbenchArtifactPreview({ path, onBack }: { path: string; onBack: () =
       </div>
     </div>
   );
+}
+
+function WorkbenchSpreadsheetPreview({ preview }: { preview: WorkspaceFilePreview }) {
+  const { t } = useI18n();
+  const sheets = preview.sheets ?? [];
+  const [sheetIndex, setSheetIndex] = useState(0);
+  const sheet = sheets[sheetIndex] ?? sheets[0];
+  const columnCount = sheet?.rows.reduce((count, row) => Math.max(count, row.length), 0) ?? 0;
+
+  if (!sheet) {
+    return <div className="workbench-state" role="status">{t("This workbook has no readable sheets.", "此工作簿没有可读取的工作表。")}</div>;
+  }
+
+  return (
+    <div className="workbench-spreadsheet">
+      <div className="workbench-spreadsheet-toolbar">
+        {sheets.length > 1 && (
+          <label>
+            <span>{t("Sheet", "工作表")}</span>
+            <select value={sheetIndex} onChange={(event) => setSheetIndex(Number(event.target.value))}>
+              {sheets.map((candidate, index) => <option value={index} key={`${index}:${candidate.name}`}>{candidate.name}</option>)}
+            </select>
+          </label>
+        )}
+        {preview.truncated && (
+          <span className="workbench-spreadsheet-limit" role="status">
+            {t("Preview limited to {rows} rows and {columns} columns per sheet.", "每个工作表仅预览前 {rows} 行、{columns} 列。", {
+              rows: 200,
+              columns: 100,
+            })}
+          </span>
+        )}
+      </div>
+      {sheet.rows.length === 0 ? (
+        <div className="workbench-state" role="status">{t("This sheet is empty.", "此工作表为空。")}</div>
+      ) : (
+        <table className="workbench-spreadsheet-grid" aria-label={sheet.name}>
+          <thead>
+            <tr>
+              <th aria-hidden="true" />
+              {Array.from({ length: columnCount }, (_, index) => <th scope="col" key={index}>{spreadsheetColumnLabel(index)}</th>)}
+            </tr>
+          </thead>
+          <tbody>
+            {sheet.rows.map((row, rowIndex) => (
+              <tr key={rowIndex}>
+                <th scope="row">{rowIndex + 1}</th>
+                {Array.from({ length: columnCount }, (_, columnIndex) => <td key={columnIndex}>{row[columnIndex] ?? ""}</td>)}
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      )}
+    </div>
+  );
+}
+
+function spreadsheetColumnLabel(index: number): string {
+  let label = "";
+  for (let value = index + 1; value > 0; value = Math.floor((value - 1) / 26)) {
+    label = String.fromCharCode(65 + ((value - 1) % 26)) + label;
+  }
+  return label;
 }
 
 function WorkbenchPlan() {
