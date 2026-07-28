@@ -298,7 +298,7 @@
 
 .automation-meta {
   display: grid;
-  grid-template-columns: minmax(140px, 0.8fr) minmax(160px, 0.9fr) minmax(220px, 1.5fr) minmax(120px, 0.7fr);
+  grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: var(--space-5);
   margin: var(--space-6) 0 0;
   padding-top: var(--space-5);
@@ -464,6 +464,13 @@
   box-shadow: var(--focus-shadow);
 }
 
+.automation-form input:disabled,
+.automation-form select:disabled,
+.automation-form button:disabled {
+  cursor: not-allowed;
+  opacity: 0.65;
+}
+
 .automation-workspace-field {
   display: flex;
   align-items: center;
@@ -478,6 +485,13 @@
 .automation-rrule-input {
   font-family: var(--font-mono) !important;
   font-size: var(--font-size-meta) !important;
+}
+
+.automation-target-note {
+  margin: calc(-1 * var(--space-2)) 0 0;
+  color: var(--muted);
+  font-size: var(--font-size-meta);
+  line-height: var(--line-height-compact);
 }
 
 .automation-permission-note {

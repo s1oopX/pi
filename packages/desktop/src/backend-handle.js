@@ -68,6 +68,8 @@ export class BackendHandle {
 		this.requestCounter = 0;
 		this.pendingRequests = new Map();
 		this.pendingExtensionUIRequests = createPendingExtensionUIRequestStore();
+		this.eventListeners = new Set();
+		this.extensionFlagValues = new Map();
 		this.ready = false;
 		this.starting = false;
 		this.stderrTail = "";
@@ -117,6 +119,14 @@ export class BackendHandle {
 			const pending = this.pendingRequests.get(payload.id);
 			this.pendingRequests.delete(payload.id);
 			clearTimeout(pending.timeout);
+			if (
+				payload.success &&
+				pending.command?.type === "set_extension_flag" &&
+				typeof pending.command.name === "string" &&
+				(typeof pending.command.value === "string" || typeof pending.command.value === "boolean")
+			) {
+				this.extensionFlagValues.set(pending.command.name, pending.command.value);
+			}
 			pending.resolve(payload);
 			return;
 		}
@@ -126,7 +136,32 @@ export class BackendHandle {
 		}
 		this.pendingExtensionUIRequests.track(payload);
 		this.notify(payload);
+		for (const listener of this.eventListeners) {
+			try {
+				listener(payload);
+			} catch (error) {
+				this.send_("backend:log", {
+					level: "error",
+					message: `Backend event listener failed: ${error instanceof Error ? error.message : String(error)}`,
+				});
+			}
+		}
 		this.send_("backend:event", payload);
+	}
+
+	/**
+	 * Subscribe to parsed backend events without replacing the handle's
+	 * renderer/notification hooks. Returns an unsubscribe function.
+	 * @param {(payload: Record<string, unknown>) => void} listener
+	 */
+	onEvent(listener) {
+		this.eventListeners.add(listener);
+		return () => this.eventListeners.delete(listener);
+	}
+
+	/** @param {string} name */
+	getExtensionFlag(name) {
+		return this.extensionFlagValues.get(name);
 	}
 
 	/** @param {Buffer | string} chunk */
@@ -203,6 +238,7 @@ export class BackendHandle {
 			return;
 		}
 		this.pendingExtensionUIRequests.clear();
+		this.extensionFlagValues.clear();
 
 		const backendPath = this.getBackendPath();
 		if (!this.existsSyncImpl(backendPath)) {
@@ -250,6 +286,7 @@ export class BackendHandle {
 			}
 			this.mutationQueue.invalidate();
 			this.pendingExtensionUIRequests.clear();
+			this.extensionFlagValues.clear();
 			this.ready = false;
 			this.starting = false;
 			this.child = undefined;
@@ -263,6 +300,7 @@ export class BackendHandle {
 			}
 			this.mutationQueue.invalidate();
 			this.pendingExtensionUIRequests.clear();
+			this.extensionFlagValues.clear();
 			this.child = undefined;
 			this.ready = false;
 			this.starting = false;
@@ -295,6 +333,7 @@ export class BackendHandle {
 		this.restartAttempts = 0;
 		this.mutationQueue.invalidate();
 		this.pendingExtensionUIRequests.clear();
+		this.extensionFlagValues.clear();
 		if (!this.child) {
 			return;
 		}
@@ -331,7 +370,7 @@ export class BackendHandle {
 					}, timeoutMs)
 				: undefined;
 
-			this.pendingRequests.set(id, { resolve, reject, timeout });
+			this.pendingRequests.set(id, { resolve, reject, timeout, command });
 			stdin.write(`${JSON.stringify(payload)}\n`, (error) => {
 				if (!error) {
 					return;

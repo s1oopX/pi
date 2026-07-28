@@ -53,6 +53,8 @@ test("automation runs persist their independent session history", async (t) => {
 		notificationPolicy: "failures",
 	});
 	assert.equal(created.status, "active");
+	assert.equal(created.kind, "cron");
+	assert.equal(created.destination, "local");
 	assert.equal(created.notificationPolicy, "failures");
 	assert.equal(created.runs.length, 0);
 
@@ -89,6 +91,8 @@ test("automation runs persist their independent session history", async (t) => {
 	});
 	t.after(() => reloaded.stop());
 	assert.equal(reloaded.list()[0].runs[0].sessionId, "session-1");
+	assert.equal(reloaded.list()[0].kind, "cron");
+	assert.equal(reloaded.list()[0].destination, "local");
 	assert.equal(reloaded.list()[0].notificationPolicy, "failures");
 	assert.ok(reloaded.list()[0].runs[0].archivedAt);
 });
@@ -157,4 +161,78 @@ test("pause, resume, edit, and delete validate state", (t) => {
 	);
 	assert.equal(service.delete(created.id).id, created.id);
 	assert.deepEqual(service.list(), []);
+});
+
+test("advanced targets, models, and reasoning persist without trusting renderer session paths", (t) => {
+	const paths = tempWorkspace();
+	const worktreePath = join(paths.root, "worktree");
+	mkdirSync(worktreePath);
+	t.after(() => rmSync(paths.root, { recursive: true, force: true }));
+	const service = createAutomationService({
+		filePath: paths.statePath,
+		runAutomation: async () => ({}),
+	});
+	t.after(() => service.stop());
+
+	assert.throws(
+		() => service.create({
+			name: "Heartbeat",
+			prompt: "Continue",
+			cwd: paths.workspace,
+			rrule: "FREQ=HOURLY",
+			kind: "heartbeat",
+			thread: { sessionId: "renderer", sessionFile: "renderer.jsonl" },
+		}),
+		/bind the current conversation/,
+	);
+	const heartbeat = service.create({
+		name: "Heartbeat",
+		prompt: "Continue",
+		cwd: paths.workspace,
+		rrule: "FREQ=HOURLY",
+		kind: "heartbeat",
+		model: { provider: "faux", id: "faux-1" },
+		reasoningEffort: "high",
+	}, {
+		thread: {
+			sessionId: "trusted-session",
+			sessionFile: join(paths.root, "trusted.jsonl"),
+			cwd: paths.workspace,
+			sessionName: "Trusted thread",
+		},
+	});
+	assert.equal(heartbeat.thread.sessionId, "trusted-session");
+	assert.equal(heartbeat.destination, "local");
+	assert.deepEqual(heartbeat.model, { provider: "faux", id: "faux-1" });
+	assert.equal(heartbeat.reasoningEffort, "high");
+	const clearedModel = service.update(heartbeat.id, { ...heartbeat, model: undefined, reasoningEffort: undefined });
+	assert.equal(clearedModel.model, undefined);
+	assert.equal(clearedModel.reasoningEffort, undefined);
+	assert.throws(() => service.update(heartbeat.id, { ...heartbeat, kind: "cron" }), /type cannot be changed/);
+	assert.throws(
+		() => service.update(heartbeat.id, { ...heartbeat, cwd: worktreePath }),
+		/workspace.*cannot be changed/,
+	);
+
+	const worktree = service.create({
+		name: "Worktree review",
+		prompt: "Review",
+		cwd: paths.workspace,
+		rrule: "FREQ=DAILY",
+		destination: "worktree",
+	}, { worktree: { path: worktreePath, branch: "task/worktree-1" } });
+	assert.equal(worktree.kind, "cron");
+	assert.deepEqual(worktree.worktree, { path: worktreePath, branch: "task/worktree-1" });
+	assert.throws(
+		() => service.update(worktree.id, { ...worktree, destination: "local" }),
+		/destination cannot be changed/,
+	);
+
+	const reloaded = createAutomationService({
+		filePath: paths.statePath,
+		runAutomation: async () => ({}),
+	});
+	t.after(() => reloaded.stop());
+	assert.equal(reloaded.list().find((automation) => automation.id === heartbeat.id).thread.sessionName, "Trusted thread");
+	assert.equal(reloaded.list().find((automation) => automation.id === worktree.id).worktree.branch, "task/worktree-1");
 });

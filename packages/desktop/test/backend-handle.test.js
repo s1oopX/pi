@@ -95,6 +95,11 @@ test("request writes JSONL, honors caller-supplied ids, and resolves on the resp
 	assert.match(JSON.parse(child.written.at(-1)).id, /^desktop_\d+$/u);
 	replyTo(child, child.written.at(-1));
 	await assigned;
+
+	const setFlag = context.handle.request({ type: "set_extension_flag", name: "permission-mode", value: "auto" });
+	replyTo(child, child.written.at(-1));
+	await setFlag;
+	assert.equal(context.handle.getExtensionFlag("permission-mode"), "auto");
 });
 
 test("request rejects when not running, and while starting without allowStarting", async (t) => {
@@ -123,6 +128,8 @@ test("stdout reassembles split lines, tags events, and routes hooks", async (t) 
 	t.after(() => context.handle.stop());
 	const child = await startReady(context);
 	const eventCountBefore = context.events.filter((event) => event.channel === "backend:event").length;
+	const subscribed = [];
+	const unsubscribe = context.handle.onEvent((payload) => subscribed.push(payload.type));
 
 	child.stdout.emit("data", Buffer.from('{"type":"agent_'));
 	child.stdout.emit("data", Buffer.from('end"}\n{"type":"session_changed","cwd":"D:\\\\next"}\nnot json\n'));
@@ -133,10 +140,14 @@ test("stdout reassembles split lines, tags events, and routes hooks", async (t) 
 		[["agent_end", "test"], ["session_changed", "test"]],
 	);
 	assert.deepEqual(context.notified.map((payload) => payload.type), ["agent_end", "session_changed"]);
+	assert.deepEqual(subscribed, ["agent_end", "session_changed"]);
 	assert.deepEqual(context.sessionCwds, ["D:\\next"]);
 	const log = context.events.findLast((event) => event.channel === "backend:log");
 	assert.equal(log.payload.message, "not json");
 	assert.equal(log.payload.backendId, "test");
+	unsubscribe();
+	child.stdout.emit("data", Buffer.from('{"type":"agent_start"}\n'));
+	assert.deepEqual(subscribed, ["agent_end", "session_changed"]);
 });
 
 test("exit rejects pending requests and schedules a restart with backoff", async (t) => {

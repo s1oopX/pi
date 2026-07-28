@@ -2,13 +2,17 @@ import { useEffect, useMemo, useState, type FormEvent } from "react";
 import { useI18n } from "../../i18n";
 import * as api from "../../ipc/api";
 import type {
+  AutomationDestination,
   AutomationInput,
+  AutomationKind,
+  AutomationModel,
   AutomationNotificationPolicy,
   AutomationRecord,
   AutomationRun,
   AutomationRunAction,
   AutomationRunStatus,
 } from "../../ipc/api";
+import type { ThinkingLevel } from "../../ipc/types";
 import { useStore } from "../../store";
 import { PRIMARY_TASK_ID } from "../../store/taskRegistry";
 import { Dialog } from "../Dialog";
@@ -24,7 +28,11 @@ interface AutomationDraft {
   prompt: string;
   cwd: string;
   rrule: string;
+  kind: AutomationKind;
+  destination: AutomationDestination;
   notificationPolicy: AutomationNotificationPolicy;
+  model?: AutomationModel;
+  reasoningEffort?: ThinkingLevel;
 }
 
 type RunFilter = "current" | "unread" | "archived";
@@ -35,6 +43,7 @@ const SCHEDULE_PRESETS = [
   { id: "weekdays", rrule: "FREQ=WEEKLY;INTERVAL=1;BYDAY=MO,TU,WE,TH,FR;BYHOUR=9;BYMINUTE=0" },
   { id: "weekly", rrule: "FREQ=WEEKLY;INTERVAL=1;BYDAY=MO;BYHOUR=9;BYMINUTE=0" },
 ] as const;
+const THINKING_LEVELS: ThinkingLevel[] = ["off", "minimal", "low", "medium", "high", "xhigh", "max"];
 
 function errorText(error: unknown): string {
   const raw = error instanceof Error ? error.message : String(error);
@@ -53,10 +62,16 @@ function isUnreadRun(run: AutomationRun): boolean {
   return run.status !== "running" && !run.readAt && !run.archivedAt;
 }
 
+function modelValue(model: { provider: string; id: string }): string {
+  return `${encodeURIComponent(model.provider)}:${encodeURIComponent(model.id)}`;
+}
+
 export function Automations({ onClose }: AutomationsProps) {
   const { resolvedLanguage, t } = useI18n();
   const workspaceCwd = useStore((state) => state.workspaceCwd);
   const commands = useStore((state) => state.commands);
+  const models = useStore((state) => state.models);
+  const session = useStore((state) => state.session);
   const [automations, setAutomations] = useState<AutomationRecord[]>([]);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
@@ -69,6 +84,8 @@ export function Automations({ onClose }: AutomationsProps) {
     prompt: "",
     cwd: workspaceCwd,
     rrule: SCHEDULE_PRESETS[1].rrule,
+    kind: "cron",
+    destination: "local",
     notificationPolicy: "all",
   });
   const [formError, setFormError] = useState<string | null>(null);
@@ -102,6 +119,14 @@ export function Automations({ onClose }: AutomationsProps) {
   const promptTemplates = useMemo(() => commands.filter((command) =>
     command.source === "prompt" && (command.sourceInfo.scope !== "project" || draft.cwd === workspaceCwd)),
   [commands, draft.cwd, workspaceCwd]);
+  const selectedModel = useMemo(() => draft.model
+    ? models.find((model) => model.provider === draft.model?.provider && model.id === draft.model?.id)
+    : undefined,
+  [draft.model, models]);
+  const availableThinkingLevels = useMemo(() => selectedModel?.reasoning
+    ? THINKING_LEVELS.filter((level) => selectedModel.thinkingLevelMap?.[level] !== null)
+    : [],
+  [selectedModel]);
 
   const unreadCount = useMemo(() => automations.reduce(
     (count, automation) => count + automation.runs.filter(isUnreadRun).length,
@@ -119,7 +144,17 @@ export function Automations({ onClose }: AutomationsProps) {
       if (runFilter === "unread" && !automation.runs.some(isUnreadRun)) return false;
       if (runFilter === "archived" && !automation.runs.some((run) => run.archivedAt)) return false;
       if (!normalized) return true;
-      return [automation.name, automation.prompt, automation.cwd, automation.rrule]
+      return [
+        automation.name,
+        automation.prompt,
+        automation.cwd,
+        automation.rrule,
+        automation.kind,
+        automation.destination,
+        automation.model?.provider ?? "",
+        automation.model?.id ?? "",
+        automation.thread?.sessionName ?? "",
+      ]
         .some((value) => value.toLowerCase().includes(normalized));
     });
   }, [automations, filter, query, runFilter]);
@@ -148,13 +183,35 @@ export function Automations({ onClose }: AutomationsProps) {
     return t("Failed", "失败");
   }
 
+  function thinkingLabel(level: ThinkingLevel | undefined): string {
+    if (!level) return t("Provider default", "提供商默认");
+    if (level === "off") return t("Off", "关闭");
+    if (level === "minimal") return t("Minimal", "最少");
+    if (level === "low") return t("Low", "低");
+    if (level === "medium") return t("Medium", "中");
+    if (level === "high") return t("High", "高");
+    return t("Maximum", "最高");
+  }
+
+  function automationModelLabel(automation: AutomationRecord): string {
+    if (!automation.model) return t("Backend default", "后端默认");
+    const model = models.find((candidate) =>
+      candidate.provider === automation.model?.provider && candidate.id === automation.model?.id);
+    return `${model?.name ?? automation.model.id} · ${thinkingLabel(automation.reasoningEffort)}`;
+  }
+
   function openNew(): void {
+    const currentModel = session?.model ? { provider: session.model.provider, id: session.model.id } : undefined;
     setDraft({
       name: "",
       prompt: "",
       cwd: workspaceCwd,
       rrule: SCHEDULE_PRESETS[1].rrule,
+      kind: "cron",
+      destination: "local",
       notificationPolicy: "all",
+      ...(currentModel ? { model: currentModel } : {}),
+      ...(currentModel && session?.model?.reasoning ? { reasoningEffort: session.thinkingLevel as ThinkingLevel } : {}),
     });
     setFormError(null);
     setEditorId("new");
@@ -166,7 +223,11 @@ export function Automations({ onClose }: AutomationsProps) {
       prompt: automation.prompt,
       cwd: automation.cwd,
       rrule: automation.rrule,
+      kind: automation.kind,
+      destination: automation.destination,
       notificationPolicy: automation.notificationPolicy,
+      ...(automation.model ? { model: automation.model } : {}),
+      ...(automation.reasoningEffort ? { reasoningEffort: automation.reasoningEffort } : {}),
     });
     setFormError(null);
     setEditorId(automation.id);
@@ -232,10 +293,18 @@ export function Automations({ onClose }: AutomationsProps) {
     const target = deleteTarget;
     setBusyId(target.id);
     try {
-      await api.deleteAutomation(target.id);
+      const deleted = await api.deleteAutomation(target.id);
       setAutomations((current) => current.filter((automation) => automation.id !== target.id));
       setDeleteTarget(null);
-      showToast(t("Automation deleted", "自动任务已删除"), "success");
+      if (deleted.worktreeCleanup?.removed === false) {
+        showToast(t(
+          "Automation deleted; its worktree was kept: {reason}",
+          "自动任务已删除；工作树已保留：{reason}",
+          { reason: deleted.worktreeCleanup.reason ?? t("local changes remain", "仍有本地更改") },
+        ), "warning", 7000);
+      } else {
+        showToast(t("Automation deleted", "自动任务已删除"), "success");
+      }
     } catch (error) {
       showToast(t("Could not delete automation: {error}", "删除自动任务失败：{error}", { error: errorText(error) }), "error");
     } finally {
@@ -259,12 +328,14 @@ export function Automations({ onClose }: AutomationsProps) {
     if (!run.sessionFile || busyId) return;
     setBusyId(automation.id);
     try {
-      if (useStore.getState().taskRegistry.activeTaskId !== PRIMARY_TASK_ID) {
-        await useStore.getState().switchActiveTask(PRIMARY_TASK_ID);
-      }
       const result = await api.openAutomationRun(automation.id, run.id);
       if (result.cancelled) return;
-      await useStore.getState().resetForWorkspace(result.cwd);
+      const targetTaskId = result.taskId ?? PRIMARY_TASK_ID;
+      if (useStore.getState().taskRegistry.activeTaskId !== targetTaskId) {
+        await useStore.getState().switchActiveTask(targetTaskId);
+      } else if (targetTaskId === PRIMARY_TASK_ID) {
+        await useStore.getState().resetForWorkspace(result.cwd);
+      }
       onClose();
     } catch (error) {
       showToast(t("Could not open automation run: {error}", "打开自动任务记录失败：{error}", { error: errorText(error) }), "error");
@@ -272,6 +343,14 @@ export function Automations({ onClose }: AutomationsProps) {
       setBusyId(null);
     }
   }
+
+  const editorAutomation = editorId && editorId !== "new"
+    ? automations.find((automation) => automation.id === editorId)
+    : undefined;
+  const heartbeatTargetLabel = editorAutomation?.thread?.sessionName
+    ?? editorAutomation?.thread?.sessionId
+    ?? session?.sessionName
+    ?? session?.sessionId;
 
   return (
     <section className="automations-page" aria-labelledby="automations-title">
@@ -281,7 +360,7 @@ export function Automations({ onClose }: AutomationsProps) {
         </button>
         <div className="automations-heading">
           <h1 id="automations-title">{t("Scheduled tasks", "定时任务")}</h1>
-          <p>{t("Run recurring prompts in independent, reopenable sessions.", "在独立且可重新打开的会话中运行周期提示词。")}</p>
+          <p>{t("Run independent tasks or continue a bound conversation on a schedule.", "按计划运行独立任务，或继续指定的现有会话。")}</p>
         </div>
         <button className="dialog-btn dialog-btn-primary automations-new" type="button" onClick={openNew}>
           <Icon name="plus" size={15} />
@@ -398,7 +477,13 @@ export function Automations({ onClose }: AutomationsProps) {
                 <dl className="automation-meta">
                   <div><dt>{t("Schedule", "计划")}</dt><dd title={automation.rrule}>{scheduleLabel(automation.rrule)}</dd></div>
                   <div><dt>{t("Next run", "下次运行")}</dt><dd>{automation.status === "active" ? formatDate(automation.nextRunAt) : t("Paused", "已暂停")}</dd></div>
+                  <div><dt>{t("Mode", "模式")}</dt><dd>{automation.kind === "heartbeat"
+                    ? t("Conversation heartbeat", "会话心跳")
+                    : automation.destination === "worktree"
+                      ? t("Independent · worktree", "独立任务 · 工作树")
+                      : t("Independent · local", "独立任务 · 本地")}</dd></div>
                   <div><dt>{t("Workspace", "工作区")}</dt><dd title={automation.cwd}>{automation.cwd}</dd></div>
+                  <div><dt>{t("Model", "模型")}</dt><dd title={automation.model ? `${automation.model.provider}/${automation.model.id}` : undefined}>{automationModelLabel(automation)}</dd></div>
                   <div><dt>{t("Notifications", "通知")}</dt><dd>{automation.notificationPolicy === "failures" ? t("Failures only", "仅失败") : t("All runs", "全部运行")}</dd></div>
                 </dl>
                 {automation.lastError && <p className="automation-last-error" role="status">{automation.lastError}</p>}
@@ -462,6 +547,32 @@ export function Automations({ onClose }: AutomationsProps) {
             <span>{t("Name", "名称")}</span>
             <input name="name" value={draft.name} onChange={(event) => setDraft((current) => ({ ...current, name: event.target.value }))} maxLength={120} required autoFocus />
           </label>
+          <label>
+            <span>{t("Automation type", "自动任务类型")}</span>
+            <select
+              name="kind"
+              value={draft.kind}
+              disabled={editorId !== "new"}
+              onChange={(event) => setDraft((current) => {
+                const kind = event.target.value as AutomationKind;
+                return {
+                  ...current,
+                  kind,
+                  ...(kind === "heartbeat" ? { cwd: workspaceCwd, destination: "local" as const } : {}),
+                };
+              })}
+            >
+              <option value="cron">{t("Independent scheduled task", "独立定时任务")}</option>
+              <option value="heartbeat">{t("Continue current conversation", "继续当前会话")}</option>
+            </select>
+          </label>
+          {draft.kind === "heartbeat" && (
+            <p className="automation-target-note">{t(
+              "The main process will bind this automation to the current conversation: {session}",
+              "主进程会将此自动任务绑定到当前会话：{session}",
+              { session: heartbeatTargetLabel ?? t("current conversation", "当前会话") },
+            )}</p>
+          )}
           {promptTemplates.length > 0 && (
             <label>
               <span>{t("Prompt template", "提示词模板")}</span>
@@ -488,9 +599,71 @@ export function Automations({ onClose }: AutomationsProps) {
           <label>
             <span>{t("Workspace", "工作区")}</span>
             <span className="automation-workspace-field">
-              <input name="cwd" value={draft.cwd} onChange={(event) => setDraft((current) => ({ ...current, cwd: event.target.value }))} maxLength={4096} required />
-              <button className="dialog-btn dialog-btn-secondary" type="button" onClick={() => void chooseAutomationWorkspace()}>{t("Browse…", "浏览…")}</button>
+              <input name="cwd" value={draft.cwd} disabled={draft.kind === "heartbeat" || (editorId !== "new" && draft.destination === "worktree")} onChange={(event) => setDraft((current) => ({ ...current, cwd: event.target.value }))} maxLength={4096} required />
+              <button className="dialog-btn dialog-btn-secondary" type="button" disabled={draft.kind === "heartbeat" || (editorId !== "new" && draft.destination === "worktree")} onClick={() => void chooseAutomationWorkspace()}>{t("Browse…", "浏览…")}</button>
             </span>
+          </label>
+          <label>
+            <span>{t("Run destination", "运行目标")}</span>
+            <select
+              name="destination"
+              value={draft.destination}
+              disabled={draft.kind === "heartbeat" || editorId !== "new"}
+              onChange={(event) => setDraft((current) => ({
+                ...current,
+                destination: event.target.value as AutomationDestination,
+              }))}
+            >
+              <option value="local">{t("Local workspace", "本地工作区")}</option>
+              <option value="worktree">{t("Dedicated git worktree", "专属 Git 工作树")}</option>
+            </select>
+          </label>
+          {draft.destination === "worktree" && (
+            <p className="automation-target-note">{t(
+              "A dedicated task branch and worktree are retained for this automation. Deleting it removes a clean worktree; local changes are kept.",
+              "此自动任务会保留专属任务分支和工作树。删除时仅清理干净的工作树；本地更改会保留。",
+            )}</p>
+          )}
+          <label>
+            <span>{t("Model", "模型")}</span>
+            <select
+              name="model"
+              value={draft.model ? modelValue(draft.model) : ""}
+              onChange={(event) => {
+                const model = models.find((candidate) => modelValue(candidate) === event.target.value);
+                setDraft((current) => ({
+                  ...current,
+                  model: model ? { provider: model.provider, id: model.id } : undefined,
+                  reasoningEffort: model?.reasoning ? current.reasoningEffort : undefined,
+                }));
+              }}
+            >
+              <option value="">{t("Backend default", "后端默认")}</option>
+              {draft.model && !selectedModel && (
+                <option value={modelValue(draft.model)}>{`${draft.model.id} — ${draft.model.provider} (${t("unavailable", "不可用")})`}</option>
+              )}
+              {models.map((model) => (
+                <option value={modelValue(model)} key={modelValue(model)}>{`${model.name ?? model.id} — ${model.provider}`}</option>
+              ))}
+            </select>
+          </label>
+          <label>
+            <span>{t("Reasoning effort", "推理强度")}</span>
+            <select
+              name="reasoningEffort"
+              value={draft.reasoningEffort ?? ""}
+              disabled={!selectedModel?.reasoning}
+              onChange={(event) => setDraft((current) => ({
+                ...current,
+                reasoningEffort: event.target.value ? event.target.value as ThinkingLevel : undefined,
+              }))}
+            >
+              <option value="">{t("Provider default", "提供商默认")}</option>
+              {draft.reasoningEffort && !availableThinkingLevels.includes(draft.reasoningEffort) && (
+                <option value={draft.reasoningEffort}>{thinkingLabel(draft.reasoningEffort)}</option>
+              )}
+              {availableThinkingLevels.map((level) => <option value={level} key={level}>{thinkingLabel(level)}</option>)}
+            </select>
           </label>
           <label>
             <span>{t("Common schedule", "常用计划")}</span>
@@ -527,7 +700,7 @@ export function Automations({ onClose }: AutomationsProps) {
               <option value="failures">{t("Failed runs only", "仅失败运行")}</option>
             </select>
           </label>
-          <p className="automation-permission-note">{t("Background runs use Auto tool permissions: normal workspace work proceeds; risky commands and writes outside the workspace are blocked.", "后台运行使用“自动”工具权限：正常工作区操作可继续；危险命令和工作区外写入会被阻止。")}</p>
+          <p className="automation-permission-note">{t("Background runs use Auto tool permissions. Heartbeats exclusively lock their bound session while running; independent tasks keep separate session history.", "后台运行使用“自动”工具权限。会话心跳运行时会独占绑定会话；独立任务保留各自的会话历史。")}</p>
           {formError && <p className="automation-form-error" role="alert">{formError}</p>}
         </form>
       </Dialog>
@@ -543,7 +716,9 @@ export function Automations({ onClose }: AutomationsProps) {
           </>
         }
       >
-        <p>{t("Delete {name} and its schedule? Existing session files remain available in thread history.", "删除 {name} 及其计划？已有会话文件仍保留在线程历史中。", { name: deleteTarget?.name ?? "" })}</p>
+        <p>{deleteTarget?.worktree
+          ? t("Delete {name} and its schedule? Its clean worktree will be removed; a worktree with local changes will be kept.", "删除 {name} 及其计划？干净的工作树会被清理；存在本地更改的工作树会保留。", { name: deleteTarget.name })
+          : t("Delete {name} and its schedule? Existing session files remain available in thread history.", "删除 {name} 及其计划？已有会话文件仍保留在线程历史中。", { name: deleteTarget?.name ?? "" })}</p>
       </Dialog>
     </section>
   );

@@ -5,6 +5,7 @@ import {
 	createTaskWorktree,
 	deleteLeftoverWorktree,
 	isGitRepository,
+	isPathInsideWorktreesRoot,
 	listWorktreeLeftovers,
 	pickWorktreeName,
 	removeTaskWorktree,
@@ -22,6 +23,11 @@ function fakeExec(responses) {
 
 const repoCwd = resolve("repos", "my-app");
 const worktreesRoot = resolve("user-data", "worktrees");
+
+it("keeps managed worktree paths below the worktrees root", () => {
+	assert.equal(isPathInsideWorktreesRoot(worktreesRoot, join(worktreesRoot, "my-app-1")), true);
+	assert.equal(isPathInsideWorktreesRoot(worktreesRoot, resolve(worktreesRoot, "..", "outside")), false);
+});
 
 function fsImpls({ existing = [] } = {}) {
 	const made = [];

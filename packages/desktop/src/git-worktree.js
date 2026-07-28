@@ -115,6 +115,11 @@ function pathKey(path) {
 	return process.platform === "win32" ? resolved.toLowerCase() : resolved;
 }
 
+/** @param {string} worktreesRoot @param {string} targetPath */
+export function isPathInsideWorktreesRoot(worktreesRoot, targetPath) {
+	return pathKey(targetPath).startsWith(`${pathKey(worktreesRoot)}${sep}`);
+}
+
 /**
  * Worktree directories under the app's root that no running task owns:
  * candidates for user-driven cleanup. Dirty state comes from a porcelain
@@ -174,9 +179,8 @@ export async function deleteLeftoverWorktree(
 		timeoutMs = GIT_TIMEOUT_MS,
 	} = {},
 ) {
-	const rootKey = pathKey(worktreesRoot);
 	const targetKey = pathKey(targetPath);
-	if (!targetKey.startsWith(rootKey + sep)) {
+	if (!isPathInsideWorktreesRoot(worktreesRoot, targetPath)) {
 		throw new Error("The path is outside the app's worktrees folder");
 	}
 	if ((activeCwds ?? []).some((cwd) => pathKey(cwd) === targetKey)) {

@@ -54,13 +54,13 @@ export interface PiDesktopApi {
   configureTasks?: (settings: Partial<TaskPoolSettings>) => Promise<TaskPoolSettings>;
   onTaskChanged?: (listener: (payload: TaskChangedEvent) => void) => () => void;
   listAutomations?: () => Promise<{ automations: AutomationRecord[] }>;
-  createAutomation?: (input: AutomationInput) => Promise<AutomationRecord>;
+  createAutomation?: (input: AutomationInput, taskId?: string) => Promise<AutomationRecord>;
   updateAutomation?: (id: string, input: AutomationInput) => Promise<AutomationRecord>;
   setAutomationStatus?: (id: string, status: AutomationStatus) => Promise<AutomationRecord>;
   deleteAutomation?: (id: string) => Promise<AutomationRecord>;
   runAutomationNow?: (id: string) => Promise<AutomationRecord>;
   updateAutomationRun?: (automationId: string, runId: string, action: AutomationRunAction) => Promise<AutomationRecord>;
-  openAutomationRun?: (automationId: string, runId: string) => Promise<{ cancelled: boolean; cwd: string }>;
+  openAutomationRun?: (automationId: string, runId: string) => Promise<{ cancelled: boolean; cwd: string; taskId?: string }>;
   onAutomationsChanged?: (listener: (payload: AutomationsChangedEvent) => void) => () => void;
   listWorktreeLeftovers?: () => Promise<{ leftovers: WorktreeLeftover[] }>;
   deleteWorktreeLeftover?: (targetPath: string) => Promise<{ deleted: boolean }>;
@@ -195,6 +195,25 @@ export type AutomationStatus = "active" | "paused";
 export type AutomationRunStatus = "running" | "success" | "error";
 export type AutomationNotificationPolicy = "all" | "failures";
 export type AutomationRunAction = "read" | "unread" | "archive" | "restore";
+export type AutomationKind = "cron" | "heartbeat";
+export type AutomationDestination = "local" | "worktree";
+
+export interface AutomationModel {
+  provider: string;
+  id: string;
+}
+
+export interface AutomationThread {
+  sessionId: string;
+  sessionFile: string;
+  cwd: string;
+  sessionName?: string;
+}
+
+export interface AutomationWorktree {
+  path: string;
+  branch: string;
+}
 
 export interface AutomationRun {
   id: string;
@@ -214,8 +233,15 @@ export interface AutomationRecord {
   prompt: string;
   cwd: string;
   rrule: string;
+  kind: AutomationKind;
+  destination: AutomationDestination;
   status: AutomationStatus;
   notificationPolicy: AutomationNotificationPolicy;
+  model?: AutomationModel;
+  reasoningEffort?: ThinkingLevel;
+  thread?: AutomationThread;
+  worktree?: AutomationWorktree;
+  worktreeCleanup?: { removed: boolean; reason?: string };
   createdAt: string;
   updatedAt: string;
   nextRunAt: string | null;
@@ -230,8 +256,12 @@ export interface AutomationInput {
   prompt: string;
   cwd: string;
   rrule: string;
+  kind?: AutomationKind;
+  destination?: AutomationDestination;
   status?: AutomationStatus;
   notificationPolicy?: AutomationNotificationPolicy;
+  model?: AutomationModel;
+  reasoningEffort?: ThinkingLevel;
 }
 
 export interface AutomationsChangedEvent {
@@ -306,7 +336,7 @@ export async function listAutomations(): Promise<AutomationRecord[]> {
 export async function createAutomation(input: AutomationInput): Promise<AutomationRecord> {
   const api = requireApi();
   if (!api.createAutomation) throw new Error("Automations need a newer Pi Studio build");
-  return api.createAutomation(input);
+  return api.createAutomation(input, activeBackendTaskId);
 }
 
 export async function updateAutomation(id: string, input: AutomationInput): Promise<AutomationRecord> {
@@ -346,7 +376,7 @@ export async function updateAutomationRun(
 export async function openAutomationRun(
   automationId: string,
   runId: string,
-): Promise<{ cancelled: boolean; cwd: string }> {
+): Promise<{ cancelled: boolean; cwd: string; taskId?: string }> {
   const api = requireApi();
   if (!api.openAutomationRun) throw new Error("Automation history needs a newer Pi Studio build");
   return api.openAutomationRun(automationId, runId);

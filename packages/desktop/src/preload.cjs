@@ -59,8 +59,8 @@ contextBridge.exposeInMainWorld("piDesktop", {
 	listAutomations() {
 		return ipcRenderer.invoke("automation:list");
 	},
-	createAutomation(/** @type {unknown} */ input) {
-		return ipcRenderer.invoke("automation:create", input);
+	createAutomation(/** @type {unknown} */ input, /** @type {string | undefined} */ taskId) {
+		return ipcRenderer.invoke("automation:create", input, taskId);
 	},
 	updateAutomation(/** @type {unknown} */ id, /** @type {unknown} */ input) {
 		return ipcRenderer.invoke("automation:update", id, input);

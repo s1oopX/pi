@@ -1,7 +1,7 @@
 import { app, BrowserWindow, clipboard, dialog, ipcMain, nativeTheme, Notification, screen, shell } from "electron";
 import { existsSync, mkdirSync, readFileSync, readdirSync, statSync, writeFileSync } from "node:fs";
 import { copyFile, readFile, writeFile } from "node:fs/promises";
-import { basename, dirname, join, relative } from "node:path";
+import { basename, dirname, join, relative, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import {
 	BACKEND_REQUEST_COMMAND_TYPES,
@@ -27,6 +27,7 @@ import {
 	createTaskWorktree,
 	deleteLeftoverWorktree,
 	isGitRepository,
+	isPathInsideWorktreesRoot,
 	listWorktreeLeftovers,
 	removeTaskWorktree,
 } from "./git-worktree.js";
@@ -70,6 +71,10 @@ let workspaceStateInitialized = false;
 let automationService;
 /** @type {Set<BackendHandle>} */
 const automationHandles = new Set();
+/** @type {Set<BackendHandle>} */
+const automationBusyHandles = new Set();
+/** @type {Set<string>} */
+const automationSessionLocks = new Set();
 
 // Every backend child and its per-process state lives in a BackendHandle
 // (src/backend-handle.js); the task registry owns the pool of them
@@ -115,6 +120,17 @@ function getTaskWorkspacePath() {
 
 function getAutomationsPath() {
 	return join(app.getPath("userData"), AUTOMATIONS_FILE);
+}
+
+/** @param {string} path */
+function sessionPathKey(path) {
+	const normalized = resolve(String(path ?? ""));
+	return process.platform === "win32" ? normalized.toLowerCase() : normalized;
+}
+
+/** @param {unknown} path */
+function isAutomationSessionLocked(path) {
+	return typeof path === "string" && path.length > 0 && automationSessionLocks.has(sessionPathKey(path));
 }
 
 function initializeBackendCwd() {
@@ -527,106 +543,287 @@ async function requestAutomationBackend(handle, command, options = {}) {
 	return response.data;
 }
 
-/**
- * @param {{ id: string, name: string, prompt: string, cwd: string }} automation
- * @param {{ id: string, startedAt: string }} run
- * @returns {Promise<{ sessionId?: string, sessionFile?: string, error?: string }>}
- */
-async function runAutomation(automation, run) {
-	let ready = false;
-	let runFailure;
-	/** @type {{ sessionId?: string, sessionFile?: string }} */
-	let session = {};
-	/** @type {() => void} */
+/** @param {string} id @param {string} cwd */
+function createAutomationHandle(id, cwd) {
+	/** @type {(value?: void) => void} */
 	let resolveReady = () => {};
 	/** @type {(error: Error) => void} */
 	let rejectReady = () => {};
-	/** @type {() => void} */
-	let resolveFinished = () => {};
-	/** @type {(error: Error) => void} */
-	let rejectFinished = () => {};
-	/** @type {Promise<void>} */
 	const readyPromise = new Promise((resolve, reject) => {
 		resolveReady = resolve;
 		rejectReady = reject;
 	});
-	/** @type {Promise<void>} */
-	const finishedPromise = new Promise((resolve, reject) => {
-		resolveFinished = resolve;
-		rejectFinished = reject;
-	});
 	const handle = new BackendHandle({
-		id: `automation_${automation.id}_${run.id}`,
-		getCwd: () => automation.cwd,
+		id,
+		getCwd: () => cwd,
 		getBackendPath,
 		sendToRenderer: (channel, payload) => {
 			mirrorToFileLog(channel, /** @type {Record<string, unknown>} */ (payload));
 			if (channel !== "backend:status") return;
 			const status = /** @type {{ ready?: boolean, error?: string }} */ (payload);
-			if (status.ready) {
-				ready = true;
-				resolveReady();
-				return;
-			}
-			if (!status.error) return;
-			const error = new Error(status.error);
-			if (ready) rejectFinished(error);
-			else rejectReady(error);
-		},
-		notify: (payload) => {
-			const event = /** @type {Record<string, unknown>} */ (payload);
-			if (event.type === "auto_retry_end" && event.success === false) {
-				runFailure = String(event.finalError ?? "The provider retry budget was exhausted");
-			}
-			if (event.type === "extension_error") {
-				runFailure = String(event.error ?? "An extension failed during the automation");
-			}
-			if (event.type === "agent_end" && !event.willRetry) resolveFinished();
+			if (status.ready) resolveReady();
+			else if (status.error) rejectReady(new Error(status.error));
 		},
 		isQuitting: () => isQuitting,
 	});
+	return { handle, readyPromise };
+}
+
+/**
+ * @template T
+ * @param {string} id
+ * @param {string} cwd
+ * @param {(handle: BackendHandle) => Promise<T>} operation
+ */
+async function withAutomationHandle(id, cwd, operation) {
+	const { handle, readyPromise } = createAutomationHandle(id, cwd);
 	automationHandles.add(handle);
-
-	async function captureSession() {
-		if (!handle.ready) return;
-		const state = await requestAutomationBackend(handle, { type: "get_state" });
-		if (!state || typeof state !== "object") return;
-		const record = /** @type {Record<string, unknown>} */ (state);
-		session = {
-			...(typeof record.sessionId === "string" && record.sessionId ? { sessionId: record.sessionId } : {}),
-			...(typeof record.sessionFile === "string" && record.sessionFile ? { sessionFile: record.sessionFile } : {}),
-		};
-	}
-
+	automationBusyHandles.add(handle);
 	try {
 		handle.start();
 		await waitWithTimeout(readyPromise, AUTOMATION_START_TIMEOUT_MS, "Automation backend did not become ready");
-		const changed = await requestAutomationBackend(handle, { type: "new_session", cwd: automation.cwd });
+		return await operation(handle);
+	} finally {
+		const child = handle.child;
+		automationBusyHandles.delete(handle);
+		automationHandles.delete(handle);
+		handle.stop();
+		await waitForChildExit(child, 5000);
+	}
+}
+
+/** @param {BackendHandle} handle */
+async function captureAutomationSession(handle) {
+	if (!handle.ready) return {};
+	const state = await requestAutomationBackend(handle, { type: "get_state" });
+	if (!state || typeof state !== "object") return {};
+	const record = /** @type {Record<string, unknown>} */ (state);
+	return {
+		...(typeof record.sessionId === "string" && record.sessionId ? { sessionId: record.sessionId } : {}),
+		...(typeof record.sessionFile === "string" && record.sessionFile ? { sessionFile: record.sessionFile } : {}),
+	};
+}
+
+/** @param {BackendHandle} handle @param {string} prompt */
+async function runAutomationPrompt(handle, prompt) {
+	let runFailure;
+	/** @type {(value?: void) => void} */
+	let resolveFinished = () => {};
+	/** @type {(error: Error) => void} */
+	let rejectFinished = () => {};
+	const finishedPromise = new Promise((resolve, reject) => {
+		resolveFinished = resolve;
+		rejectFinished = reject;
+	});
+	const unsubscribe = handle.onEvent((event) => {
+		if (event.type === "auto_retry_end" && event.success === false) {
+			runFailure = String(event.finalError ?? "The provider retry budget was exhausted");
+		}
+		if (event.type === "extension_error") {
+			runFailure = String(event.error ?? "An extension failed during the automation");
+		}
+		if (event.type !== "agent_end" || event.willRetry) return;
+		const messages = Array.isArray(event.messages) ? event.messages : [];
+		for (let index = messages.length - 1; index >= 0; index -= 1) {
+			const message = messages[index];
+			if (!message || typeof message !== "object" || Array.isArray(message)) continue;
+			const record = /** @type {Record<string, unknown>} */ (message);
+			if (record.role !== "assistant") continue;
+			if (record.stopReason === "aborted") runFailure = "Automation run was aborted";
+			if (record.stopReason === "error") runFailure = String(record.errorMessage ?? "The model request failed");
+			break;
+		}
+		resolveFinished();
+	});
+	const healthTimer = setInterval(() => {
+		if (!handle.ready) rejectFinished(new Error("Automation backend stopped before the run finished"));
+	}, 250);
+	healthTimer.unref?.();
+	try {
+		await requestAutomationBackend(handle, { type: "prompt", message: prompt }, { timeoutMs: PROMPT_REQUEST_TIMEOUT_MS });
+		await waitWithTimeout(finishedPromise, AUTOMATION_RUN_TIMEOUT_MS, "Automation run timed out after 30 minutes");
+		if (runFailure) throw new Error(runFailure);
+	} finally {
+		clearInterval(healthTimer);
+		unsubscribe();
+	}
+}
+
+/**
+ * @param {BackendHandle} handle
+ * @param {{ name: string, prompt: string, cwd: string, model?: { provider: string, id: string }, reasoningEffort?: string }} automation
+ * @param {{ startedAt: string }} run
+ * @param {{ createSession?: boolean, expectedSessionFile?: string, cwd?: string }} options
+ */
+async function executeAutomationPrompt(handle, automation, run, options = {}) {
+	if (options.createSession) {
+		const changed = await requestAutomationBackend(handle, { type: "new_session", cwd: options.cwd ?? automation.cwd });
 		if (changed && typeof changed === "object" && /** @type {Record<string, unknown>} */ (changed).cancelled) {
 			throw new Error("Automation session creation was cancelled");
 		}
-		await requestAutomationBackend(handle, { type: "set_extension_flag", name: "permission-mode", value: "auto" });
+	} else if (options.expectedSessionFile) {
+		const state = await requestAutomationBackend(handle, { type: "get_state" });
+		if (!state || typeof state !== "object") throw new Error("Could not read the heartbeat session");
+		const record = /** @type {Record<string, unknown>} */ (state);
+		if (sessionPathKey(String(record.sessionFile ?? "")) !== sessionPathKey(options.expectedSessionFile)) {
+			throw new Error("The heartbeat conversation is no longer open in this task");
+		}
+		if (record.isStreaming || record.isCompacting) {
+			throw new Error("The heartbeat conversation is already running");
+		}
+	}
+	await requestAutomationBackend(handle, { type: "set_extension_flag", name: "permission-mode", value: "auto" });
+	if (options.createSession) {
 		await requestAutomationBackend(handle, {
 			type: "set_session_name",
 			name: `Automation: ${automation.name.slice(0, 80)} — ${new Date(run.startedAt).toLocaleString()}`,
 		});
-		await captureSession();
-		await requestAutomationBackend(handle, { type: "prompt", message: automation.prompt }, { timeoutMs: PROMPT_REQUEST_TIMEOUT_MS });
-		await waitWithTimeout(finishedPromise, AUTOMATION_RUN_TIMEOUT_MS, "Automation run timed out after 30 minutes");
-		await captureSession();
-		if (runFailure) throw new Error(runFailure);
-		return session;
-	} catch (error) {
-		try {
-			await captureSession();
-		} catch {
-			// Keep the original run failure; the session path is best-effort on a dead backend.
-		}
-		return { ...session, error: error instanceof Error ? error.message : String(error) };
-	} finally {
-		automationHandles.delete(handle);
-		handle.stop();
 	}
+	if (automation.model) {
+		await requestAutomationBackend(handle, {
+			type: "set_model",
+			provider: automation.model.provider,
+			modelId: automation.model.id,
+		});
+	}
+	if (automation.reasoningEffort) {
+		await requestAutomationBackend(handle, { type: "set_thinking_level", level: automation.reasoningEffort });
+	}
+	await runAutomationPrompt(handle, automation.prompt);
+	return captureAutomationSession(handle);
+}
+
+/** @param {string} sessionFile */
+async function findOpenTaskSessions(sessionFile) {
+	const wanted = sessionPathKey(sessionFile);
+	const entries = taskRegistry.list().map((entry) => taskRegistry.get(entry.taskId));
+	const matches = await Promise.all(entries.map(async (entry) => {
+		if (!entry.handle.ready) return undefined;
+		try {
+			return await entry.handle.mutationQueue.serialize(async () => {
+				const response = await entry.handle.request({ type: "get_state" });
+				if (!response.success || sessionPathKey(String(response.data?.sessionFile ?? "")) !== wanted) return undefined;
+				return { entry };
+			});
+		} catch {
+			return undefined;
+		}
+	}));
+	return matches.filter((match) => match !== undefined);
+}
+
+/**
+ * @param {{ id: string, name: string, prompt: string, cwd: string, destination: "local" | "worktree", model?: { provider: string, id: string }, reasoningEffort?: string, worktree?: { path: string, branch: string } }} automation
+ * @param {{ id: string, startedAt: string }} run
+ */
+async function runCronAutomation(automation, run) {
+	const runCwd = automation.destination === "worktree" ? automation.worktree?.path : automation.cwd;
+	if (automation.destination === "worktree" && (!runCwd || !isManagedAutomationWorktree(runCwd))) {
+		return { error: "Automation worktree is outside Pi Studio's managed worktree folder" };
+	}
+	if (!runCwd || !existsSync(runCwd) || !statSync(runCwd).isDirectory()) {
+		return { error: `Automation workspace not found: ${runCwd ?? automation.cwd}` };
+	}
+	/** @type {{ sessionId?: string, sessionFile?: string }} */
+	let session = {};
+	try {
+		return await withAutomationHandle(`automation_${automation.id}_${run.id}`, runCwd, async (handle) => {
+			try {
+				session = await executeAutomationPrompt(handle, automation, run, { createSession: true, cwd: runCwd });
+				return session;
+			} catch (error) {
+				try {
+					session = await captureAutomationSession(handle);
+				} catch {
+					// Keep the original failure; session capture is best-effort on a dead backend.
+				}
+				return { ...session, error: error instanceof Error ? error.message : String(error) };
+			}
+		});
+	} catch (error) {
+		return { ...session, error: error instanceof Error ? error.message : String(error) };
+	}
+}
+
+/**
+ * @param {{ id: string, name: string, prompt: string, cwd: string, model?: { provider: string, id: string }, reasoningEffort?: string, thread?: { sessionId: string, sessionFile: string, cwd: string } }} automation
+ * @param {{ id: string, startedAt: string }} run
+ */
+async function runHeartbeatAutomation(automation, run) {
+	const thread = automation.thread;
+	if (!thread?.sessionFile || !thread.sessionId) return { error: "Heartbeat target is missing" };
+	if (!existsSync(thread.cwd) || !statSync(thread.cwd).isDirectory()) {
+		return { sessionId: thread.sessionId, sessionFile: thread.sessionFile, error: `Heartbeat workspace not found: ${thread.cwd}` };
+	}
+	const lockKey = sessionPathKey(thread.sessionFile);
+	if (automationSessionLocks.has(lockKey)) {
+		return { sessionId: thread.sessionId, sessionFile: thread.sessionFile, error: "This conversation is already running an automation" };
+	}
+	automationSessionLocks.add(lockKey);
+	try {
+		const matches = await findOpenTaskSessions(thread.sessionFile);
+		if (matches.length > 1) throw new Error("The heartbeat conversation is open in more than one task");
+		const match = matches[0];
+		if (match) {
+			if (automationBusyHandles.has(match.entry.handle)) throw new Error("The target task is already running an automation");
+			automationBusyHandles.add(match.entry.handle);
+			const permissionMode = match.entry.handle.getExtensionFlag("permission-mode") ?? "ask";
+			try {
+				return await match.entry.handle.mutationQueue.serialize(async () =>
+				executeAutomationPrompt(match.entry.handle, automation, run, { expectedSessionFile: thread.sessionFile }));
+			} finally {
+				try {
+					if (permissionMode !== "auto" && match.entry.handle.ready) {
+						await requestAutomationBackend(match.entry.handle, {
+							type: "set_extension_flag",
+							name: "permission-mode",
+							value: permissionMode,
+						});
+					}
+				} finally {
+					automationBusyHandles.delete(match.entry.handle);
+				}
+			}
+		}
+
+		/** @type {{ sessionId?: string, sessionFile?: string }} */
+		let session = { sessionId: thread.sessionId, sessionFile: thread.sessionFile };
+		try {
+			return await withAutomationHandle(`heartbeat_${automation.id}_${run.id}`, thread.cwd, async (handle) => {
+				try {
+					const changed = await requestAutomationBackend(handle, { type: "switch_session", sessionPath: thread.sessionFile });
+					if (changed && typeof changed === "object" && /** @type {Record<string, unknown>} */ (changed).cancelled) {
+						throw new Error("Heartbeat session switch was cancelled");
+					}
+					session = await executeAutomationPrompt(handle, automation, run, { expectedSessionFile: thread.sessionFile });
+					return session;
+				} catch (error) {
+					try {
+						session = await captureAutomationSession(handle);
+					} catch {
+						// Keep the target identity when the isolated backend is already gone.
+					}
+					return { ...session, error: error instanceof Error ? error.message : String(error) };
+				}
+			});
+		} catch (error) {
+			return { ...session, error: error instanceof Error ? error.message : String(error) };
+		}
+	} catch (error) {
+		return { sessionId: thread.sessionId, sessionFile: thread.sessionFile, error: error instanceof Error ? error.message : String(error) };
+	} finally {
+		automationSessionLocks.delete(lockKey);
+	}
+}
+
+/**
+ * @param {{ kind: "cron" | "heartbeat" } & Record<string, unknown>} automation
+ * @param {{ id: string, startedAt: string }} run
+ */
+async function runAutomation(automation, run) {
+	return automation.kind === "heartbeat"
+		? runHeartbeatAutomation(/** @type {Parameters<typeof runHeartbeatAutomation>[0]} */ (/** @type {unknown} */ (automation)), run)
+		: runCronAutomation(/** @type {Parameters<typeof runCronAutomation>[0]} */ (/** @type {unknown} */ (automation)), run);
 }
 
 /**
@@ -669,6 +866,81 @@ function getAutomationService() {
 		});
 	}
 	return automationService;
+}
+
+/** @param {unknown} taskId */
+async function captureAutomationThread(taskId) {
+	const entry = taskRegistry.get(typeof taskId === "string" && taskId ? taskId : undefined);
+	const response = await entry.handle.request({ type: "get_state" });
+	if (!response.success) throw new Error(response.error || "Could not read the current conversation");
+	const state = response.data;
+	if (
+		!state ||
+		typeof state.sessionId !== "string" || !state.sessionId ||
+		typeof state.sessionFile !== "string" || !state.sessionFile ||
+		typeof state.cwd !== "string" || !state.cwd
+	) {
+		throw new Error("The current conversation does not have a persistent session file yet");
+	}
+	return {
+		sessionId: state.sessionId,
+		sessionFile: state.sessionFile,
+		cwd: state.cwd,
+		...(typeof state.sessionName === "string" && state.sessionName ? { sessionName: state.sessionName } : {}),
+	};
+}
+
+/** @param {unknown} input @param {unknown} taskId */
+async function createAutomation(input, taskId) {
+	const record = input && typeof input === "object" && !Array.isArray(input)
+		? /** @type {Record<string, unknown>} */ (input)
+		: {};
+	if (record.kind === "heartbeat") {
+		const thread = await captureAutomationThread(taskId);
+		return getAutomationService().create({ ...record, cwd: thread.cwd }, { thread });
+	}
+	if (record.destination !== "worktree") return getAutomationService().create(input);
+	const cwd = String(record.cwd ?? "");
+	if (!cwd || !existsSync(cwd) || !statSync(cwd).isDirectory()) throw new Error(`Workspace not found: ${cwd}`);
+	if (!(await isGitRepository(cwd))) throw new Error("Worktree automations need a git repository");
+	const provisioned = await createTaskWorktree(cwd, getWorktreesRoot());
+	try {
+		return getAutomationService().create(input, {
+			worktree: { path: provisioned.worktreePath, branch: provisioned.branch },
+		});
+	} catch (error) {
+		const cleanup = await removeTaskWorktree(cwd, provisioned.worktreePath);
+		if (!cleanup.removed) {
+			getFileLog().append("warn", "automations", `Could not clean up rejected automation worktree: ${cleanup.reason}`);
+		}
+		throw error;
+	}
+}
+
+/** @param {unknown} id */
+async function deleteAutomation(id) {
+	const deleted = getAutomationService().delete(id);
+	if (!deleted.worktree) return deleted;
+	if (!isManagedAutomationWorktree(deleted.worktree.path)) {
+		return {
+			...deleted,
+			worktreeCleanup: { removed: false, reason: "The stored worktree path is outside Pi Studio's managed folder" },
+		};
+	}
+	const cleanup = await removeTaskWorktree(deleted.cwd, deleted.worktree.path);
+	return {
+		...deleted,
+		worktreeCleanup: cleanup.removed
+			? { removed: true }
+			: { removed: false, reason: cleanup.reason },
+	};
+}
+
+function automationWorktreePaths() {
+	return getAutomationService().list()
+		.flatMap((automation) => automation.worktree?.path && isManagedAutomationWorktree(automation.worktree.path)
+			? [automation.worktree.path]
+			: []);
 }
 
 async function createWindow() {
@@ -776,6 +1048,13 @@ const SESSION_MUTATION_COMMAND_TYPES = new Set([
 	"set_session_name",
 	"switch_session",
 ]);
+const AUTOMATION_SESSION_COMMAND_TYPES = new Set([
+	...SESSION_MUTATION_COMMAND_TYPES,
+	"compact",
+	"set_extension_flag",
+	"set_model",
+	"set_thinking_level",
+]);
 
 /** @param {{ type?: string } | undefined} command */
 function getRequestTimeoutMs(command) {
@@ -839,6 +1118,23 @@ async function getKnownSessionFile(sessionPath) {
 	);
 }
 
+/**
+ * @param {{ handle: BackendHandle }} entry
+ * @param {{ type?: string, sessionPath?: unknown } | undefined} command
+ */
+async function assertAutomationSessionAvailable(entry, command) {
+	if (automationSessionLocks.size === 0 || !command?.type) return;
+	if (command.type === "switch_session" && isAutomationSessionLocked(command.sessionPath)) {
+		throw new Error("An automation heartbeat is currently updating that conversation");
+	}
+	if (!AUTOMATION_SESSION_COMMAND_TYPES.has(command.type)) return;
+	const state = await entry.handle.request({ type: "get_state" });
+	if (!state.success) throw new Error(state.error || "Could not read the current conversation");
+	if (isAutomationSessionLocked(state.data?.sessionFile)) {
+		throw new Error("Wait for the automation heartbeat to finish before changing this conversation");
+	}
+}
+
 ipcMain.handle("backend:request", async (_event, command, taskId) => {
 	const rejection = describeBackendCommandRejection(command, BACKEND_REQUEST_COMMAND_TYPES);
 	if (rejection) {
@@ -846,6 +1142,7 @@ ipcMain.handle("backend:request", async (_event, command, taskId) => {
 	}
 	const entry = taskRegistry.get(taskId);
 	const execute = async () => {
+		await assertAutomationSessionAvailable(entry, command);
 		const timeoutMs = getRequestTimeoutMs(command);
 		const response = await entry.handle.request(command, timeoutMs === undefined ? {} : { timeoutMs });
 		if (!response.success) {
@@ -886,6 +1183,11 @@ ipcMain.handle("backend:get-status", (_event, taskId) => taskRegistry.get(taskId
 
 function getWorktreesRoot() {
 	return join(app.getPath("userData"), "worktrees");
+}
+
+/** @param {string} path */
+function isManagedAutomationWorktree(path) {
+	return isPathInsideWorktreesRoot(getWorktreesRoot(), path);
 }
 
 // --- Pool lifecycle (M4): settings + idle reaping ---
@@ -940,6 +1242,7 @@ function persistTaskSettings() {
 /** @param {string} taskId */
 async function stopTaskAndCleanup(taskId) {
 	const entry = taskRegistry.get(taskId);
+	if (automationBusyHandles.has(entry.handle)) throw new Error("Wait for the automation to finish before stopping this task");
 	const child = entry.handle.child;
 	const result = taskRegistry.stop(entry.taskId);
 	if (entry.meta?.worktreePath && entry.meta?.sourceRepo) {
@@ -1054,13 +1357,13 @@ ipcMain.handle("task:configure", async (_event, settings) => {
 
 ipcMain.handle("automation:list", async () => ({ automations: getAutomationService().list() }));
 
-ipcMain.handle("automation:create", async (_event, input) => getAutomationService().create(input));
+ipcMain.handle("automation:create", async (_event, input, taskId) => createAutomation(input, taskId));
 
 ipcMain.handle("automation:update", async (_event, id, input) => getAutomationService().update(id, input));
 
 ipcMain.handle("automation:set-status", async (_event, id, status) => getAutomationService().setStatus(id, status));
 
-ipcMain.handle("automation:delete", async (_event, id) => getAutomationService().delete(id));
+ipcMain.handle("automation:delete", async (_event, id) => deleteAutomation(id));
 
 ipcMain.handle("automation:run-now", async (_event, id) => getAutomationService().runNow(id));
 
@@ -1069,32 +1372,57 @@ ipcMain.handle("automation:update-run", async (_event, automationId, runId, acti
 );
 
 ipcMain.handle("automation:open-run", async (_event, automationId, runId) => {
-	return serializeSessionMutation(async () => {
-		const automation = getAutomationService().list().find((candidate) => candidate.id === String(automationId ?? ""));
-		const run = automation?.runs.find((candidate) => candidate.id === String(runId ?? ""));
-		if (!run?.sessionFile) throw new Error("This run does not have a session file");
-		const state = await primaryBackend.request({ type: "get_state" });
-		if (!state.success) throw new Error(state.error || "Could not read the primary session");
-		if (state.data?.isStreaming) throw new Error("Finish or stop the primary run before opening automation history");
-		const switched = await primaryBackend.request({ type: "switch_session", sessionPath: run.sessionFile });
-		if (!switched.success) throw new Error(switched.error || "Could not open the automation session");
-		if (typeof switched.data?.cwd === "string") syncBackendCwd(switched.data.cwd);
+	const automation = getAutomationService().list().find((candidate) => candidate.id === String(automationId ?? ""));
+	const run = automation?.runs.find((candidate) => candidate.id === String(runId ?? ""));
+	if (!run?.sessionFile) throw new Error("This run does not have a session file");
+	const sessionFile = run.sessionFile;
+	if (isAutomationSessionLocked(sessionFile)) throw new Error("Wait for the automation heartbeat to finish");
+	const markRead = () => {
 		try {
 			getAutomationService().updateRun(automationId, runId, "read");
 		} catch (error) {
 			getFileLog().append("warn", "automations", `Could not mark opened run read: ${error instanceof Error ? error.message : String(error)}`);
 		}
-		return switched.data;
+	};
+	const matches = await findOpenTaskSessions(sessionFile);
+	if (matches.length > 1) throw new Error("This automation session is open in more than one task");
+	const match = matches[0];
+	if (match) {
+		const result = await match.entry.handle.mutationQueue.serialize(async () => {
+			const state = await match.entry.handle.request({ type: "get_state" });
+			if (!state.success) throw new Error(state.error || "Could not read the automation session");
+			if (sessionPathKey(String(state.data?.sessionFile ?? "")) !== sessionPathKey(sessionFile)) {
+				throw new Error("The automation session moved before it could be opened");
+			}
+			if (state.data?.isStreaming || state.data?.isCompacting) {
+				throw new Error("Finish or stop the current run before opening automation history");
+			}
+			return { cancelled: false, cwd: String(state.data?.cwd ?? match.entry.cwd()), taskId: match.entry.taskId };
+		});
+		markRead();
+		return result;
+	}
+	return serializeSessionMutation(async () => {
+		const state = await primaryBackend.request({ type: "get_state" });
+		if (!state.success) throw new Error(state.error || "Could not read the primary session");
+		if (state.data?.isStreaming || state.data?.isCompacting) {
+			throw new Error("Finish or stop the primary run before opening automation history");
+		}
+		const switched = await primaryBackend.request({ type: "switch_session", sessionPath: sessionFile });
+		if (!switched.success) throw new Error(switched.error || "Could not open the automation session");
+		if (typeof switched.data?.cwd === "string") syncBackendCwd(switched.data.cwd);
+		markRead();
+		return { ...switched.data, taskId: primaryBackend.id };
 	});
 });
 
 ipcMain.handle("worktrees:list-leftovers", async () => {
-	const activeCwds = taskRegistry.list().map((entry) => entry.cwd);
+	const activeCwds = [...taskRegistry.list().map((entry) => entry.cwd), ...automationWorktreePaths()];
 	return { leftovers: await listWorktreeLeftovers(getWorktreesRoot(), activeCwds) };
 });
 
 ipcMain.handle("worktrees:delete", async (_event, targetPath) => {
-	const activeCwds = taskRegistry.list().map((entry) => entry.cwd);
+	const activeCwds = [...taskRegistry.list().map((entry) => entry.cwd), ...automationWorktreePaths()];
 	const result = await deleteLeftoverWorktree(getWorktreesRoot(), String(targetPath ?? ""), activeCwds);
 	getFileLog().append("info", "tasks", `leftover worktree deleted: ${targetPath}`);
 	return result;
@@ -1126,6 +1454,7 @@ ipcMain.handle("session:reveal", async (_event, sessionPath) => {
 ipcMain.handle("session:trash", async (_event, sessionPath) => {
 	return serializeSessionMutation(async () => {
 		const session = await getKnownSessionFile(sessionPath);
+		if (isAutomationSessionLocked(session.path)) throw new Error("Wait for the automation heartbeat to finish");
 		if (session.isActive) {
 			throw new Error("Switch away from the active session before deleting it");
 		}
@@ -1136,6 +1465,7 @@ ipcMain.handle("session:trash", async (_event, sessionPath) => {
 
 ipcMain.handle("session:export", async (_event, sessionPath) => {
 	const session = await getKnownSessionFile(sessionPath);
+	if (isAutomationSessionLocked(session.path)) throw new Error("Wait for the automation heartbeat to finish");
 	const result = await dialog.showSaveDialog(dialogParent(), {
 		title: "Export Session JSONL",
 		defaultPath: basename(session.path),
@@ -1271,6 +1601,7 @@ ipcMain.handle("model-config:open", async () => {
 });
 
 ipcMain.handle("backend:restart", async () => {
+	if (automationBusyHandles.has(primaryBackend)) throw new Error("Wait for the automation to finish before restarting the backend");
 	primaryBackend.stop();
 	primaryBackend.start();
 });
@@ -1303,6 +1634,7 @@ ipcMain.handle("workspace:choose", async () => {
 });
 
 ipcMain.handle("workspace:open", async (_event, cwd) => {
+	if (automationBusyHandles.has(primaryBackend)) throw new Error("Wait for the automation to finish before changing workspace");
 	const nextCwd = String(cwd ?? "");
 	if (!nextCwd || !existsSync(nextCwd) || !statSync(nextCwd).isDirectory()) {
 		throw new Error(`Workspace not found: ${nextCwd}`);
@@ -1501,6 +1833,8 @@ app.on("before-quit", () => {
 	automationService?.stop();
 	for (const handle of automationHandles) handle.stop();
 	automationHandles.clear();
+	automationBusyHandles.clear();
+	automationSessionLocks.clear();
 	taskRegistry.stopAll();
 });
 

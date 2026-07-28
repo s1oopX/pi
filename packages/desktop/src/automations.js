@@ -12,11 +12,18 @@ const DAY_MS = 24 * HOUR_MS;
 const MONDAY_DAY_INDEX = Math.floor(Date.UTC(1970, 0, 5) / DAY_MS);
 const DAY_NAMES = ["SU", "MO", "TU", "WE", "TH", "FR", "SA"];
 const DAY_ORDER = new Map(DAY_NAMES.map((day, index) => [day, index]));
+const REASONING_EFFORTS = new Set(["off", "minimal", "low", "medium", "high", "xhigh", "max"]);
 let temporaryFileCounter = 0;
 
 /** @typedef {"active" | "paused"} AutomationStatus */
 /** @typedef {"running" | "success" | "error"} AutomationRunStatus */
 /** @typedef {"all" | "failures"} AutomationNotificationPolicy */
+/** @typedef {"cron" | "heartbeat"} AutomationKind */
+/** @typedef {"local" | "worktree"} AutomationDestination */
+/** @typedef {"off" | "minimal" | "low" | "medium" | "high" | "xhigh" | "max"} AutomationReasoningEffort */
+/** @typedef {{ provider: string, id: string }} AutomationModel */
+/** @typedef {{ sessionId: string, sessionFile: string, cwd: string, sessionName?: string }} AutomationThread */
+/** @typedef {{ path: string, branch: string }} AutomationWorktree */
 /**
  * @typedef {object} AutomationRun
  * @property {string} id
@@ -36,8 +43,14 @@ let temporaryFileCounter = 0;
  * @property {string} prompt
  * @property {string} cwd
  * @property {string} rrule
+ * @property {AutomationKind} kind
+ * @property {AutomationDestination} destination
  * @property {AutomationStatus} status
  * @property {AutomationNotificationPolicy} notificationPolicy
+ * @property {AutomationModel | undefined} [model]
+ * @property {AutomationReasoningEffort | undefined} [reasoningEffort]
+ * @property {AutomationThread | undefined} [thread]
+ * @property {AutomationWorktree | undefined} [worktree]
  * @property {string} createdAt
  * @property {string} updatedAt
  * @property {string | null} nextRunAt
@@ -60,6 +73,12 @@ let temporaryFileCounter = 0;
  * @property {string | undefined} [sessionId]
  * @property {string | undefined} [sessionFile]
  * @property {string | undefined} [error]
+ */
+
+/**
+ * @typedef {object} AutomationRuntimeTarget
+ * @property {AutomationThread | undefined} [thread]
+ * @property {AutomationWorktree | undefined} [worktree]
  */
 
 /** @param {number} value @param {number} divisor */
@@ -205,7 +224,7 @@ function isDirectory(path) {
 /**
  * @param {unknown} input
  * @param {(path: string) => boolean} directoryCheck
- * @returns {{ name: string, prompt: string, cwd: string, rrule: string, status: AutomationStatus, notificationPolicy: AutomationNotificationPolicy }}
+ * @returns {{ name: string, prompt: string, cwd: string, rrule: string, kind: AutomationKind, destination: AutomationDestination, status: AutomationStatus, notificationPolicy: AutomationNotificationPolicy, model?: AutomationModel, reasoningEffort?: AutomationReasoningEffort }}
  */
 function validateInput(input, directoryCheck) {
 	if (!input || typeof input !== "object" || Array.isArray(input)) throw new Error("Automation details are required");
@@ -215,6 +234,17 @@ function validateInput(input, directoryCheck) {
 	const cwd = requiredText(record.cwd, "Workspace", 4096);
 	if (!directoryCheck(cwd)) throw new Error(`Workspace not found: ${cwd}`);
 	const rrule = parseRRule(record.rrule).canonical;
+	if (record.kind !== undefined && record.kind !== "cron" && record.kind !== "heartbeat") {
+		throw new Error("Automation type must be cron or heartbeat");
+	}
+	const kind = /** @type {AutomationKind} */ (record.kind === "heartbeat" ? "heartbeat" : "cron");
+	if (record.destination !== undefined && record.destination !== "local" && record.destination !== "worktree") {
+		throw new Error("Destination must be local or worktree");
+	}
+	const destination = /** @type {AutomationDestination} */ (record.destination === "worktree" ? "worktree" : "local");
+	if (kind === "heartbeat" && destination !== "local") {
+		throw new Error("Heartbeat automations must run in the bound conversation");
+	}
 	const status = record.status === "paused" ? "paused" : "active";
 	if (record.notificationPolicy !== undefined && record.notificationPolicy !== "all" && record.notificationPolicy !== "failures") {
 		throw new Error("Notification policy must be all or failures");
@@ -222,7 +252,34 @@ function validateInput(input, directoryCheck) {
 	const notificationPolicy = /** @type {AutomationNotificationPolicy} */ (
 		record.notificationPolicy === "failures" ? "failures" : "all"
 	);
-	return { name, prompt, cwd, rrule, status, notificationPolicy };
+	/** @type {AutomationModel | undefined} */
+	let model;
+	if (record.model !== undefined) {
+		if (!record.model || typeof record.model !== "object" || Array.isArray(record.model)) {
+			throw new Error("Model must include a provider and ID");
+		}
+		const modelRecord = /** @type {Record<string, unknown>} */ (record.model);
+		model = {
+			provider: requiredText(modelRecord.provider, "Model provider", 200),
+			id: requiredText(modelRecord.id, "Model ID", 500),
+		};
+	}
+	if (record.reasoningEffort !== undefined && !REASONING_EFFORTS.has(String(record.reasoningEffort))) {
+		throw new Error("Reasoning effort is invalid");
+	}
+	const reasoningEffort = /** @type {AutomationReasoningEffort | undefined} */ (record.reasoningEffort);
+	return {
+		name,
+		prompt,
+		cwd,
+		rrule,
+		kind,
+		destination,
+		status,
+		notificationPolicy,
+		model,
+		reasoningEffort,
+	};
 }
 
 /** @param {unknown} value */
@@ -270,6 +327,42 @@ function sanitizeAutomation(value, nowMs) {
 	const prompt = typeof record.prompt === "string" ? record.prompt.trim().slice(0, 20_000) : "";
 	const cwd = typeof record.cwd === "string" ? record.cwd.trim().slice(0, 4096) : "";
 	if (!name || !prompt || !cwd) return undefined;
+	const kind = /** @type {AutomationKind} */ (record.kind === "heartbeat" ? "heartbeat" : "cron");
+	const destination = /** @type {AutomationDestination} */ (record.destination === "worktree" ? "worktree" : "local");
+	if (kind === "heartbeat" && destination !== "local") return undefined;
+	/** @type {AutomationModel | undefined} */
+	let model;
+	if (record.model && typeof record.model === "object" && !Array.isArray(record.model)) {
+		const modelRecord = /** @type {Record<string, unknown>} */ (record.model);
+		const provider = typeof modelRecord.provider === "string" ? modelRecord.provider.trim().slice(0, 200) : "";
+		const id = typeof modelRecord.id === "string" ? modelRecord.id.trim().slice(0, 500) : "";
+		if (provider && id) model = { provider, id };
+	}
+	const reasoningEffort = REASONING_EFFORTS.has(String(record.reasoningEffort))
+		? /** @type {AutomationReasoningEffort} */ (record.reasoningEffort)
+		: undefined;
+	/** @type {AutomationThread | undefined} */
+	let thread;
+	if (record.thread && typeof record.thread === "object" && !Array.isArray(record.thread)) {
+		const threadRecord = /** @type {Record<string, unknown>} */ (record.thread);
+		const sessionId = typeof threadRecord.sessionId === "string" ? threadRecord.sessionId.trim().slice(0, 500) : "";
+		const sessionFile = typeof threadRecord.sessionFile === "string" ? threadRecord.sessionFile.trim().slice(0, 4096) : "";
+		const threadCwd = typeof threadRecord.cwd === "string" ? threadRecord.cwd.trim().slice(0, 4096) : "";
+		const sessionName = typeof threadRecord.sessionName === "string" ? threadRecord.sessionName.trim().slice(0, 500) : "";
+		if (sessionId && sessionFile && threadCwd) {
+			thread = { sessionId, sessionFile, cwd: threadCwd, ...(sessionName ? { sessionName } : {}) };
+		}
+	}
+	if (kind === "heartbeat" && !thread) return undefined;
+	/** @type {AutomationWorktree | undefined} */
+	let worktree;
+	if (record.worktree && typeof record.worktree === "object" && !Array.isArray(record.worktree)) {
+		const worktreeRecord = /** @type {Record<string, unknown>} */ (record.worktree);
+		const path = typeof worktreeRecord.path === "string" ? worktreeRecord.path.trim().slice(0, 4096) : "";
+		const branch = typeof worktreeRecord.branch === "string" ? worktreeRecord.branch.trim().slice(0, 500) : "";
+		if (path && branch) worktree = { path, branch };
+	}
+	if (destination === "worktree" && !worktree) return undefined;
 	const now = new Date(nowMs).toISOString();
 	const status = record.status === "paused" ? "paused" : "active";
 	const runs = Array.isArray(record.runs)
@@ -282,8 +375,14 @@ function sanitizeAutomation(value, nowMs) {
 		prompt,
 		cwd,
 		rrule,
+		kind,
+		destination,
 		status,
 		notificationPolicy: record.notificationPolicy === "failures" ? "failures" : "all",
+		...(model ? { model } : {}),
+		...(reasoningEffort ? { reasoningEffort } : {}),
+		...(thread ? { thread } : {}),
+		...(worktree ? { worktree } : {}),
 		createdAt: isoString(record.createdAt) ?? now,
 		updatedAt: isoString(record.updatedAt) ?? now,
 		nextRunAt: status === "paused" ? null : isoString(record.nextRunAt) ?? nextAutomationRun(rrule, nowMs),
@@ -296,7 +395,13 @@ function sanitizeAutomation(value, nowMs) {
 
 /** @param {Automation} automation @returns {Automation} */
 function snapshot(automation) {
-	return { ...automation, runs: automation.runs.map((run) => ({ ...run })) };
+	return {
+		...automation,
+		...(automation.model ? { model: { ...automation.model } } : {}),
+		...(automation.thread ? { thread: { ...automation.thread } } : {}),
+		...(automation.worktree ? { worktree: { ...automation.worktree } } : {}),
+		runs: automation.runs.map((run) => ({ ...run })),
+	};
 }
 
 /** @param {string} filePath @param {Automation[]} automations */
@@ -509,15 +614,39 @@ export function createAutomationService({
 			return automations.map(snapshot);
 		},
 
-		/** @param {unknown} input */
-		create(input) {
+		/** @param {unknown} input @param {AutomationRuntimeTarget} [runtimeTarget] */
+		create(input, runtimeTarget = {}) {
 			const validated = validateInput(input, directoryCheck);
+			/** @type {AutomationThread | undefined} */
+			let thread;
+			if (validated.kind === "heartbeat") {
+				const target = runtimeTarget.thread;
+				if (!target) throw new Error("Heartbeat automations must bind the current conversation");
+				const sessionId = requiredText(target.sessionId, "Session ID", 500);
+				const sessionFile = requiredText(target.sessionFile, "Session file", 4096);
+				const cwd = requiredText(target.cwd, "Session workspace", 4096);
+				if (!directoryCheck(cwd)) throw new Error(`Workspace not found: ${cwd}`);
+				const sessionName = String(target.sessionName ?? "").trim().slice(0, 500);
+				thread = { sessionId, sessionFile, cwd, ...(sessionName ? { sessionName } : {}) };
+				validated.cwd = cwd;
+			}
+			/** @type {AutomationWorktree | undefined} */
+			let worktree;
+			if (validated.destination === "worktree") {
+				const target = runtimeTarget.worktree;
+				if (!target) throw new Error("Worktree automations need a provisioned worktree");
+				const path = requiredText(target.path, "Worktree path", 4096);
+				if (!directoryCheck(path)) throw new Error(`Worktree not found: ${path}`);
+				worktree = { path, branch: requiredText(target.branch, "Worktree branch", 500) };
+			}
 			const createdAtMs = now();
 			const createdAt = new Date(createdAtMs).toISOString();
 			/** @type {Automation} */
 			const automation = {
 				id: randomUUID(),
 				...validated,
+				...(thread ? { thread } : {}),
+				...(worktree ? { worktree } : {}),
 				createdAt,
 				updatedAt: createdAt,
 				nextRunAt: validated.status === "active" ? nextAutomationRun(validated.rrule, createdAtMs) : null,
@@ -536,6 +665,14 @@ export function createAutomationService({
 			const updatedAtMs = now();
 			const updatedAt = new Date(updatedAtMs).toISOString();
 			const current = automations[index];
+			// ponytail: target provisioning is immutable; recreate the automation if it must move.
+			if (validated.kind !== current.kind) throw new Error("Automation type cannot be changed after creation");
+			if (validated.destination !== current.destination) {
+				throw new Error("Automation destination cannot be changed after creation");
+			}
+			if ((current.kind === "heartbeat" || current.destination === "worktree") && validated.cwd !== current.cwd) {
+				throw new Error("The workspace for this automation cannot be changed");
+			}
 			/** @type {Automation} */
 			const updated = {
 				...current,
