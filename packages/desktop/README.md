@@ -74,7 +74,7 @@ The workbench previews text, Markdown, sandboxed HTML, images, PDF, CSV, TSV, an
 
 ### Automations
 
-Scheduled tasks run independent prompts in the selected workspace or a retained git worktree, while heartbeats continue a main-process-verified conversation. The editor exposes native interval, weekday, and time controls for hourly, daily, weekday, and weekly schedules, with advanced RRULE entry for unsupported patterns. Runs retain sessions, model/reasoning choices, notification policy, unread/archive state, and safe worktree cleanup.
+Scheduled tasks run independent prompts in the selected workspace or a retained git worktree, while heartbeats continue a main-process-verified conversation. The editor exposes native interval, weekday, and time controls for hourly, daily, weekday, and weekly schedules, with advanced RRULE entry for unsupported patterns. Runs retain sessions, model/reasoning choices, notification policy, unread/archive state, and safe worktree cleanup. Create with Pi starts a fresh guided scheduling conversation; history can mark all unread runs as read or archive all current completed runs after confirmation.
 
 ### Sessions
 
@@ -125,7 +125,7 @@ The fork root is an upstream commit, so upstream releases merge as plain three-w
 
 ## Roadmap
 
-Near-term: close the remaining Automations product-parity gaps.
+Near-term: add plugin-provided scheduled-task templates and Reset to plugin defaults, the remaining verified Automations parity gap.
 
 Deliberately deferred: code signing and auto-update, installer distribution, backend size reduction (~100 MB Bun runtime), macOS/Linux, additional locales.
 

@@ -71,6 +71,9 @@ export function Automations({ onClose }: AutomationsProps) {
   const commands = useStore((state) => state.commands);
   const models = useStore((state) => state.models);
   const session = useStore((state) => state.session);
+  const backendReady = useStore((state) => state.backendStatus.ready);
+  const isStreaming = useStore((state) => state.isStreaming);
+  const setComposerDraft = useStore((state) => state.setComposerDraft);
   const [automations, setAutomations] = useState<AutomationRecord[]>([]);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
@@ -90,8 +93,13 @@ export function Automations({ onClose }: AutomationsProps) {
   const [scheduleMode, setScheduleMode] = useState<AutomationScheduleMode>("daily");
   const [formError, setFormError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
+  const [creatingChat, setCreatingChat] = useState(false);
   const [busyId, setBusyId] = useState<string | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<AutomationRecord | null>(null);
+  const [archiveRunsTarget, setArchiveRunsTarget] = useState<{
+    automation: AutomationRecord;
+    runs: AutomationRun[];
+  } | null>(null);
 
   function replaceAutomation(updated: AutomationRecord): void {
     setAutomations((current) => current.some((automation) => automation.id === updated.id)
@@ -253,6 +261,35 @@ export function Automations({ onClose }: AutomationsProps) {
     setEditorId("new");
   }
 
+  async function createWithPi(): Promise<void> {
+    if (creatingChat) return;
+    if (!backendReady) {
+      showToast(t("The agent backend is not ready", "智能体后端尚未就绪"), "error");
+      return;
+    }
+    if (isStreaming) {
+      showToast(t("Finish or stop the current run before creating a new thread.", "请先完成或停止当前运行，再新建会话。"), "warning");
+      return;
+    }
+    setCreatingChat(true);
+    try {
+      const result = await api.newSession(workspaceCwd);
+      if (result.cancelled) return;
+      await useStore.getState().resetForWorkspace(result.cwd);
+      setComposerDraft(t(
+        "Let's set up a scheduled task together. First, explain how scheduled tasks work in Pi Studio. Then interview me to figure out what I need scheduled and when it should run.",
+        "让我们一起设置一个定时任务。请先说明 Pi Studio 的定时任务如何工作，然后通过提问确认我需要安排什么任务以及何时运行。",
+      ));
+      onClose();
+    } catch (error) {
+      showToast(t("Could not start automation setup: {error}", "无法开始设置自动任务：{error}", {
+        error: errorText(error),
+      }), "error");
+    } finally {
+      setCreatingChat(false);
+    }
+  }
+
   function openEdit(automation: AutomationRecord): void {
     setDraft({
       name: automation.name,
@@ -369,6 +406,41 @@ export function Automations({ onClose }: AutomationsProps) {
     }
   }
 
+  async function updateRuns(
+    automation: AutomationRecord,
+    runs: AutomationRun[],
+    action: "read" | "archive",
+  ): Promise<void> {
+    if (busyId || runs.length === 0) return;
+    setBusyId(automation.id);
+    let updated = automation;
+    let failed = 0;
+    try {
+      for (const run of runs) {
+        try {
+          updated = await api.updateAutomationRun(automation.id, run.id, action);
+        } catch {
+          failed += 1;
+        }
+      }
+      replaceAutomation(updated);
+      const succeeded = runs.length - failed;
+      if (failed > 0) {
+        showToast(t(
+          "Updated {succeeded} runs; {failed} failed.",
+          "已更新 {succeeded} 条运行记录；{failed} 条失败。",
+          { succeeded, failed },
+        ), "warning");
+      } else {
+        showToast(action === "read"
+          ? t("Marked {count} runs as read", "已将 {count} 条运行记录标为已读", { count: succeeded })
+          : t("Archived {count} runs", "已归档 {count} 条运行记录", { count: succeeded }), "success");
+      }
+    } finally {
+      setBusyId(null);
+    }
+  }
+
   async function openRun(automation: AutomationRecord, run: AutomationRun): Promise<void> {
     if (!run.sessionFile || busyId) return;
     setBusyId(automation.id);
@@ -407,10 +479,16 @@ export function Automations({ onClose }: AutomationsProps) {
           <h1 id="automations-title">{t("Scheduled tasks", "定时任务")}</h1>
           <p>{t("Run independent tasks or continue a bound conversation on a schedule.", "按计划运行独立任务，或继续指定的现有会话。")}</p>
         </div>
-        <button className="dialog-btn dialog-btn-primary automations-new" type="button" onClick={openNew}>
-          <Icon name="plus" size={15} />
-          {t("New automation", "新建自动任务")}
-        </button>
+        <div className="automations-create-actions">
+          <button className="dialog-btn dialog-btn-primary automations-create-with-pi" type="button" disabled={creatingChat} onClick={() => void createWithPi()}>
+            <Icon name="activity" size={15} />
+            {creatingChat ? t("Starting…", "正在启动…") : t("Create with Pi", "使用 Pi 创建")}
+          </button>
+          <button className="dialog-btn dialog-btn-secondary automations-new" type="button" disabled={creatingChat} onClick={openNew}>
+            <Icon name="plus" size={15} />
+            {t("Set up manually", "手动设置")}
+          </button>
+        </div>
       </header>
 
       <div className="automations-toolbar">
@@ -485,6 +563,8 @@ export function Automations({ onClose }: AutomationsProps) {
             const running = hasRunningRun(automation);
             const busy = busyId === automation.id;
             const unread = automation.runs.filter(isUnreadRun).length;
+            const unreadRuns = automation.runs.filter(isUnreadRun);
+            const archiveableRuns = automation.runs.filter((run) => run.status !== "running" && !run.archivedAt);
             const visibleRuns = automation.runs.filter((run) =>
               runFilter === "archived" ? Boolean(run.archivedAt) : runFilter === "unread" ? isUnreadRun(run) : !run.archivedAt,
             );
@@ -538,6 +618,26 @@ export function Automations({ onClose }: AutomationsProps) {
                     : runFilter === "unread"
                       ? t("Unread runs ({count})", "未读运行（{count}）", { count: visibleRuns.length })
                       : t("Previous runs ({count})", "历史运行（{count}）", { count: visibleRuns.length })}</summary>
+                  {runFilter !== "archived" && automation.runs.length > 0 && (
+                    <div className="automation-history-bulk">
+                      <button
+                        className="automation-runs-mark-all-read"
+                        type="button"
+                        disabled={busy || unreadRuns.length === 0}
+                        onClick={() => void updateRuns(automation, unreadRuns, "read")}
+                      >
+                        {t("Mark all as read", "全部标为已读")}
+                      </button>
+                      <button
+                        className="automation-runs-archive-all"
+                        type="button"
+                        disabled={busy || archiveableRuns.length === 0}
+                        onClick={() => setArchiveRunsTarget({ automation, runs: archiveableRuns })}
+                      >
+                        {t("Archive all", "全部归档")}
+                      </button>
+                    </div>
+                  )}
                   {visibleRuns.length === 0 ? (
                     <p>{runFilter === "current" ? t("This automation has not run yet.", "此自动任务尚未运行。") : t("No runs in this view.", "此视图中没有运行记录。")}</p>
                   ) : (
@@ -807,6 +907,36 @@ export function Automations({ onClose }: AutomationsProps) {
           <p className="automation-permission-note">{t("Background runs use Auto tool permissions. Heartbeats exclusively lock their bound session while running; independent tasks keep separate session history.", "后台运行使用“自动”工具权限。会话心跳运行时会独占绑定会话；独立任务保留各自的会话历史。")}</p>
           {formError && <p className="automation-form-error" role="alert">{formError}</p>}
         </form>
+      </Dialog>
+
+      <Dialog
+        open={archiveRunsTarget !== null}
+        title={t("Archive all completed runs?", "归档所有已完成运行？")}
+        onClose={busyId ? undefined : () => setArchiveRunsTarget(null)}
+        actions={
+          <>
+            <button className="dialog-btn dialog-btn-secondary" type="button" disabled={Boolean(busyId)} onClick={() => setArchiveRunsTarget(null)}>{t("Cancel", "取消")}</button>
+            <button
+              className="dialog-btn dialog-btn-danger automation-archive-all-confirm"
+              type="button"
+              disabled={Boolean(busyId)}
+              onClick={() => {
+                const target = archiveRunsTarget;
+                if (!target) return;
+                setArchiveRunsTarget(null);
+                void updateRuns(target.automation, target.runs, "archive");
+              }}
+            >
+              {t("Archive all", "全部归档")}
+            </button>
+          </>
+        }
+      >
+        <p>{t(
+          "Archive {count} completed runs? Their sessions remain available in the archived view.",
+          "归档 {count} 条已完成运行记录？其会话仍可在已归档视图中访问。",
+          { count: archiveRunsTarget?.runs.length ?? 0 },
+        )}</p>
       </Dialog>
 
       <Dialog

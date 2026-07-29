@@ -60,25 +60,60 @@ test("automations: create a worktree task, run it, persist settings, and reopen 
 		await card.locator(".automation-run-now").click();
 		await card.locator(".automation-run-status.success").first().waitFor({ state: "visible", timeout: REPLY_TIMEOUT_MS });
 		await card.locator(".automation-unread-count").waitFor({ state: "visible" });
+		await card.locator(".automation-run-now").click();
+		await card.locator(".automation-card-header .automation-run-status.running").waitFor({ state: "visible", timeout: REPLY_TIMEOUT_MS });
+		await card.locator(".automation-run-status.success").first().waitFor({ state: "visible", timeout: REPLY_TIMEOUT_MS });
 
 		assert.ok(
-			studio.server.requests.some((request) => JSON.stringify(request.body?.messages ?? []).includes(AUTOMATION_PROMPT)),
-			"automation prompt did not reach the faux provider",
+			studio.server.requests.filter((request) => JSON.stringify(request.body?.messages ?? []).includes(AUTOMATION_PROMPT)).length >= 2,
+			"automation prompt did not reach the faux provider twice",
 		);
 		await card.locator(".automation-history summary").click();
-		await card.locator(".automation-run-archive").click();
+		await card.locator(".automation-history li").nth(1).waitFor({ state: "visible" });
+		await card.locator(".automation-runs-mark-all-read").click();
+		await card.locator(".automation-unread-count").waitFor({ state: "detached" });
+		await card.locator(".automation-runs-archive-all").click();
+		await studio.page.locator(".automation-archive-all-confirm").click();
 		await studio.page.locator(".automations-run-filter-archived").click();
-		await card.locator(".automation-run-restore").waitFor({ state: "visible" });
+		await card.locator(".automation-run-restore").first().waitFor({ state: "visible" });
 		const stored = JSON.parse(readFileSync(join(studio.tempRoot, "user-data", "automations.json"), "utf8"));
 		assert.equal(stored.automations[0].notificationPolicy, "failures");
+		assert.equal(stored.automations[0].runs.length, 2);
 		assert.equal(stored.automations[0].runs[0].status, "success");
-		assert.ok(stored.automations[0].runs[0].readAt, "archived run was not marked read");
-		assert.ok(stored.automations[0].runs[0].archivedAt, "automation run was not archived");
+		assert.ok(stored.automations[0].runs.every((run) => run.readAt), "bulk action did not mark every run read");
+		assert.ok(stored.automations[0].runs.every((run) => run.archivedAt), "bulk action did not archive every run");
 		assert.ok(stored.automations[0].runs[0].sessionFile, "automation run did not retain a session file");
 
-		await card.locator(".automation-open-run").click();
+		await card.locator(".automation-open-run").first().click();
 		await studio.page.locator(".automations-page").waitFor({ state: "detached", timeout: REPLY_TIMEOUT_MS });
 		await studio.page.getByText(AUTOMATION_REPLY).first().waitFor({ state: "visible", timeout: REPLY_TIMEOUT_MS });
+	} catch (error) {
+		await studio.dumpDiagnostics();
+		throw error;
+	}
+});
+
+test("automations: Create with Pi starts a new guided conversation", async (t) => {
+	assertPrerequisites();
+
+	const studio = await launchStudio({ reply: "unused" });
+	t.after(() => studio.close());
+
+	try {
+		await studio.waitUntilReady();
+		const initialState = await studio.page.evaluate(async () => window.piDesktop?.request({ type: "get_state" }));
+		await studio.page.locator(".sidebar-automations-button").click();
+		await studio.page.locator(".automations-create-with-pi").click();
+		await studio.page.locator(".automations-page").waitFor({ state: "detached", timeout: REPLY_TIMEOUT_MS });
+
+		const composer = studio.page.locator(".composer-input");
+		await composer.waitFor({ state: "visible", timeout: REPLY_TIMEOUT_MS });
+		assert.ok([
+			"Let's set up a scheduled task together. First, explain how scheduled tasks work in Pi Studio. Then interview me to figure out what I need scheduled and when it should run.",
+			"让我们一起设置一个定时任务。请先说明 Pi Studio 的定时任务如何工作，然后通过提问确认我需要安排什么任务以及何时运行。",
+		].includes(await composer.inputValue()));
+		const createdState = await studio.page.evaluate(async () => window.piDesktop?.request({ type: "get_state" }));
+		assert.notEqual(createdState?.sessionId, initialState?.sessionId);
 	} catch (error) {
 		await studio.dumpDiagnostics();
 		throw error;
