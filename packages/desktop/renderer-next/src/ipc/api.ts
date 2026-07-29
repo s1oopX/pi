@@ -575,6 +575,14 @@ export async function getResources(options: { reload?: boolean } = {}): Promise<
   return (await backendRequest({ type: "get_resources", ...options })) as ResourcesData;
 }
 
+export async function managePackage(
+  action: "install" | "remove",
+  source: string,
+  local: boolean,
+): Promise<void> {
+  await backendRequest({ type: "manage_package", action, source, local });
+}
+
 export async function setSessionName(name: string): Promise<void> {
   await backendRequest({ type: "set_session_name", name });
 }

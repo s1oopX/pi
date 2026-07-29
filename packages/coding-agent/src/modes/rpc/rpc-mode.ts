@@ -31,6 +31,7 @@ import {
 	waitForRawStdoutBackpressure,
 	writeRawStdout,
 } from "../../core/output-guard.ts";
+import { DefaultPackageManager } from "../../core/package-manager.ts";
 import { type SessionInfo, SessionManager, type SessionTreeNode } from "../../core/session-manager.ts";
 import { hasTrustRequiringProjectResources, ProjectTrustStore } from "../../core/trust-manager.ts";
 import { killTrackedDetachedChildren } from "../../utils/shell.ts";
@@ -1658,10 +1659,16 @@ export async function runRpcMode(runtimeHost: AgentSessionRuntime): Promise<neve
 			case "get_resources": {
 				const resources = await loadResourceCatalog(
 					() => {
+						const packageManager = new DefaultPackageManager({
+							cwd: session.sessionManager.getCwd(),
+							agentDir: getAgentDir(),
+							settingsManager: session.settingsManager,
+						});
 						const extensionsResult = session.resourceLoader.getExtensions();
 						const skillsResult = session.resourceLoader.getSkills();
 						const promptsResult = session.resourceLoader.getPrompts();
 						return {
+							packages: packageManager.listConfiguredPackages(),
 							extensions: extensionsResult.extensions,
 							extensionErrors: extensionsResult.errors.map((diagnostic) => ({
 								extensionPath: diagnostic.path,
@@ -1697,6 +1704,43 @@ export async function runRpcMode(runtimeHost: AgentSessionRuntime): Promise<neve
 						: undefined,
 				);
 				return success(id, "get_resources", resources);
+			}
+
+			case "manage_package": {
+				if (session.isStreaming) {
+					return error(id, "manage_package", "Wait for the current response to finish before changing packages");
+				}
+				if (session.isCompacting) {
+					return error(id, "manage_package", "Wait for compaction to finish before changing packages");
+				}
+				const source = typeof command.source === "string" ? command.source.trim() : "";
+				if (!source || source.length > 2048 || source.includes("\0")) {
+					return error(id, "manage_package", "A valid package source is required");
+				}
+				if (command.action !== "install" && command.action !== "remove") {
+					return error(id, "manage_package", "Package action must be install or remove");
+				}
+				if (command.local !== undefined && typeof command.local !== "boolean") {
+					return error(id, "manage_package", "Package scope must be user or project");
+				}
+
+				const packageManager = new DefaultPackageManager({
+					cwd: session.sessionManager.getCwd(),
+					agentDir: getAgentDir(),
+					settingsManager: session.settingsManager,
+				});
+				if (command.action === "install") {
+					await packageManager.installAndPersist(source, { local: command.local === true });
+					await session.reload();
+					return success(id, "manage_package", {});
+				}
+
+				const removed = await packageManager.removeAndPersist(source, { local: command.local === true });
+				if (!removed) {
+					return error(id, "manage_package", `No matching package found for ${source}`);
+				}
+				await session.reload();
+				return success(id, "manage_package", { removed: true });
 			}
 
 			case "set_project_trust": {

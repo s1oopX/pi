@@ -8,6 +8,7 @@ client (Electron main process and the `renderer-next` React renderer).
 
 ### Added
 
+- Plugin-package management in Settings → Resources: install or update npm, Git, and local Pi packages at user or project scope, remove configured packages, hot-reload their extensions/skills/prompts/themes, and surface installed paths alongside existing resource diagnostics. Every install/update requires an explicit warning because package code runs with full system access.
 - GitHub pull-request review feedback in the Git panel: authenticated `gh` access loads PR comments, review summaries, and inline review threads on demand, including resolved and outdated state. Users can post PR comments, reply to threads, resolve or reopen them, open the source item on GitHub, or draft a scoped agent prompt with file/line context. Review text is explicitly treated as untrusted external input.
 - Spreadsheet Artifact previews for `.xlsx`, `.csv`, and `.tsv` files, with worksheet selection, sticky row/column headings, bounded reads, and truncation notices. Legacy `.xls` files continue to open in the system application.
 - Thread pinning and archiving in the sidebar: pinned sessions keep their chosen order at the top of each task/project group, archived sessions move to a searchable restore view, and both states persist across restarts. Pagination automatically reaches older organized sessions so pinning is not limited to the first loaded page.

@@ -12,6 +12,12 @@ interface ResourceExtension {
 }
 
 export interface ResourceCatalogInput {
+	packages?: readonly {
+		source: string;
+		scope: "user" | "project";
+		filtered: boolean;
+		installedPath?: string;
+	}[];
 	extensions: readonly ResourceExtension[];
 	extensionErrors: readonly Pick<ExtensionError, "extensionPath" | "error">[];
 	extensionDiagnostics: readonly ResourceDiagnostic[];
@@ -50,6 +56,7 @@ function mapDiagnostics(
 
 export function buildResourceCatalog(input: ResourceCatalogInput): RpcGetResourcesDataDTO {
 	return {
+		packages: (input.packages ?? []).map((pkg) => ({ ...pkg })),
 		extensions: input.extensions.map((extension) => ({
 			name: extension.path,
 			path: extension.resolvedPath,

@@ -13,6 +13,14 @@ const sourceInfo: SourceInfo = {
 describe("RPC resource catalog", () => {
 	it("projects loaded resources and diagnostics into a read-only wire catalog", () => {
 		const catalog = buildResourceCatalog({
+			packages: [
+				{
+					source: "npm:@example/review-tools",
+					scope: "user",
+					filtered: false,
+					installedPath: "/home/me/.pi/agent/npm/node_modules/@example/review-tools",
+				},
+			],
 			extensions: [{ path: "review.ts", resolvedPath: "/project/.pi/extensions/review.ts", sourceInfo }],
 			extensionErrors: [{ extensionPath: "/project/.pi/extensions/broken.ts", error: "Syntax error" }],
 			extensionDiagnostics: [{ type: "collision", message: "Duplicate command", path: "/command" }],
@@ -36,6 +44,14 @@ describe("RPC resource catalog", () => {
 			promptDiagnostics: [{ type: "collision", message: "Duplicate prompt", path: "/prompt" }],
 		});
 
+		expect(catalog.packages).toEqual([
+			{
+				source: "npm:@example/review-tools",
+				scope: "user",
+				filtered: false,
+				installedPath: "/home/me/.pi/agent/npm/node_modules/@example/review-tools",
+			},
+		]);
 		expect(catalog.extensions).toEqual([
 			{
 				name: "review.ts",
@@ -113,7 +129,7 @@ describe("RPC resource catalog", () => {
 			send: (command: { type: string; reload?: boolean }) => Promise<unknown>;
 			getData: <T>(response: unknown) => T;
 		};
-		const data = { extensions: [], skills: [], prompts: [], diagnostics: [], extensionFlags: [] };
+		const data = { packages: [], extensions: [], skills: [], prompts: [], diagnostics: [], extensionFlags: [] };
 		const send = vi.fn(async () => ({
 			type: "response",
 			command: "get_resources",

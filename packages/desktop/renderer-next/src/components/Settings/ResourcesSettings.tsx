@@ -4,6 +4,7 @@ import { SettingsSectionIcon } from "./SettingsSectionIcon";
 import * as api from "../../ipc/api";
 import type { ResourcesData } from "../../ipc/types";
 import { useStore } from "../../store";
+import { showToast } from "../Toast";
 import { getResourceSourceLabel } from "./resourceLabels";
 import { TrustedFoldersSettings } from "./TrustedFoldersSettings";
 
@@ -60,6 +61,9 @@ export function ResourcesSettings() {
   const [loading, setLoading] = useState(false);
   const [stale, setStale] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [packageSource, setPackageSource] = useState("");
+  const [packageScope, setPackageScope] = useState<"user" | "project">("user");
+  const [packageOperation, setPackageOperation] = useState<{ action: "install" | "remove"; source: string } | null>(null);
   const requestIdRef = useRef(0);
 
   const loadResources = useCallback(async (reload: boolean, clearExisting: boolean) => {
@@ -118,6 +122,53 @@ export function ResourcesSettings() {
         ? t("The agent backend is offline.", "智能体后端当前离线。")
         : undefined;
 
+  async function handlePackageAction(
+    action: "install" | "remove",
+    source: string,
+    scope: "user" | "project",
+    updating = false,
+  ) {
+    const normalizedSource = source.trim();
+    if (!normalizedSource) return;
+    const confirmed = window.confirm(
+      action === "remove"
+        ? t(
+            "Remove package \"{source}\" from {scope} settings?",
+            "从{scope}设置中移除包“{source}”？",
+            { source: normalizedSource, scope: scope === "project" ? t("project", "项目") : t("user", "用户") },
+          )
+        : t(
+            "{action} package \"{source}\"? Packages can execute arbitrary code with full system access. Review the source first.",
+            "{action}包“{source}”？包可通过完整系统权限执行任意代码，请先审查来源。",
+            {
+              action: updating ? t("Update", "更新") : t("Install", "安装"),
+              source: normalizedSource,
+            },
+          ),
+    );
+    if (!confirmed) return;
+
+    setPackageOperation({ action, source: normalizedSource });
+    try {
+      await api.managePackage(action, normalizedSource, scope === "project");
+      if (action === "install" && !updating) setPackageSource("");
+      showToast(
+        action === "remove"
+          ? t("Removed package {source}", "已移除包 {source}", { source: normalizedSource })
+          : updating
+            ? t("Updated package {source}", "已更新包 {source}", { source: normalizedSource })
+            : t("Installed package {source}", "已安装包 {source}", { source: normalizedSource }),
+        "success",
+      );
+      await loadResources(false, false);
+    } catch (packageError: unknown) {
+      const message = packageError instanceof Error ? packageError.message : String(packageError);
+      showToast(t("Package operation failed: {message}", "包操作失败：{message}", { message }), "error");
+    } finally {
+      setPackageOperation(null);
+    }
+  }
+
   return (
     <div className="settings-section">
       <div className="resources-heading">
@@ -174,6 +225,114 @@ export function ResourcesSettings() {
 
       {resources && (
         <>
+          <section className="resource-group" data-resource-group="packages">
+            <div className="resource-group-heading">
+              <h4 className="settings-subsection-title">{t("Plugin packages", "插件包")}</h4>
+              <span className="resource-count">{resources.packages?.length ?? 0}</span>
+            </div>
+            <form
+              className="resource-list"
+              onSubmit={(event) => {
+                event.preventDefault();
+                void handlePackageAction("install", packageSource, packageScope);
+              }}
+            >
+              <div className="resource-row">
+                <div className="resource-copy">
+                  <label className="resource-name" htmlFor="resource-package-source">
+                    {t("Install from npm, Git, or a local path", "从 npm、Git 或本地路径安装")}
+                  </label>
+                  <input
+                    id="resource-package-source"
+                    className="form-input form-input-sm"
+                    value={packageSource}
+                    maxLength={2048}
+                    onChange={(event) => setPackageSource(event.target.value)}
+                    placeholder="npm:@scope/package, git:github.com/user/repo, C:\\path\\to\\package"
+                    disabled={resourceReloadDisabled || packageOperation !== null}
+                  />
+                  <span className="resource-description">
+                    {t(
+                      "Packages bundle extensions, skills, prompts, and themes. They run with full system access.",
+                      "包可捆绑扩展、技能、提示词和主题，并以完整系统权限运行。",
+                    )}
+                  </span>
+                </div>
+                <select
+                  id="resource-package-scope"
+                  className="form-select form-input-num"
+                  value={packageScope}
+                  onChange={(event) => setPackageScope(event.target.value as "user" | "project")}
+                  disabled={resourceReloadDisabled || packageOperation !== null}
+                  aria-label={t("Package scope", "包作用域")}
+                >
+                  <option value="user">{t("User", "用户")}</option>
+                  <option value="project">{t("Project", "项目")}</option>
+                </select>
+                <button
+                  className="settings-btn-sm resource-package-install"
+                  type="submit"
+                  disabled={resourceReloadDisabled || packageOperation !== null || !packageSource.trim()}
+                >
+                  {packageOperation?.action === "install"
+                    ? t("Installing…", "安装中…")
+                    : t("Install", "安装")}
+                </button>
+              </div>
+            </form>
+
+            {(resources.packages?.length ?? 0) === 0 ? (
+              <div className="settings-empty">{t("No plugin packages configured.", "未配置插件包。")}</div>
+            ) : (
+              <div className="resource-list">
+                {resources.packages.map((pkg) => {
+                  const busy = packageOperation?.source === pkg.source;
+                  return (
+                    <div
+                      className="resource-row resource-package-row"
+                      data-package-scope={pkg.scope}
+                      data-package-source={pkg.source}
+                      key={`${pkg.scope}:${pkg.source}`}
+                    >
+                      <div className="resource-copy">
+                        <span className="resource-name" title={pkg.source}>{pkg.source}</span>
+                        <span className="resource-path">
+                          {pkg.installedPath ?? t("Package files are missing", "包文件缺失")}
+                        </span>
+                      </div>
+                      <span className="resource-source">
+                        {pkg.scope === "project" ? t("project", "项目") : t("user", "用户")}
+                        {pkg.filtered ? ` · ${t("filtered", "已筛选")}` : ""}
+                      </span>
+                      <div className="fetched-models-bulk">
+                        <button
+                          className="settings-btn-sm"
+                          type="button"
+                          disabled={resourceReloadDisabled || packageOperation !== null}
+                          onClick={() => void handlePackageAction("install", pkg.source, pkg.scope, true)}
+                        >
+                          {busy && packageOperation?.action === "install"
+                            ? t("Updating…", "更新中…")
+                            : t("Update", "更新")}
+                        </button>
+                        <button
+                          className="settings-btn-sm settings-btn-danger"
+                          type="button"
+                          disabled={resourceReloadDisabled || packageOperation !== null}
+                          onClick={() => void handlePackageAction("remove", pkg.source, pkg.scope)}
+                        >
+                          {busy && packageOperation?.action === "remove"
+                            ? t("Removing…", "移除中…")
+                            : t("Remove", "移除")}
+                        </button>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </section>
+
           {resources.diagnostics.length > 0 && (
             <section className="resource-diagnostics" aria-label={t("Resource diagnostics", "资源诊断")}>
               <h4 className="settings-subsection-title">{t("Load diagnostics", "加载诊断")}</h4>

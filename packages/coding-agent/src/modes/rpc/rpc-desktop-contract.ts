@@ -313,6 +313,13 @@ export interface RpcExtensionFlagDTO {
 	extensionPath: string;
 }
 
+export interface RpcPackageDTO {
+	source: string;
+	scope: "user" | "project";
+	filtered: boolean;
+	installedPath?: string;
+}
+
 export interface RpcCustomModelConfigModelDTO {
 	id: string;
 	name?: string;
@@ -413,6 +420,7 @@ export interface RpcGetCommandsDataDTO {
 }
 
 export interface RpcGetResourcesDataDTO {
+	packages: RpcPackageDTO[];
 	extensions: RpcResourceItemDTO[];
 	skills: RpcResourceItemDTO[];
 	prompts: RpcResourceItemDTO[];

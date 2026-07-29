@@ -152,6 +152,13 @@ export type RpcCommand =
 	// Commands (available for invocation via prompt)
 	| { id?: string; type: "get_commands" }
 	| ({ id?: string; type: "get_resources" } & RpcGetResourcesOptions)
+	| {
+			id?: string;
+			type: "manage_package";
+			action: "install" | "remove";
+			source: string;
+			local?: boolean;
+	  }
 
 	// Extension flags (runtime-settable, e.g. permission mode)
 	| { id?: string; type: "set_extension_flag"; name: string; value: boolean | string }
@@ -417,6 +424,12 @@ export type RpcResponse =
 			command: "get_resources";
 			success: true;
 			data: {
+				packages: Array<{
+					source: string;
+					scope: "user" | "project";
+					filtered: boolean;
+					installedPath?: string;
+				}>;
 				extensions: Array<{ name: string; path: string; sourceInfo: SourceInfo }>;
 				skills: Array<{ name: string; description?: string; path: string; sourceInfo: SourceInfo }>;
 				prompts: Array<{ name: string; description?: string; path: string; sourceInfo: SourceInfo }>;
@@ -434,6 +447,13 @@ export type RpcResponse =
 					extensionPath: string;
 				}>;
 			};
+	  }
+	| {
+			id?: string;
+			type: "response";
+			command: "manage_package";
+			success: true;
+			data: { removed?: boolean };
 	  }
 	| {
 			id?: string;

@@ -61,6 +61,13 @@ export interface GetResourcesCommand {
   reload?: boolean;
 }
 
+export interface ManagePackageCommand {
+  type: "manage_package";
+  action: "install" | "remove";
+  source: string;
+  local?: boolean;
+}
+
 export interface GetSessionsCommand {
   type: "get_sessions";
   all?: boolean;
@@ -355,6 +362,7 @@ export type BackendCommand =
   | GetSessionStatsCommand
   | GetCommandsCommand
   | GetResourcesCommand
+  | ManagePackageCommand
   | GetSessionsCommand
   | GetAuthStatusCommand
   | PromptCommand

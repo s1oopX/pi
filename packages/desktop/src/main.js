@@ -1045,9 +1045,11 @@ function focusMainWindow() {
 const LONG_REQUEST_COMMAND_TIMEOUT_MS = 60000;
 const LONG_REQUEST_COMMAND_TYPES = new Set(["test_model", "test_custom_model"]);
 const PROMPT_REQUEST_TIMEOUT_MS = 5 * 60 * 1000;
+const PACKAGE_REQUEST_TIMEOUT_MS = 5 * 60 * 1000;
 const SESSION_MUTATION_COMMAND_TYPES = new Set([
 	"clone",
 	"fork",
+	"manage_package",
 	"new_session",
 	"prompt",
 	"set_session_name",
@@ -1065,6 +1067,7 @@ const AUTOMATION_SESSION_COMMAND_TYPES = new Set([
 function getRequestTimeoutMs(command) {
 	if (command?.type === "bash") return 0;
 	if (command?.type === "prompt") return PROMPT_REQUEST_TIMEOUT_MS;
+	if (command?.type === "manage_package") return PACKAGE_REQUEST_TIMEOUT_MS;
 	return command?.type !== undefined && LONG_REQUEST_COMMAND_TYPES.has(command.type)
 		? LONG_REQUEST_COMMAND_TIMEOUT_MS
 		: undefined;

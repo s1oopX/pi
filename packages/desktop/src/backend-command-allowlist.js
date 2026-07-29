@@ -31,6 +31,7 @@ export const BACKEND_REQUEST_COMMAND_TYPES = new Set([
 	"get_messages",
 	"get_project_trust_entries",
 	"get_resources",
+	"manage_package",
 	"get_session_stats",
 	"get_sessions",
 	"get_state",

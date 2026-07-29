@@ -27,15 +27,18 @@ continuous alignment loop; one row lands per iteration.
 | Contextual window title | session — app | ✅ |
 | In-app browser for frontend iteration | Sandboxed HTTP(S) frame with URL navigation, back/forward, reload, and external fallback | ✅ |
 | Artifact viewer (PDF/spreadsheet outputs) | Inline text, Markdown, HTML, image, PDF, CSV, TSV, and XLSX preview with worksheet selection, truncation notices, source toggle where applicable, refresh, open, reveal, and copy-path actions; legacy `.xls` opens in the system app | ✅ core preview; legacy `.xls` delegated |
-| Computer use / plugins / memory / image generation | — | ❌ not implemented; required for complete parity |
+| Computer use | — | ❌ not implemented; required for complete parity |
+| Installable plugin bundles | Settings → Resources installs, updates, lists, and removes npm/Git/local Pi packages at user or project scope, then hot-reloads bundled extensions, skills, prompts, and themes with diagnostics. Install/update is explicitly confirmed because package code has full system access. | 🟡 core bridge; Pi package format is supported, not Codex plugin manifests, apps, hooks, or marketplace metadata |
+| Memory | — | ❌ not implemented; required for complete parity |
+| Image generation | — | ❌ not implemented; required for complete parity |
 | SSH remote devboxes | — | ❌ not implemented; required for complete parity |
 | Automations / scheduled tasks | Persistent RRULE cron tasks and bound-conversation heartbeats with common presets, loaded Pi prompt templates, per-automation model/reasoning, local or dedicated-worktree destinations, notifications, run triage, and reopenable sessions. Heartbeats bind main-process-verified session metadata, reuse an existing owning backend when available, and lock the target session while running; worktree cleanup preserves local changes. | 🟡 advanced parity; core thread/destination/model behavior landed, broader Codex product parity remains ongoing |
 
 ## Loop backlog (ordered)
 
-1. Define and land Computer Use, plugin, memory, and image-generation bridges for BYO endpoints.
+1. Define and land Computer Use, memory, and image-generation bridges for BYO endpoints; extend the plugin bridge only when Codex manifest/app/hook compatibility has a verified local use case.
 2. Add SSH remote workspace/devbox support.
 3. Close the remaining Automations product-parity gaps.
 4. Revisit inline legacy `.xls` preview only if the system-app fallback proves insufficient.
 
-Sources: [OpenAI Codex — Automations](https://developers.openai.com/codex/app/automations#thread-automations), [OpenAI — Introducing the Codex app](https://openai.com/index/introducing-the-codex-app/), [SmartScope — Codex desktop April 2026 update](https://smartscope.blog/en/generative-ai/chatgpt/codex-desktop-major-update-april-2026/), [Codex KB — workspace/review pane](https://codex.danielvaughan.com/2026/04/17/codex-app-workspace-pr-review-task-sidebar-artifact-viewer/), [Macaron — Codex review pane guide](https://macaron.im/blog/codex-app-review-pane), [Releasebot — Codex updates July 2026](https://releasebot.io/updates/openai/codex)
+Sources: [OpenAI Codex — Plugin structure](https://developers.openai.com/codex/plugins/build#plugin-structure), [OpenAI Codex — Automations](https://developers.openai.com/codex/app/automations#thread-automations), [OpenAI — Introducing the Codex app](https://openai.com/index/introducing-the-codex-app/), [SmartScope — Codex desktop April 2026 update](https://smartscope.blog/en/generative-ai/chatgpt/codex-desktop-major-update-april-2026/), [Codex KB — workspace/review pane](https://codex.danielvaughan.com/2026/04/17/codex-app-workspace-pr-review-task-sidebar-artifact-viewer/), [Macaron — Codex review pane guide](https://macaron.im/blog/codex-app-review-pane), [Releasebot — Codex updates July 2026](https://releasebot.io/updates/openai/codex)

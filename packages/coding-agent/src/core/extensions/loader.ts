@@ -416,15 +416,23 @@ async function loadExtensionModule(extensionPath: string, cacheToken?: Extension
 		...(isBunBinary ? { virtualModules: VIRTUAL_MODULES, tryNative: false } : { alias: getAliases() }),
 	});
 
-	const module = await jiti.import(extensionPath, { default: true });
-	const factory = module as ExtensionFactory;
+	const loadedModule = await jiti.evalModule(fs.readFileSync(extensionPath, "utf8"), {
+		filename: extensionPath,
+		async: true,
+		forceTranspile: true,
+	});
+	const factory =
+		loadedModule !== null && typeof loadedModule === "object" && "default" in loadedModule
+			? loadedModule.default
+			: loadedModule;
 	if (typeof factory !== "function") {
 		return undefined;
 	}
+	const extensionFactory = factory as ExtensionFactory;
 	if (isCurrentCacheToken(cacheToken)) {
-		extensionCache.set(extensionPath, factory);
+		extensionCache.set(extensionPath, extensionFactory);
 	}
-	return factory;
+	return extensionFactory;
 }
 
 /**

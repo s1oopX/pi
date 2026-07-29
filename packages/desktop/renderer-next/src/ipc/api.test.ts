@@ -9,6 +9,7 @@ import {
   getResources,
   getSessions,
   getSessionTree,
+  managePackage,
   newSession,
   sendPrompt,
   steer,
@@ -205,9 +206,11 @@ describe("settings metadata API", () => {
 
     await expect(getAuthStatus()).resolves.toEqual(authStatuses);
     await expect(getResources({ reload: true })).resolves.toEqual(resources);
+    await managePackage("install", "npm:@example/tools", true);
     expect(requests).toEqual([
       { type: "get_auth_status" },
       { type: "get_resources", reload: true },
+      { type: "manage_package", action: "install", source: "npm:@example/tools", local: true },
     ]);
   });
 });

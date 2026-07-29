@@ -8,6 +8,7 @@ import { DefaultResourceLoader } from "../../../src/core/resource-loader.ts";
 interface TestState {
 	moduleLoads?: number;
 	factoryRuns?: number;
+	version?: string;
 }
 
 function state(): TestState {
@@ -31,6 +32,17 @@ state.moduleLoads = (state.moduleLoads ?? 0) + 1;
 
 export default function () {
 	state.factoryRuns = (state.factoryRuns ?? 0) + 1;
+}
+`,
+		"utf-8",
+	);
+}
+
+function writeVersionedExtension(filePath: string, version: string): void {
+	writeFileSync(
+		filePath,
+		`export default function () {
+  (globalThis.__extensionFactoryCacheTest ??= {}).version = "${version}";
 }
 `,
 		"utf-8",
@@ -90,6 +102,21 @@ describe("extension factory cache", () => {
 
 		expect(state().moduleLoads).toBe(2);
 		expect(state().factoryRuns).toBe(2);
+	});
+
+	it("reloads changed ESM JavaScript extensions", async () => {
+		const { root, cwd } = fixture("esm-reload");
+		const extensionDir = join(root, "extension");
+		const extensionPath = join(extensionDir, "index.js");
+		mkdirSync(extensionDir);
+		writeFileSync(join(extensionDir, "package.json"), '{"type":"module"}\n');
+		writeVersionedExtension(extensionPath, "v1");
+
+		await loadExtensions([extensionPath], cwd);
+		writeVersionedExtension(extensionPath, "v2");
+		await loadExtensions([extensionPath], cwd);
+
+		expect(state().version).toBe("v2");
 	});
 
 	it("clears the cache on resource loader reload", async () => {
