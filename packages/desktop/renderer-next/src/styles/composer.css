@@ -19,34 +19,6 @@
   margin: 0;
 }
 
-.composer-approval-history {
-  width: min(100%, calc(var(--thread-width) + 22px));
-  margin: 0 auto 8px;
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-}
-
-.approval-history-item {
-  padding: 4px 8px;
-  border-left: 2px solid var(--border-strong);
-  color: var(--muted);
-  font-size: calc(11px * var(--font-scale));
-  line-height: 1.35;
-}
-
-.approval-history-item.decision-approved {
-  border-left-color: var(--success);
-}
-
-.approval-history-item.decision-rejected {
-  border-left-color: var(--danger);
-}
-
-.approval-history-item.decision-cancelled {
-  border-left-color: var(--faint);
-}
-
 .composer {
   position: relative;
   display: flex;
@@ -207,7 +179,8 @@
   align-items: center;
   justify-content: space-between;
   gap: 8px;
-  min-height: 34px;
+  min-height: 32px;
+  padding: 0 2px 2px;
 }
 
 .composer-toolbar,
@@ -219,7 +192,7 @@
 }
 
 .composer-toolbar {
-  gap: 2px;
+  gap: 4px;
   flex: 0 1 auto;
 }
 
@@ -234,8 +207,8 @@
 
 .composer-attach-btn {
   display: inline-flex;
-  width: 28px;
-  height: 28px;
+  width: 32px;
+  height: 32px;
   flex-shrink: 0;
   align-items: center;
   justify-content: center;
@@ -263,7 +236,7 @@
 
 .composer-actions {
   flex-shrink: 0;
-  gap: 6px;
+  gap: 4px;
 }
 
 .composer-streaming-mode {
@@ -273,7 +246,7 @@
 
 .composer-streaming-mode select {
   width: 132px;
-  min-height: 30px;
+  min-height: 32px;
   padding: 0 24px 0 9px;
   border: 0;
   border-radius: 999px;
@@ -308,7 +281,7 @@
 .composer-footer-end {
   flex: 1;
   justify-content: flex-end;
-  gap: 6px;
+  gap: 4px;
 }
 
 /* Model picker fades out while a workspace switch loads, keeping its layout
@@ -337,7 +310,7 @@
   display: inline-flex;
   align-items: center;
   gap: 5px;
-  min-height: 28px;
+  min-height: 32px;
   padding: 0 8px;
   border-radius: 999px;
   color: var(--muted);
@@ -501,8 +474,8 @@
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 28px;
-  height: 28px;
+  width: 32px;
+  height: 32px;
   border-radius: 50%;
   background: var(--primary);
   color: var(--primary-contrast);
@@ -531,7 +504,7 @@
   display: inline-flex;
   align-items: center;
   gap: 6px;
-  min-height: 30px;
+  min-height: 32px;
   padding: 0 10px;
   border: 1px solid var(--border);
   border-radius: 999px;
@@ -639,7 +612,7 @@
   display: inline-flex;
   align-items: center;
   gap: 6px;
-  min-height: 30px;
+  min-height: 32px;
   padding: 0 9px;
   border-radius: 999px;
   background: transparent;

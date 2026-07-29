@@ -21,7 +21,6 @@ import { Icon } from "../Icon";
 import { ExtensionWidgets } from "../ExtensionWidgets";
 import { InlineApproval, isInteractiveExtensionUIRequest } from "../Message/InlineApproval";
 import { showToast } from "../Toast";
-import { approvalHistoryLabel } from "../../store/approvalHistory";
 import { isActiveBackendReady } from "../../store/taskRegistry";
 import {
   MAX_ATTACHMENT_COUNT,
@@ -69,7 +68,7 @@ function getActiveToken(text: string, caret: number): { trigger: "/" | "@"; quer
 }
 
 export function Composer() {
-  const { resolvedLanguage, t } = useI18n();
+  const { t } = useI18n();
   const suggestionsListboxId = useId();
   const workspaceCwd = useStore((state) => state.workspaceCwd);
   const sessionId = useStore((state) => state.session?.sessionId ?? null);
@@ -96,7 +95,6 @@ export function Composer() {
   const commands = useStore((s) => s.commands);
   const extensionWidgets = useStore((s) => s.extensionWidgets);
   const extensionUIRequests = useStore((s) => s.extensionUIRequests);
-  const approvalHistory = useStore((s) => s.approvalHistory);
   const modelSupportsImages = useStore((s) => s.session?.model?.input.includes("image") ?? true);
   const composerDraft = useStore((s) => s.composerDraft);
   const setComposerDraft = useStore((s) => s.setComposerDraft);
@@ -444,6 +442,7 @@ export function Composer() {
   }
 
   const isSlashCommand = input.trimStart().startsWith("/");
+  const hasDraft = input.trim().length > 0 || attachments.length > 0;
   const streamingSubmitLabel = isSlashCommand
     ? t("Run command", "运行命令")
     : streamingSubmitMode === "steer"
@@ -462,15 +461,6 @@ export function Composer() {
         <div className="composer-approval-stack">
           {approvalRequests.map((request) => (
             <InlineApproval key={request.id} request={request} />
-          ))}
-        </div>
-      )}
-      {approvalHistory.length > 0 && approvalRequests.length === 0 && (
-        <div className="composer-approval-history" role="group" aria-label={t("Recent approvals", "最近审批")}>
-          {approvalHistory.slice(-3).reverse().map((entry) => (
-            <div className={`approval-history-item decision-${entry.decision}`} key={entry.id} title={entry.method}>
-              {approvalHistoryLabel(entry, resolvedLanguage === "zh-CN" ? "zh-CN" : "en")}
-            </div>
           ))}
         </div>
       )}
@@ -611,29 +601,33 @@ export function Composer() {
           </div>
           <div className="composer-footer-end">
             {!workspaceLoading && <ContextMeter />}
-            <div className={`composer-model-slot ${workspaceLoading ? "loading" : ""}`} inert={workspaceLoading}>
-              <ModelSelector />
-            </div>
+            {!isStreaming && (
+              <div className={`composer-model-slot ${workspaceLoading ? "loading" : ""}`} inert={workspaceLoading}>
+                <ModelSelector />
+              </div>
+            )}
             <div className="composer-actions">
               {isStreaming && (
                 <>
-                  <label className="composer-streaming-mode">
-                    <span className="composer-a11y-description">
-                      {t("Send behavior during the current run", "当前运行期间的发送方式")}
-                    </span>
-                    <select
-                      value={streamingSubmitMode}
-                      onChange={(event) => setStreamingSubmitMode(event.target.value as StreamingSubmitMode)}
-                      title={
-                        streamingSubmitMode === "steer"
-                          ? t("Add guidance before the agent's next model step", "在智能体下一次模型调用前添加引导")
-                          : t("Run this message after the current task finishes", "当前任务完成后运行此消息")
-                      }
-                    >
-                      <option value="follow-up">{t("Queue follow-up", "跟进消息入队")}</option>
-                      <option value="steer">{t("Steer current run", "引导当前运行")}</option>
-                    </select>
-                  </label>
+                  {hasDraft && !isSlashCommand && (
+                    <label className="composer-streaming-mode">
+                      <span className="composer-a11y-description">
+                        {t("Send behavior during the current run", "当前运行期间的发送方式")}
+                      </span>
+                      <select
+                        value={streamingSubmitMode}
+                        onChange={(event) => setStreamingSubmitMode(event.target.value as StreamingSubmitMode)}
+                        title={
+                          streamingSubmitMode === "steer"
+                            ? t("Add guidance before the agent's next model step", "在智能体下一次模型调用前添加引导")
+                            : t("Run this message after the current task finishes", "当前任务完成后运行此消息")
+                        }
+                      >
+                        <option value="follow-up">{t("Queue follow-up", "跟进消息入队")}</option>
+                        <option value="steer">{t("Steer current run", "引导当前运行")}</option>
+                      </select>
+                    </label>
+                  )}
                   <button
                     className="composer-abort-btn"
                     type="button"
@@ -645,36 +639,38 @@ export function Composer() {
                   </button>
                 </>
               )}
-              <button
-                className={`composer-send-btn ${isStreaming ? "queue-mode" : ""}`}
-                type="submit"
-                disabled={
-                  submitting ||
-                  readingAttachments ||
-                  !activeBackendReady ||
-                  isPromptSubmissionBlocked(retrying, compacting) ||
-                  (!input.trim() && attachments.length === 0) ||
-                  (attachments.length > 0 && !modelSupportsImages)
-                }
-                aria-label={isStreaming ? streamingSubmitLabel : t("Send message", "发送消息")}
-                title={
-                  !activeBackendReady
-                    ? t("The agent backend is not ready", "智能体后端尚未就绪")
-                    : retrying
-                      ? t("Wait for the automatic retry to finish or cancel it", "请等待自动重试完成或取消重试")
-                    : compacting
-                      ? t("Wait for compaction to finish", "请等待压缩完成")
-                    : isStreaming
-                      ? t("{action} (Enter)", "{action}（Enter）", { action: streamingSubmitLabel })
-                      : t("Send message (Enter)", "发送消息（Enter）")
-                }
-              >
-                {isStreaming ? (
-                  <Icon name="queue" size={17} strokeWidth={1.8} />
-                ) : (
-                  <Icon name="send" size={17} strokeWidth={2} />
-                )}
-              </button>
+              {(!isStreaming || hasDraft) && (
+                <button
+                  className={`composer-send-btn ${isStreaming ? "queue-mode" : ""}`}
+                  type="submit"
+                  disabled={
+                    submitting ||
+                    readingAttachments ||
+                    !activeBackendReady ||
+                    isPromptSubmissionBlocked(retrying, compacting) ||
+                    !hasDraft ||
+                    (attachments.length > 0 && !modelSupportsImages)
+                  }
+                  aria-label={isStreaming ? streamingSubmitLabel : t("Send message", "发送消息")}
+                  title={
+                    !activeBackendReady
+                      ? t("The agent backend is not ready", "智能体后端尚未就绪")
+                      : retrying
+                        ? t("Wait for the automatic retry to finish or cancel it", "请等待自动重试完成或取消重试")
+                        : compacting
+                          ? t("Wait for compaction to finish", "请等待压缩完成")
+                          : isStreaming
+                            ? t("{action} (Enter)", "{action}（Enter）", { action: streamingSubmitLabel })
+                            : t("Send message (Enter)", "发送消息（Enter）")
+                  }
+                >
+                  {isStreaming ? (
+                    <Icon name="queue" size={17} strokeWidth={1.8} />
+                  ) : (
+                    <Icon name="send" size={17} strokeWidth={2} />
+                  )}
+                </button>
+              )}
             </div>
           </div>
         </div>
