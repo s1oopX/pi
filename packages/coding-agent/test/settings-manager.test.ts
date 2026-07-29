@@ -420,6 +420,22 @@ describe("SettingsManager", () => {
 		});
 	});
 
+	describe("memory settings", () => {
+		it("defaults to disabled and persists global preferences", async () => {
+			const manager = SettingsManager.create(projectDir, agentDir);
+
+			expect(manager.getMemorySettings()).toEqual({ enabled: false, allowToolChats: false });
+			manager.setMemorySettings({ enabled: true, allowToolChats: true });
+			await manager.flush();
+
+			expect(manager.getMemorySettings()).toEqual({ enabled: true, allowToolChats: true });
+			expect(JSON.parse(readFileSync(join(agentDir, "settings.json"), "utf-8")).memory).toEqual({
+				enabled: true,
+				allowToolChats: true,
+			});
+		});
+	});
+
 	describe("shellCommandPrefix", () => {
 		it("should load shellCommandPrefix from settings", () => {
 			const settingsPath = join(agentDir, "settings.json");

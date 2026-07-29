@@ -13,7 +13,13 @@ import type { CompactionResult } from "../../core/compaction/index.ts";
 import type { AuthStatus } from "../../core/provider-composer.ts";
 import type { SessionEntry, SessionInfo } from "../../core/session-manager.ts";
 import type { SourceInfo } from "../../core/source-info.ts";
-import type { RpcForkResultDTO, RpcSessionChangeResultDTO, RpcSessionTreeNodeDTO } from "./rpc-desktop-contract.ts";
+import type {
+	RpcForkResultDTO,
+	RpcMemorySettingsDataDTO,
+	RpcResetMemoriesDataDTO,
+	RpcSessionChangeResultDTO,
+	RpcSessionTreeNodeDTO,
+} from "./rpc-desktop-contract.ts";
 
 export interface RpcGetSessionsOptions {
 	all?: boolean;
@@ -48,6 +54,16 @@ export type RpcCommand =
 
 	// State
 	| { id?: string; type: "get_state" }
+	| { id?: string; type: "get_memory_settings" }
+	| {
+			id?: string;
+			type: "set_memory_settings";
+			enabled?: boolean;
+			allowToolChats?: boolean;
+			useMemories?: boolean;
+			generateMemories?: boolean;
+	  }
+	| { id?: string; type: "reset_memories" }
 
 	// Model
 	| { id?: string; type: "set_model"; provider: string; modelId: string }
@@ -226,6 +242,27 @@ export type RpcResponse =
 
 	// State
 	| { id?: string; type: "response"; command: "get_state"; success: true; data: RpcSessionState }
+	| {
+			id?: string;
+			type: "response";
+			command: "get_memory_settings";
+			success: true;
+			data: RpcMemorySettingsDataDTO;
+	  }
+	| {
+			id?: string;
+			type: "response";
+			command: "set_memory_settings";
+			success: true;
+			data: RpcMemorySettingsDataDTO;
+	  }
+	| {
+			id?: string;
+			type: "response";
+			command: "reset_memories";
+			success: true;
+			data: RpcResetMemoriesDataDTO;
+	  }
 
 	// Model
 	| {

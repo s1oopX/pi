@@ -14,6 +14,7 @@
 import * as crypto from "node:crypto";
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname } from "node:path";
+import { contentText } from "@earendil-works/pi-ai";
 import { type Api, completeSimple, type Model } from "@earendil-works/pi-ai/compat";
 import { ProxyAgent, fetch as undiciFetch } from "undici";
 import { getAgentDir, getModelsPath } from "../../config.ts";
@@ -25,6 +26,18 @@ import type {
 	ReplacedSessionContext,
 	WorkingIndicatorOptions,
 } from "../../core/extensions/index.ts";
+import {
+	appendMemoryContext,
+	collectMemoryConversation,
+	ensureSessionMemorySettings,
+	formatMemoryContext,
+	MEMORY_CONTEXT_CUSTOM_TYPE,
+	MemoryStore,
+	parseMemoryCandidates,
+	sessionHasMemoryContext,
+	sessionHasUserMessage,
+	setSessionMemorySettings,
+} from "../../core/memory-store.ts";
 import {
 	flushRawStdout,
 	takeOverStdout,
@@ -48,6 +61,8 @@ import type {
 	RpcGetCustomModelsDataDTO,
 	RpcGetMessagesDataDTO,
 	RpcGetSessionsDataDTO,
+	RpcMemorySettingsDataDTO,
+	RpcResetMemoriesDataDTO,
 	RpcSessionChangedEventDTO,
 	RpcSessionStateDTO,
 	RpcSessionStatsDTO,
@@ -537,6 +552,8 @@ async function fetchRemoteProviderModels(params: {
 export async function runRpcMode(runtimeHost: AgentSessionRuntime): Promise<never> {
 	takeOverStdout();
 	let session = runtimeHost.session;
+	const memoryStore = new MemoryStore();
+	let memoryGenerationTail: Promise<void> = Promise.resolve();
 	let unsubscribe: (() => void) | undefined;
 	let unsubscribeBackpressure: (() => void) | undefined;
 	let promptPreflightTail: Promise<void> = Promise.resolve();
@@ -563,6 +580,88 @@ export async function runRpcMode(runtimeHost: AgentSessionRuntime): Promise<neve
 
 	const error = (id: string | undefined, command: string, message: string): RpcResponse => {
 		return { id, type: "response", command, success: false, error: message };
+	};
+
+	const ensureMemorySettings = (target = session) => {
+		const preferences = target.settingsManager.getMemorySettings();
+		return ensureSessionMemorySettings(target.sessionManager, {
+			useMemories: preferences.enabled,
+			generateMemories: preferences.enabled,
+		});
+	};
+
+	const hasSessionUserMessage = (target = session): boolean =>
+		sessionHasUserMessage(target.sessionManager) || target.messages.some((message) => message.role === "user");
+
+	const getMemorySettingsData = (target = session): RpcMemorySettingsDataDTO => {
+		const preferences = target.settingsManager.getMemorySettings();
+		const taskSettings = ensureMemorySettings(target);
+		return {
+			enabled: preferences.enabled,
+			allowToolChats: preferences.allowToolChats,
+			useMemories: taskSettings.useMemories,
+			generateMemories: taskSettings.generateMemories,
+			useMemoriesLocked: hasSessionUserMessage(target),
+			count: memoryStore.read().length,
+			path: memoryStore.filePath,
+		};
+	};
+
+	const injectMemoryContext = (target = session): void => {
+		const preferences = target.settingsManager.getMemorySettings();
+		const taskSettings = ensureMemorySettings(target);
+		if (!preferences.enabled || !taskSettings.useMemories) return;
+		if (hasSessionUserMessage(target)) return;
+		const memories = memoryStore.read();
+		if (memories.length === 0 || sessionHasMemoryContext(target.sessionManager)) return;
+		if (!appendMemoryContext(target.sessionManager, memories)) return;
+		target.agent.state.messages.push({
+			role: "custom",
+			customType: MEMORY_CONTEXT_CUSTOM_TYPE,
+			content: formatMemoryContext(memories),
+			display: false,
+			details: { count: memories.length },
+			timestamp: Date.now(),
+		});
+	};
+
+	const generateMemories = async (target: typeof session): Promise<void> => {
+		const preferences = target.settingsManager.getMemorySettings();
+		const taskSettings = ensureMemorySettings(target);
+		if (!preferences.enabled || !taskSettings.generateMemories) return;
+		const model = target.model;
+		if (!model) return;
+		const conversation = collectMemoryConversation(target.sessionManager);
+		if (
+			!conversation.text ||
+			!target.sessionManager
+				.getBranch()
+				.some((entry) => entry.type === "message" && entry.message.role === "assistant")
+		) {
+			return;
+		}
+		if (conversation.toolAssisted && !preferences.allowToolChats) return;
+
+		const response = await target.modelRuntime.completeSimple(model, {
+			messages: [
+				{
+					role: "user",
+					content:
+						"Extract durable user preferences or facts from this conversation. " +
+						"Never store secrets, credentials, one-off tasks, or speculation. " +
+						"Return only a JSON string array; return [] when there is nothing durable.\n\n" +
+						`<conversation>\n${conversation.text}\n</conversation>`,
+					timestamp: Date.now(),
+				},
+			],
+		});
+		if (response.stopReason === "error" || response.stopReason === "aborted") return;
+		const candidates = parseMemoryCandidates(contentText(response.content));
+		if (candidates.length > 0) await memoryStore.merge(candidates, target.sessionId);
+	};
+
+	const queueMemoryGeneration = (target: typeof session): void => {
+		memoryGenerationTail = memoryGenerationTail.then(() => generateMemories(target)).catch(() => {});
 	};
 
 	// Pending extension UI requests waiting for response
@@ -810,6 +909,7 @@ export async function runRpcMode(runtimeHost: AgentSessionRuntime): Promise<neve
 
 	const rebindSession = async (notifySessionChanged = false): Promise<void> => {
 		session = runtimeHost.session;
+		ensureMemorySettings(session);
 		unsubscribe?.();
 		unsubscribeBackpressure?.();
 		unsubscribe = session.subscribe((event) => {
@@ -880,6 +980,7 @@ export async function runRpcMode(runtimeHost: AgentSessionRuntime): Promise<neve
 		unsubscribe = session.subscribe((event) => {
 			output(event);
 			if (event.type === "agent_settled") {
+				queueMemoryGeneration(session);
 				void checkShutdownRequested();
 			}
 		});
@@ -928,6 +1029,7 @@ export async function runRpcMode(runtimeHost: AgentSessionRuntime): Promise<neve
 					await previousPrompt;
 					let preflightSucceeded = false;
 					try {
+						injectMemoryContext(session);
 						await session.prompt(command.message, {
 							images: command.images,
 							streamingBehavior: command.streamingBehavior,
@@ -1017,6 +1119,58 @@ export async function runRpcMode(runtimeHost: AgentSessionRuntime): Promise<neve
 					projectTrustRequired: hasTrustRequiringProjectResources(session.sessionManager.getCwd()),
 				} satisfies RpcSessionState satisfies RpcSessionStateDTO;
 				return success(id, "get_state", state);
+			}
+
+			case "get_memory_settings": {
+				return success(id, "get_memory_settings", getMemorySettingsData());
+			}
+
+			case "set_memory_settings": {
+				if (command.enabled !== undefined && typeof command.enabled !== "boolean") {
+					return error(id, "set_memory_settings", "enabled must be a boolean");
+				}
+				if (command.allowToolChats !== undefined && typeof command.allowToolChats !== "boolean") {
+					return error(id, "set_memory_settings", "allowToolChats must be a boolean");
+				}
+				if (command.useMemories !== undefined && typeof command.useMemories !== "boolean") {
+					return error(id, "set_memory_settings", "useMemories must be a boolean");
+				}
+				if (command.generateMemories !== undefined && typeof command.generateMemories !== "boolean") {
+					return error(id, "set_memory_settings", "generateMemories must be a boolean");
+				}
+
+				const currentTaskSettings = ensureMemorySettings();
+				if (
+					command.useMemories !== undefined &&
+					command.useMemories !== currentTaskSettings.useMemories &&
+					hasSessionUserMessage(session)
+				) {
+					return error(id, "set_memory_settings", "Use memories cannot change after the conversation starts");
+				}
+
+				if (command.enabled !== undefined || command.allowToolChats !== undefined) {
+					session.settingsManager.setMemorySettings({
+						enabled: command.enabled,
+						allowToolChats: command.allowToolChats,
+					});
+				}
+				setSessionMemorySettings(session.sessionManager, {
+					useMemories: command.useMemories ?? currentTaskSettings.useMemories,
+					generateMemories: command.generateMemories ?? currentTaskSettings.generateMemories,
+				});
+				return success(id, "set_memory_settings", getMemorySettingsData());
+			}
+
+			case "reset_memories": {
+				if (session.isStreaming) {
+					return error(id, "reset_memories", "Wait for the current response to finish before resetting memories");
+				}
+				await memoryGenerationTail;
+				await memoryStore.reset();
+				return success(id, "reset_memories", {
+					count: 0,
+					path: memoryStore.filePath,
+				} satisfies RpcResetMemoriesDataDTO);
 			}
 
 			// =================================================================

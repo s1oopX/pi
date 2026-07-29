@@ -67,6 +67,7 @@ export type SettingsRoute =
   | "custom-providers"
   | "account"
   | "agent-general"
+  | "memory"
   | "appearance"
   | "shortcuts"
   | "mirror-sources"

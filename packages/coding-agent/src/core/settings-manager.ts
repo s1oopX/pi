@@ -59,6 +59,11 @@ export interface WarningSettings {
 	anthropicExtraUsage?: boolean; // default: true
 }
 
+export interface MemoryPreferenceSettings {
+	enabled?: boolean; // default: false
+	allowToolChats?: boolean; // default: false
+}
+
 export type DefaultProjectTrust = "ask" | "always" | "never";
 
 export type TransportSetting = Transport;
@@ -122,6 +127,7 @@ export interface Settings {
 	showHardwareCursor?: boolean; // Show terminal cursor while still positioning it for IME
 	markdown?: MarkdownSettings;
 	warnings?: WarningSettings;
+	memory?: MemoryPreferenceSettings;
 	sessionDir?: string; // Custom session storage directory (same format as --session-dir CLI flag)
 	httpProxy?: string; // Proxy URL applied as HTTP_PROXY and HTTPS_PROXY for Pi-managed HTTP clients
 	httpIdleTimeoutMs?: number; // HTTP header/body idle timeout in milliseconds; 0 disables it
@@ -1230,5 +1236,25 @@ export class SettingsManager {
 		this.globalSettings.warnings = { ...warnings };
 		this.markModified("warnings");
 		this.save();
+	}
+
+	getMemorySettings(): { enabled: boolean; allowToolChats: boolean } {
+		return {
+			enabled: this.settings.memory?.enabled ?? false,
+			allowToolChats: this.settings.memory?.allowToolChats ?? false,
+		};
+	}
+
+	setMemorySettings(settings: Partial<MemoryPreferenceSettings>): void {
+		if (!this.globalSettings.memory) this.globalSettings.memory = {};
+		if (settings.enabled !== undefined) {
+			this.globalSettings.memory.enabled = settings.enabled;
+			this.markModified("memory", "enabled");
+		}
+		if (settings.allowToolChats !== undefined) {
+			this.globalSettings.memory.allowToolChats = settings.allowToolChats;
+			this.markModified("memory", "allowToolChats");
+		}
+		if (settings.enabled !== undefined || settings.allowToolChats !== undefined) this.save();
 	}
 }

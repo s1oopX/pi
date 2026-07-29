@@ -392,6 +392,16 @@ export interface RpcGetAuthStatusDataDTO {
 	providers: Record<string, RpcAuthStatusDTO>;
 }
 
+export interface RpcMemorySettingsDataDTO {
+	enabled: boolean;
+	allowToolChats: boolean;
+	useMemories: boolean;
+	generateMemories: boolean;
+	useMemoriesLocked: boolean;
+	count: number;
+	path: string;
+}
+
 export interface RpcGetCustomModelsDataDTO {
 	path: string;
 	providers: Record<string, RpcCustomModelProviderDTO>;
@@ -399,6 +409,11 @@ export interface RpcGetCustomModelsDataDTO {
 
 export interface RpcFetchProviderModelsDataDTO {
 	models: Array<{ id: string; name?: string }>;
+}
+
+export interface RpcResetMemoriesDataDTO {
+	count: number;
+	path: string;
 }
 
 export interface RpcGetSessionsDataDTO {

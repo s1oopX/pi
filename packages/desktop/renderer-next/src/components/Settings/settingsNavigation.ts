@@ -46,6 +46,14 @@ const SETTINGS_NAVIGATION: SettingsNavigationDefinition[] = [
     },
   },
   {
+    route: "memory",
+    label: { en: "Memory", zhCN: "记忆" },
+    keywords: {
+      en: "personalization remember memories generation reset tool assisted chat",
+      zhCN: "个性化 记住 记忆 生成 重置 工具辅助 对话",
+    },
+  },
+  {
     route: "appearance",
     label: { en: "Appearance", zhCN: "外观" },
     keywords: {

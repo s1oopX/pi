@@ -4,6 +4,7 @@ import {
   followUp,
   forkSession,
   getAuthStatus,
+  getMemorySettings,
   getPendingExtensionUIRequests,
   getForkMessages,
   getResources,
@@ -12,10 +13,12 @@ import {
   managePackage,
   newSession,
   sendPrompt,
+  resetMemories,
+  setMemorySettings,
   steer,
   switchSession,
 } from "./api";
-import type { BackendCommand, ImageContent, SessionListPage, SessionTreeData } from "./types";
+import type { BackendCommand, ImageContent, MemorySettings, SessionListPage, SessionTreeData } from "./types";
 
 const image: ImageContent = { type: "image", data: "AQID", mimeType: "image/png" };
 
@@ -211,6 +214,39 @@ describe("settings metadata API", () => {
       { type: "get_auth_status" },
       { type: "get_resources", reload: true },
       { type: "manage_package", action: "install", source: "npm:@example/tools", local: true },
+    ]);
+  });
+
+  it("forwards memory settings and reset commands", async () => {
+    const requests: BackendCommand[] = [];
+    const settings: MemorySettings = {
+      enabled: true,
+      allowToolChats: false,
+      useMemories: true,
+      generateMemories: true,
+      useMemoriesLocked: false,
+      count: 2,
+      path: "C:/memories.json",
+    };
+    Object.defineProperty(globalThis, "window", {
+      configurable: true,
+      value: {
+        piDesktop: {
+          request(command: BackendCommand) {
+            requests.push(command);
+            return Promise.resolve(command.type === "reset_memories" ? { count: 0, path: settings.path } : settings);
+          },
+        },
+      },
+    });
+
+    await expect(getMemorySettings()).resolves.toEqual(settings);
+    await expect(setMemorySettings({ enabled: false, useMemories: false })).resolves.toEqual(settings);
+    await expect(resetMemories()).resolves.toEqual({ count: 0, path: settings.path });
+    expect(requests).toEqual([
+      { type: "get_memory_settings" },
+      { type: "set_memory_settings", enabled: false, useMemories: false },
+      { type: "reset_memories" },
     ]);
   });
 });

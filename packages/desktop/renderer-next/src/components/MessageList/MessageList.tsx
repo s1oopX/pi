@@ -117,6 +117,7 @@ export function MessageList() {
         suppressError: retryErrorDisplay.suppressedErrorIndices.has(originalIndex),
       }))
       .filter((row) =>
+        !(row.message.role === "custom" && row.message.customType === "pi.memory.context") &&
         !hiddenToolResultIndices.has(row.originalIndex) &&
         !retryErrorDisplay.hiddenIndices.has(row.originalIndex)
       );

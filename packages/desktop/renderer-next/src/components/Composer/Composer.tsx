@@ -100,6 +100,7 @@ export function Composer() {
   const modelSupportsImages = useStore((s) => s.session?.model?.input.includes("image") ?? true);
   const composerDraft = useStore((s) => s.composerDraft);
   const setComposerDraft = useStore((s) => s.setComposerDraft);
+  const openSettings = useStore((s) => s.openSettings);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const fileRequestSeq = useRef(0);
@@ -191,13 +192,16 @@ export function Composer() {
     if (!token) return [];
     if (token.trigger === "/") {
       const q = token.query.toLowerCase();
-      return commands
+      const localCommands = [
+        { name: "memories", description: t("Open memory settings", "打开记忆设置") },
+      ];
+      return [...localCommands, ...commands]
         .filter((c) => c.name.toLowerCase().includes(q))
         .slice(0, 30)
         .map((c) => ({ kind: "command", value: `/${c.name}`, label: c.name, description: c.description }));
     }
     return fileMatches.map((f) => ({ kind: "file", value: f, label: f }));
-  }, [token?.trigger, token?.query, commands, fileMatches]);
+  }, [token?.trigger, token?.query, commands, fileMatches, t]);
 
   useEffect(() => {
     setMenuOpen(suggestions.length > 0);
@@ -339,6 +343,12 @@ export function Composer() {
 
   async function handleSubmit(e?: FormEvent) {
     e?.preventDefault();
+    if (input.trim() === "/memories" && attachments.length === 0 && !submitting && !readingAttachments) {
+      clearComposerWorkspaceDraft(workspaceCwd, sessionId);
+      setInput("");
+      openSettings("memory");
+      return;
+    }
     if (!activeBackendReady) {
       showToast(
         backendStatus.error

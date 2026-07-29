@@ -8,6 +8,7 @@ import { AgentSettings } from "./AgentSettings";
 import { AppearanceSettings } from "./AppearanceSettings";
 import { CustomProviderSettings } from "./CustomProviderSettings";
 import { MirrorSourcesSettings } from "./MirrorSourcesSettings";
+import { MemorySettings } from "./MemorySettings";
 import { ModelSettings } from "./ModelSettings";
 import { ResourcesSettings } from "./ResourcesSettings";
 import { ShortcutsSettings } from "./ShortcutsSettings";
@@ -189,6 +190,7 @@ export function Settings() {
               )}
               {settingsRoute === "account" && <AccountSettings />}
               {settingsRoute === "agent-general" && <AgentSettings />}
+              {settingsRoute === "memory" && <MemorySettings />}
               {settingsRoute === "appearance" && <AppearanceSettings />}
               {settingsRoute === "shortcuts" && <ShortcutsSettings />}
               {settingsRoute === "mirror-sources" && <MirrorSourcesSettings />}

@@ -29,14 +29,14 @@ continuous alignment loop; one row lands per iteration.
 | Artifact viewer (PDF/spreadsheet outputs) | Inline text, Markdown, HTML, image, PDF, CSV, TSV, and XLSX preview with worksheet selection, truncation notices, source toggle where applicable, refresh, open, reveal, and copy-path actions; legacy `.xls` opens in the system app | ✅ core preview; legacy `.xls` delegated |
 | Computer use | — | ❌ not implemented; required for complete parity |
 | Installable plugin bundles | Settings → Resources installs, updates, lists, and removes npm/Git/local Pi packages at user or project scope, then hot-reloads bundled extensions, skills, prompts, and themes with diagnostics. Install/update is explicitly confirmed because package code has full system access. | 🟡 core bridge; Pi package format is supported, not Codex plugin manifests, apps, hooks, or marketplace metadata |
-| Memory | — | ❌ not implemented; required for complete parity |
+| Memory | Settings → Memory: local bounded memory file, global opt-in, tool-chat generation control, per-chat Use/Generate switches, reset, and `/memories` shortcut | 🟡 local bridge; Codex account/cloud synchronization is not included |
 | Image generation | — | ❌ not implemented; required for complete parity |
 | SSH remote devboxes | — | ❌ not implemented; required for complete parity |
 | Automations / scheduled tasks | Persistent RRULE cron tasks and bound-conversation heartbeats with common presets, loaded Pi prompt templates, per-automation model/reasoning, local or dedicated-worktree destinations, notifications, run triage, and reopenable sessions. Heartbeats bind main-process-verified session metadata, reuse an existing owning backend when available, and lock the target session while running; worktree cleanup preserves local changes. | 🟡 advanced parity; core thread/destination/model behavior landed, broader Codex product parity remains ongoing |
 
 ## Loop backlog (ordered)
 
-1. Define and land Computer Use, memory, and image-generation bridges for BYO endpoints; extend the plugin bridge only when Codex manifest/app/hook compatibility has a verified local use case.
+1. Define and land Computer Use and image-generation bridges for BYO endpoints; extend the plugin bridge only when Codex manifest/app/hook compatibility has a verified local use case.
 2. Add SSH remote workspace/devbox support.
 3. Close the remaining Automations product-parity gaps.
 4. Revisit inline legacy `.xls` preview only if the system-app fallback proves insufficient.

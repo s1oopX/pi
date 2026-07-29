@@ -23,6 +23,7 @@ import type {
   GitSwitchResult,
   ImageContent,
   LogEntry,
+  MemorySettings,
   Message,
   MirrorApplyResult,
   MirrorManager,
@@ -32,6 +33,7 @@ import type {
   ProjectTrustEntryUpdate,
   QueueMode,
   ResourcesData,
+  ResetMemoriesResult,
   SessionListPage,
   SessionState,
   SessionStats,
@@ -401,6 +403,18 @@ export async function getState(): Promise<SessionState> {
 export async function getMessages(): Promise<Message[]> {
   const result = (await backendRequest({ type: "get_messages" })) as { messages: Message[] };
   return result.messages ?? [];
+}
+
+export async function getMemorySettings(): Promise<MemorySettings> {
+  return (await backendRequest({ type: "get_memory_settings" })) as MemorySettings;
+}
+
+export async function setMemorySettings(settings: Partial<Omit<MemorySettings, "count" | "path" | "useMemoriesLocked">>): Promise<MemorySettings> {
+  return (await backendRequest({ type: "set_memory_settings", ...settings })) as MemorySettings;
+}
+
+export async function resetMemories(): Promise<ResetMemoriesResult> {
+  return (await backendRequest({ type: "reset_memories" })) as ResetMemoriesResult;
 }
 
 // --- Models ---

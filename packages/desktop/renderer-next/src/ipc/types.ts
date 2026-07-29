@@ -17,7 +17,9 @@ import type {
   RpcGetResourcesDataDTO,
   RpcGetSessionsDataDTO,
   RpcImageContentDTO,
+  RpcMemorySettingsDataDTO,
   RpcModelDTO,
+  RpcResetMemoriesDataDTO,
   RpcSessionInfoDTO,
   RpcSessionStateDTO,
   RpcSessionStatsDTO,
@@ -38,6 +40,22 @@ export interface GetStateCommand {
 
 export interface GetMessagesCommand {
   type: "get_messages";
+}
+
+export interface GetMemorySettingsCommand {
+  type: "get_memory_settings";
+}
+
+export interface SetMemorySettingsCommand {
+  type: "set_memory_settings";
+  enabled?: boolean;
+  allowToolChats?: boolean;
+  useMemories?: boolean;
+  generateMemories?: boolean;
+}
+
+export interface ResetMemoriesCommand {
+  type: "reset_memories";
 }
 
 export interface GetAvailableModelsCommand {
@@ -357,6 +375,9 @@ export interface ProjectTrustEntryUpdate {
 export type BackendCommand =
   | GetStateCommand
   | GetMessagesCommand
+  | GetMemorySettingsCommand
+  | SetMemorySettingsCommand
+  | ResetMemoriesCommand
   | GetAvailableModelsCommand
   | GetCustomModelsCommand
   | GetSessionStatsCommand
@@ -430,6 +451,8 @@ export type ExtensionUIRequestClosedEvent = RpcExtensionUIRequestClosedEventDTO;
 // Message.content is a content-block array, not a string).
 
 export type Message = RpcAgentMessageDTO;
+export type MemorySettings = RpcMemorySettingsDataDTO;
+export type ResetMemoriesResult = RpcResetMemoriesDataDTO;
 export type ImageContent = RpcImageContentDTO;
 export type ToolCall = RpcToolCallDTO;
 export type AssistantContentBlock = RpcAssistantContentBlockDTO;
