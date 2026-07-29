@@ -9,12 +9,20 @@ test("rejects generated catalogs and official OAuth implementations from the Stu
 		"packages/ai/dist/models.generated.js",
 		"packages/ai/dist/providers/openrouter.models.js",
 		"packages/ai/dist/image-models.generated.js",
+		"packages/ai/src/compat.ts",
 		"packages/ai/dist/compat.js",
 		"packages/ai/dist/utils/oauth/openai-codex.js",
 		"packages/ai/dist/api/github-copilot-headers.js",
 	]);
-	assert.equal(forbidden.length, 6);
-	assert.deepEqual(findForbiddenBackendInputs(["packages/ai/dist/custom-compat.js", "packages/ai/dist/custom-oauth.js"]), []);
+	assert.equal(forbidden.length, 7);
+	assert.deepEqual(
+		findForbiddenBackendInputs([
+			"packages/ai/dist/custom-compat.js",
+			"packages/ai/dist/custom-oauth.js",
+			"node_modules/zod/v4/classic/compat.js",
+		]),
+		[],
+	);
 });
 
 test("desktop package builds and ships only its catalog-free backend", () => {

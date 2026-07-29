@@ -2,7 +2,10 @@ const forbiddenBackendInputs = [
 	{ label: "generated model aggregator", pattern: /(^|[/\\])models\.generated\.[cm]?[jt]s$/i },
 	{ label: "generated provider catalog", pattern: /(^|[/\\])providers[/\\][^/\\]+\.models\.[cm]?[jt]s$/i },
 	{ label: "generated image catalog", pattern: /(^|[/\\])image-models\.generated\.[cm]?[jt]s$/i },
-	{ label: "full compatibility entrypoint", pattern: /(^|[/\\])compat\.[cm]?[jt]s$/i },
+	{
+		label: "full compatibility entrypoint",
+		pattern: /(^|[/\\])packages[/\\]ai[/\\](src|dist)[/\\]compat\.[cm]?[jt]s$/i,
+	},
 	{
 		label: "official OAuth implementation",
 		pattern: /[/\\]utils[/\\]oauth[/\\](anthropic|github-copilot|openai-codex)\.[cm]?[jt]s$/i,
