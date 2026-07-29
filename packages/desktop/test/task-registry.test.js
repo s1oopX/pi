@@ -89,6 +89,18 @@ test("refuses a cwd already claimed by a running task or the primary workspace",
 	assert.equal(registry.isClaimed(poolCwd("free")), false);
 });
 
+test("compares SSH workspace URIs without applying local Windows path casing", () => {
+	const { registry } = createFixture();
+	const remote = "ssh://11111111-1111-4111-8111-111111111111/work/Repo";
+	registry.create(remote);
+	assert.equal(registry.isClaimed(remote), true);
+	assert.equal(
+		registry.isClaimed("ssh://11111111-1111-4111-8111-111111111111/work/repo"),
+		false,
+		"POSIX remote paths remain case-sensitive on Windows",
+	);
+});
+
 test("get resolves the primary by default, entries by id, and throws on unknown ids", () => {
 	const { registry, primary, created } = createFixture();
 	registry.create(poolCwd("a"));

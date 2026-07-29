@@ -1,5 +1,6 @@
 import { app, BrowserWindow, clipboard, dialog, ipcMain, nativeTheme, Notification, screen, shell } from "electron";
 import { execFile, spawn } from "node:child_process";
+import { randomUUID } from "node:crypto";
 import { existsSync, mkdirSync, readFileSync, readdirSync, statSync, writeFileSync } from "node:fs";
 import { copyFile, readFile, writeFile } from "node:fs/promises";
 import { basename, dirname, join, relative, resolve } from "node:path";
@@ -49,6 +50,8 @@ import {
 	createSshLaunchSpec,
 	createSshTestSpec,
 	createSshTrashSpec,
+	createSshWorktreeRemoveSpec,
+	createSshWorktreeSpec,
 	createSshWorkspaceUri,
 	loadSshConnections,
 	normalizeSshConnection,
@@ -119,7 +122,8 @@ const taskRegistry = createTaskRegistry({
 		new BackendHandle({
 			id,
 			getCwd: () => cwd,
-			getBackendPath,
+			getBackendPath: () => getBackendDisplayPath(cwd),
+			getLaunchSpec: () => getBackendLaunchSpec(cwd),
 			sendToRenderer,
 			// No onSessionChanged: a pool task's session must never rewrite the
 			// primary workspace or its persisted state.
@@ -159,25 +163,40 @@ function getRemoteBridgeSource() {
 	return remoteBridgeSource;
 }
 
-function getActiveSshWorkspace() {
-	if (!backendCwd.startsWith("ssh://")) return null;
-	return resolveSshWorkspace(backendCwd, loadSshConnections(getSshConnectionsPath()));
+/** @param {string} cwd */
+function resolveSshCwd(cwd) {
+	if (!cwd.startsWith("ssh://")) return null;
+	return resolveSshWorkspace(cwd, loadSshConnections(getSshConnectionsPath()));
 }
 
-function getPrimaryBackendPath() {
+function getActiveSshWorkspace() {
+	return resolveSshCwd(backendCwd);
+}
+
+/** @param {string} cwd */
+function getBackendDisplayPath(cwd) {
 	try {
-		const remote = getActiveSshWorkspace();
+		const remote = resolveSshCwd(cwd);
 		return remote ? `ssh:${remote.connection.name}` : getBackendPath();
 	} catch {
 		return "ssh";
 	}
 }
 
-function getPrimaryLaunchSpec() {
-	const remote = getActiveSshWorkspace();
+/** @param {string} cwd */
+function getBackendLaunchSpec(cwd) {
+	const remote = resolveSshCwd(cwd);
 	return remote
 		? createSshLaunchSpec(remote.connection, remote.remotePath, getRemoteBridgeSource())
 		: undefined;
+}
+
+function getPrimaryBackendPath() {
+	return getBackendDisplayPath(backendCwd);
+}
+
+function getPrimaryLaunchSpec() {
+	return getBackendLaunchSpec(backendCwd);
 }
 
 /** @param {string} path */
@@ -649,6 +668,78 @@ function testSshConnection(connection) {
 			finish(new Error("SSH connection test timed out after 15 seconds"));
 		}, 15_000);
 	});
+}
+
+/**
+ * @param {{ command: string, args: string[], cwd: string }} spec
+ * @param {string} label
+ * @returns {Promise<void>}
+ */
+function runSshSpec(spec, label) {
+	return new Promise((resolvePromise, reject) => {
+		execFile(
+			spec.command,
+			spec.args,
+			{
+				cwd: spec.cwd,
+				encoding: "utf8",
+				maxBuffer: 1024 * 1024,
+				shell: false,
+				timeout: 30_000,
+				windowsHide: true,
+			},
+			(error, stdout, stderr) => {
+				if (!error) {
+					resolvePromise();
+					return;
+				}
+				const detail = (stderr.trim() || stdout.trim() || error.message).slice(0, 500);
+				reject(new Error(`${label}: ${detail}`));
+			},
+		);
+	});
+}
+
+/** @param {NonNullable<ReturnType<typeof resolveSshCwd>>} remote */
+async function createRemoteTaskWorktree(remote) {
+	const repository = await isGitRepository(remote.remotePath, {
+		execFileImpl: createRemoteCliExecFile(remote),
+		timeoutMs: 30_000,
+	});
+	if (!repository) {
+		throw new Error("That remote folder is already running. Parallel tasks need a Git repository for worktree isolation.");
+	}
+	const name = `remote-${randomUUID().replaceAll("-", "").slice(0, 12)}`;
+	const spec = createSshWorktreeSpec(remote.connection, remote.remotePath, name);
+	await runSshSpec(spec, "Could not create the remote task worktree");
+	return { branch: spec.branch, worktreePath: spec.worktreePath };
+}
+
+/** @param {string} sourceRepo @param {string} worktreePath */
+async function removeRegisteredTaskWorktree(sourceRepo, worktreePath) {
+	let sourceRemote;
+	let worktreeRemote;
+	try {
+		sourceRemote = resolveSshCwd(sourceRepo);
+		worktreeRemote = resolveSshCwd(worktreePath);
+	} catch (error) {
+		return { removed: false, reason: error instanceof Error ? error.message : String(error) };
+	}
+	if (!sourceRemote && !worktreeRemote) return removeTaskWorktree(sourceRepo, worktreePath);
+	if (!sourceRemote || !worktreeRemote || sourceRemote.connection.id !== worktreeRemote.connection.id) {
+		return { removed: false, reason: "Remote worktree metadata does not match its source connection" };
+	}
+	try {
+		const spec = createSshWorktreeRemoveSpec(
+			sourceRemote.connection,
+			sourceRemote.remotePath,
+			worktreeRemote.remotePath,
+		);
+		await runSshSpec(spec, "Could not remove the remote task worktree");
+		return { removed: true };
+	} catch (error) {
+		return { removed: false, reason: error instanceof Error ? error.message : String(error) };
+	}
 }
 
 /**
@@ -1372,10 +1463,10 @@ async function stopTaskAndCleanup(taskId) {
 	const child = entry.handle.child;
 	const result = taskRegistry.stop(entry.taskId);
 	if (entry.meta?.worktreePath && entry.meta?.sourceRepo) {
-		// The backend process holds the worktree cwd open on Windows; give it a
-		// moment to exit, then remove — never forced, a dirty worktree stays.
+		// Give the backend a moment to release its cwd, then remove through Git —
+		// never forced, so a dirty local or remote worktree stays.
 		await waitForChildExit(child, 5000);
-		const removal = await removeTaskWorktree(entry.meta.sourceRepo, entry.meta.worktreePath);
+		const removal = await removeRegisteredTaskWorktree(entry.meta.sourceRepo, entry.meta.worktreePath);
 		return {
 			...result,
 			worktreeRemoved: removal.removed,
@@ -1440,6 +1531,26 @@ function waitForChildExit(child, timeoutMs) {
 
 ipcMain.handle("task:create", async (_event, cwd) => {
 	const nextCwd = String(cwd ?? "");
+	const remote = resolveSshCwd(nextCwd);
+	if (remote) {
+		if (!taskRegistry.isClaimed(nextCwd)) return taskRegistry.create(nextCwd);
+		taskRegistry.assertCapacity();
+		const worktree = await createRemoteTaskWorktree(remote);
+		const worktreeCwd = createSshWorkspaceUri(remote.connection.id, worktree.worktreePath);
+		try {
+			return taskRegistry.create(worktreeCwd, {
+				branch: worktree.branch,
+				sourceRepo: nextCwd,
+				worktreePath: worktreeCwd,
+			});
+		} catch (error) {
+			const cleanup = await removeRegisteredTaskWorktree(nextCwd, worktreeCwd);
+			if (!cleanup.removed) {
+				getFileLog().append("warn", "tasks", `Could not clean up rejected remote worktree: ${cleanup.reason}`);
+			}
+			throw error;
+		}
+	}
 	if (!nextCwd || !existsSync(nextCwd) || !statSync(nextCwd).isDirectory()) {
 		throw new Error(`Workspace not found: ${nextCwd}`);
 	}
@@ -1754,8 +1865,9 @@ ipcMain.handle("ssh:delete", (_event, connectionId) => {
 	const id = String(connectionId ?? "").trim().toLowerCase();
 	const current = loadSshConnections(getSshConnectionsPath());
 	if (!current.some((connection) => connection.id === id)) throw new Error(`SSH connection not found: ${id}`);
-	if (getActiveSshWorkspace()?.connection.id === id) {
-		throw new Error("Open a local workspace before deleting the active SSH connection");
+	const inUse = taskRegistry.list().some(({ cwd }) => resolveSshCwd(cwd)?.connection.id === id);
+	if (inUse) {
+		throw new Error("Stop its tasks and open a local workspace before deleting this SSH connection");
 	}
 	const connections = current.filter((connection) => connection.id !== id);
 	saveSshConnections(getSshConnectionsPath(), connections);
@@ -1862,7 +1974,7 @@ function resolveTaskCwd(taskId) {
 /** @param {unknown} taskId */
 function resolveTaskWorkspace(taskId) {
 	const cwd = resolveTaskCwd(taskId);
-	return { cwd, remote: cwd === backendCwd ? getActiveSshWorkspace() : null };
+	return { cwd, remote: resolveSshCwd(cwd) };
 }
 
 /** @param {NonNullable<ReturnType<typeof getActiveSshWorkspace>>} remote */

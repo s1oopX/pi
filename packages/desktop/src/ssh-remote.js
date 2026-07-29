@@ -6,6 +6,7 @@ import { dirname, join, posix } from "node:path";
 const STORE_VERSION = 1;
 const SSH_TOKEN = /^[^\s\u0000-\u001f\u007f]+$/u;
 const SSH_ID = /^[a-z0-9._-]{1,128}$/u;
+const SSH_WORKTREE_NAME = /^[a-z0-9][a-z0-9._-]{0,63}$/u;
 const SSH_FILE_METADATA_PREFIX = "PI_STUDIO_FILE_V1";
 
 /**
@@ -70,6 +71,15 @@ function normalizePort(value) {
 		throw new Error("SSH port must be an integer from 1 to 65535");
 	}
 	return port;
+}
+
+/** @param {unknown} value */
+function normalizeSshWorktreeName(value) {
+	const name = text(value, "Remote worktree name", { max: 64 }).toLowerCase();
+	if (!SSH_WORKTREE_NAME.test(name) || name.includes("..") || name.endsWith(".") || name.endsWith(".lock")) {
+		throw new Error("Remote worktree name is invalid");
+	}
+	return name;
 }
 
 /** @param {unknown} value @param {boolean} allowNewId @returns {SshConnection} */
@@ -244,7 +254,9 @@ export function createSshLaunchSpec(connectionValue, remotePath, bridgeSource) {
 	const remoteCommand = [
 		"umask 077",
 		'mkdir -p "$HOME/.pi/studio"',
-		`dd of=${bridgePath} bs=1 count=${prefix.length} 2>/dev/null`,
+		'bridge_tmp="$HOME/.pi/studio/remote-bridge.$$.tmp"',
+		`dd of="$bridge_tmp" bs=1 count=${prefix.length} 2>/dev/null`,
+		`mv -f -- "$bridge_tmp" ${bridgePath}`,
 		`cd ${remotePathExpression(remotePath)}`,
 		`exec ${executableExpression(connection.piCommand)} --mode rpc --no-extensions -e ${bridgePath}`,
 	].join(" && ");
@@ -275,6 +287,70 @@ export function createSshTestSpec(connectionValue) {
  */
 export function createSshGitSpec(connectionValue, remotePath, args) {
 	return createSshCliSpec(connectionValue, remotePath, "git", args);
+}
+
+/**
+ * Create one managed remote worktree on a fresh task branch. The generated
+ * name is supplied by the trusted main process and validated before it reaches
+ * the fixed remote shell command.
+ * @param {unknown} connectionValue
+ * @param {string} remotePath
+ * @param {unknown} nameValue
+ */
+export function createSshWorktreeSpec(connectionValue, remotePath, nameValue) {
+	const connection = normalizeConnection(connectionValue, false);
+	const sourcePath = normalizeConnection({ ...connection, remotePath }, false).remotePath;
+	const name = normalizeSshWorktreeName(nameValue);
+	const branch = `task/${name}`;
+	const worktreePath = `~/.pi/studio/worktrees/${name}`;
+	const remoteCommand = [
+		"umask 077",
+		"export LANG=C LC_ALL=C GIT_OPTIONAL_LOCKS=0 GIT_TERMINAL_PROMPT=0",
+		`cd ${remotePathExpression(sourcePath)}`,
+		'worktree_root="$HOME/.pi/studio/worktrees"',
+		`worktree_path="$worktree_root"/${quotePosixShell(name)}`,
+		'mkdir -p "$worktree_root"',
+		"git worktree prune",
+		`if git show-ref --verify --quiet ${quotePosixShell(`refs/heads/${branch}`)}; then echo "Remote task branch already exists" >&2; exit 65; fi`,
+		'if [ -e "$worktree_path" ]; then echo "Remote task worktree already exists" >&2; exit 65; fi',
+		`exec git worktree add -b ${quotePosixShell(branch)} "$worktree_path"`,
+	].join(" && ");
+	return {
+		command: "ssh",
+		args: [...sshArgs(connection, true), remoteCommand],
+		cwd: homedir(),
+		branch,
+		worktreePath,
+	};
+}
+
+/**
+ * Remove a clean managed remote worktree through its source repository. Git
+ * refuses dirty worktrees, preserving user changes like the local task flow.
+ * @param {unknown} connectionValue
+ * @param {string} sourceRemotePath
+ * @param {unknown} worktreePathValue
+ */
+export function createSshWorktreeRemoveSpec(connectionValue, sourceRemotePath, worktreePathValue) {
+	const connection = normalizeConnection(connectionValue, false);
+	const sourcePath = normalizeConnection({ ...connection, remotePath: sourceRemotePath }, false).remotePath;
+	const worktreePath = text(worktreePathValue, "Remote worktree path");
+	const prefix = "~/.pi/studio/worktrees/";
+	const name = worktreePath.startsWith(prefix) ? worktreePath.slice(prefix.length) : "";
+	if (!name || worktreePath !== `${prefix}${normalizeSshWorktreeName(name)}`) {
+		throw new Error("Remote worktree path is outside Pi Studio's managed folder");
+	}
+	const remoteCommand = [
+		"export LANG=C LC_ALL=C GIT_OPTIONAL_LOCKS=0 GIT_TERMINAL_PROMPT=0",
+		`cd ${remotePathExpression(sourcePath)}`,
+		`exec git worktree remove ${remotePathExpression(worktreePath)}`,
+	].join(" && ");
+	return {
+		command: "ssh",
+		args: [...sshArgs(connection, true), remoteCommand],
+		cwd: homedir(),
+		worktreePath,
+	};
 }
 
 /**

@@ -166,8 +166,8 @@ export function ConnectionsSettings() {
       </h3>
       <p className="settings-section-desc">
         {t(
-          "Run Pi inside a remote workspace over OpenSSH. The agent, shell and workspace stay on that host; Git runs remotely, while artifacts selected for preview or opening are copied into Pi Studio's private local cache.",
-          "通过 OpenSSH 在远程工作区中运行 Pi。智能体、命令和工作区都留在远端；Git 在远端执行，只有用户选择预览或打开的产物会复制到 Pi Studio 的私有本地缓存。",
+          "Run Pi inside a remote workspace over OpenSSH. The agent, shell and workspace stay on that host; Git and isolated parallel worktrees run remotely, while artifacts selected for preview or opening are copied into Pi Studio's private local cache.",
+          "通过 OpenSSH 在远程工作区中运行 Pi。智能体、命令和工作区都留在远端；Git 与隔离的并行工作树在远端运行，只有用户选择预览或打开的产物会复制到 Pi Studio 的私有本地缓存。",
         )}
       </p>
 

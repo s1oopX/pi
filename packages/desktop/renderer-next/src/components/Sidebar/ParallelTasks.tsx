@@ -30,20 +30,29 @@ export function ParallelTasks() {
   const rows = buildParallelTaskRows(taskRegistry);
   const poolFull = isPoolFull(taskRegistry);
   const busy = creating || Boolean(stoppingId) || Boolean(switchingId) || switchingWorkspace;
+  const primaryCwd = taskRegistry.tasks[PRIMARY_TASK_ID]?.cwd ?? "";
+  const remotePrimary = primaryCwd.startsWith("ssh://");
+  const createLabel = remotePrimary
+    ? t("Start an isolated worktree on the remote host", "在远程主机上启动隔离工作树")
+    : t("Start a parallel task in another folder", "在其他文件夹启动并行任务");
 
   async function handleCreate() {
     if (busy || poolFull) return;
     setCreating(true);
     try {
-      const picked = await api.pickTaskFolder();
-      if (picked.canceled || !picked.cwd) return;
-      const created = await api.createTask(picked.cwd);
+      let cwd = primaryCwd;
+      if (!remotePrimary) {
+        const picked = await api.pickTaskFolder();
+        if (picked.canceled || !picked.cwd) return;
+        cwd = picked.cwd;
+      }
+      const created = await api.createTask(cwd);
       await refreshTasks();
       await switchActiveTask(created.taskId);
       showToast(
         created.branch
           ? t("Parallel task started on {branch}", "已在分支 {branch} 上启动并行任务", { branch: created.branch })
-          : t("Parallel task started in {cwd}", "已在 {cwd} 启动并行任务", { cwd: picked.cwd }),
+          : t("Parallel task started in {cwd}", "已在 {cwd} 启动并行任务", { cwd: created.cwd }),
         "success",
       );
     } catch (error) {
@@ -96,12 +105,12 @@ export function ParallelTasks() {
         <button
           className="workspace-navigation-add"
           type="button"
-          aria-label={t("Start a parallel task in another folder", "在其他文件夹启动并行任务")}
+          aria-label={createLabel}
           title={poolFull
             ? t("Task limit reached ({max}); stop one first", "已达任务上限（{max}），请先停止一个", {
                 max: poolCap(taskRegistry),
               })
-            : t("Start a parallel task in another folder", "在其他文件夹启动并行任务")}
+            : createLabel}
           disabled={busy || poolFull}
           onClick={() => void handleCreate()}
         >

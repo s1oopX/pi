@@ -13,7 +13,9 @@ const MAX_MAX_TASKS = 5;
 
 /** @param {string} cwd */
 function canonicalCwd(cwd) {
-	const resolved = resolve(String(cwd ?? ""));
+	const value = String(cwd ?? "");
+	if (value.startsWith("ssh://")) return value;
+	const resolved = resolve(value);
 	return process.platform === "win32" ? resolved.toLowerCase() : resolved;
 }
 

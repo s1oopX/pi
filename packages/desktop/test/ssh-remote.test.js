@@ -10,6 +10,8 @@ import {
 	createSshLaunchSpec,
 	createSshTestSpec,
 	createSshTrashSpec,
+	createSshWorktreeRemoveSpec,
+	createSshWorktreeSpec,
 	createSshWorkspaceUri,
 	loadSshConnections,
 	normalizeSshConnection,
@@ -67,6 +69,8 @@ test("builds non-interactive SSH test and stdin-prefixed RPC launch specs", () =
 	assert.deepEqual(launch.args.slice(0, 3), ["-T", "-o", "StrictHostKeyChecking=accept-new"]);
 	assert.ok(launch.args.includes("devbox"));
 	assert.match(launch.args.at(-1), /dd .*count=25/u);
+	assert.match(launch.args.at(-1), /remote-bridge\.\$\$\.tmp/u);
+	assert.match(launch.args.at(-1), /mv -f -- "\$bridge_tmp" "\$HOME\/\.pi\/studio\/remote-bridge\.js"/u);
 	assert.match(launch.args.at(-1), /cd '\/srv\/pi project'/u);
 	assert.match(launch.args.at(-1), /--mode rpc --no-extensions -e/u);
 
@@ -84,6 +88,29 @@ test("builds a non-interactive, shell-quoted remote git spec", () => {
 		`cd "$HOME"/'work/pi' && GIT_OPTIONAL_LOCKS=0 LANG=C LC_ALL=C GIT_TERMINAL_PROMPT=0 exec git 'commit' '-m' 'fix '"'"'quoted'"'"' $(nope)'`,
 	);
 	assert.throws(() => createSshGitSpec(CONNECTION, "/srv/pi", ["bad\0arg"]), /NUL/);
+});
+
+test("builds managed remote worktree create and clean-remove specs", () => {
+	const created = createSshWorktreeSpec(CONNECTION, "/srv/pi project", "remote-a1b2c3d4e5f6");
+	assert.equal(created.branch, "task/remote-a1b2c3d4e5f6");
+	assert.equal(created.worktreePath, "~/.pi/studio/worktrees/remote-a1b2c3d4e5f6");
+	assert.ok(created.args.includes("BatchMode=yes"));
+	assert.match(created.args.at(-1), /cd '\/srv\/pi project'/u);
+	assert.match(created.args.at(-1), /mkdir -p "\$worktree_root"/u);
+	assert.match(created.args.at(-1), /git worktree prune/u);
+	assert.match(created.args.at(-1), /git worktree add -b 'task\/remote-a1b2c3d4e5f6' "\$worktree_path"/u);
+	assert.throws(() => createSshWorktreeSpec(CONNECTION, "/srv/pi", "../escape"), /invalid/iu);
+
+	const removed = createSshWorktreeRemoveSpec(CONNECTION, "/srv/pi project", created.worktreePath);
+	assert.match(
+		removed.args.at(-1),
+		/cd '\/srv\/pi project' && exec git worktree remove "\$HOME"\/'\.pi\/studio\/worktrees\/remote-a1b2c3d4e5f6'/u,
+	);
+	assert.doesNotMatch(removed.args.at(-1), /--force/u);
+	assert.throws(
+		() => createSshWorktreeRemoveSpec(CONNECTION, "/srv/pi", "~/other/worktree"),
+		/managed folder/iu,
+	);
 });
 
 test("builds remote gh and recoverable trash specs", () => {
