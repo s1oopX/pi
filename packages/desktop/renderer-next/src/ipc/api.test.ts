@@ -4,6 +4,7 @@ import {
   followUp,
   forkSession,
   getAuthStatus,
+  getImageGenerationSettings,
   getMemorySettings,
   getPendingExtensionUIRequests,
   getForkMessages,
@@ -15,10 +16,18 @@ import {
   sendPrompt,
   resetMemories,
   setMemorySettings,
+  setImageGenerationSettings,
   steer,
   switchSession,
 } from "./api";
-import type { BackendCommand, ImageContent, MemorySettings, SessionListPage, SessionTreeData } from "./types";
+import type {
+  BackendCommand,
+  ImageContent,
+  ImageGenerationSettings,
+  MemorySettings,
+  SessionListPage,
+  SessionTreeData,
+} from "./types";
 
 const image: ImageContent = { type: "image", data: "AQID", mimeType: "image/png" };
 
@@ -247,6 +256,34 @@ describe("settings metadata API", () => {
       { type: "get_memory_settings" },
       { type: "set_memory_settings", enabled: false, useMemories: false },
       { type: "reset_memories" },
+    ]);
+  });
+
+  it("forwards image generation settings", async () => {
+    const requests: BackendCommand[] = [];
+    const settings: ImageGenerationSettings = {
+      enabled: true,
+      provider: "openrouter",
+      model: "google/gemini-2.5-flash-image",
+      baseUrl: "https://openrouter.ai/api/v1",
+    };
+    Object.defineProperty(globalThis, "window", {
+      configurable: true,
+      value: {
+        piDesktop: {
+          request(command: BackendCommand) {
+            requests.push(command);
+            return Promise.resolve(settings);
+          },
+        },
+      },
+    });
+
+    await expect(getImageGenerationSettings()).resolves.toEqual(settings);
+    await expect(setImageGenerationSettings({ enabled: false, model: "image-model" })).resolves.toEqual(settings);
+    expect(requests).toEqual([
+      { type: "get_image_generation_settings" },
+      { type: "set_image_generation_settings", enabled: false, model: "image-model" },
     ]);
   });
 });

@@ -64,6 +64,13 @@ export interface MemoryPreferenceSettings {
 	allowToolChats?: boolean; // default: false
 }
 
+export interface ImageGenerationSettings {
+	enabled?: boolean; // default: false
+	provider?: string; // default: openrouter
+	model?: string; // default: google/gemini-2.5-flash-image
+	baseUrl?: string; // default: https://openrouter.ai/api/v1
+}
+
 export type DefaultProjectTrust = "ask" | "always" | "never";
 
 export type TransportSetting = Transport;
@@ -128,6 +135,7 @@ export interface Settings {
 	markdown?: MarkdownSettings;
 	warnings?: WarningSettings;
 	memory?: MemoryPreferenceSettings;
+	imageGeneration?: ImageGenerationSettings;
 	sessionDir?: string; // Custom session storage directory (same format as --session-dir CLI flag)
 	httpProxy?: string; // Proxy URL applied as HTTP_PROXY and HTTPS_PROXY for Pi-managed HTTP clients
 	httpIdleTimeoutMs?: number; // HTTP header/body idle timeout in milliseconds; 0 disables it
@@ -1256,5 +1264,28 @@ export class SettingsManager {
 			this.markModified("memory", "allowToolChats");
 		}
 		if (settings.enabled !== undefined || settings.allowToolChats !== undefined) this.save();
+	}
+
+	getImageGenerationSettings(): Required<ImageGenerationSettings> {
+		return {
+			enabled: this.settings.imageGeneration?.enabled ?? false,
+			provider: this.settings.imageGeneration?.provider?.trim() || "openrouter",
+			model: this.settings.imageGeneration?.model?.trim() || "google/gemini-2.5-flash-image",
+			baseUrl: this.settings.imageGeneration?.baseUrl?.trim() || "https://openrouter.ai/api/v1",
+		};
+	}
+
+	setImageGenerationSettings(settings: Partial<ImageGenerationSettings>): void {
+		if (!this.globalSettings.imageGeneration) this.globalSettings.imageGeneration = {};
+		if (settings.enabled !== undefined) {
+			this.globalSettings.imageGeneration.enabled = settings.enabled;
+			this.markModified("imageGeneration", "enabled");
+		}
+		for (const key of ["provider", "model", "baseUrl"] as const) {
+			if (settings[key] === undefined) continue;
+			this.globalSettings.imageGeneration[key] = settings[key].trim();
+			this.markModified("imageGeneration", key);
+		}
+		if (Object.values(settings).some((value) => value !== undefined)) this.save();
 	}
 }

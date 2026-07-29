@@ -17,6 +17,8 @@ import { SessionManager } from "../../coding-agent/src/core/session-manager.ts";
 import { SettingsManager } from "../../coding-agent/src/core/settings-manager.ts";
 import { hasTrustRequiringProjectResources, ProjectTrustStore } from "../../coding-agent/src/core/trust-manager.ts";
 import { runRpcMode } from "../../coding-agent/src/modes/rpc/rpc-mode.ts";
+import { computerUseExtension } from "./computer-use.ts";
+import { imageGenerationExtension } from "./image-generation.ts";
 import { taskPlanExtension } from "./task-plan.ts";
 import { toolApprovalExtension } from "./tool-approval.ts";
 import { directoriesShareIdentity, resolveWorktreeSourceRoot } from "./worktree-trust.js";
@@ -80,6 +82,11 @@ const createRuntime: CreateAgentSessionRuntimeFactory = async ({
 			extensionFactories: [
 				{ name: "tool-approval", factory: toolApprovalExtension },
 				{ name: "task-plan", factory: taskPlanExtension },
+				{ name: "computer-use", factory: computerUseExtension },
+				{
+					name: "image-generation",
+					factory: (pi) => imageGenerationExtension(pi, settingsManager, authStorage),
+				},
 			],
 		},
 		resourceLoaderReloadOptions: {

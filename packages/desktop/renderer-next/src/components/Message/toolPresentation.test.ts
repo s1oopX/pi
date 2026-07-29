@@ -50,6 +50,19 @@ describe("describeToolCall", () => {
       .toMatchObject({ action: "Waiting to find", subject: "**/*.test.ts in src" });
     expect(describeToolCall(call("ls", {}), "done"))
       .toMatchObject({ action: "Listed", subject: "." });
+    expect(describeToolCall(call("computer_use", { action: "click", x: 120, y: 80 }), "running"))
+      .toMatchObject({ action: "Controlling computer", subject: "120, 80" });
+    expect(describeToolCall(call("computer_use", { action: "key", key: "CTRL+L" }), "done"))
+      .toMatchObject({ action: "Pressed key", subject: "CTRL+L" });
+    expect(describeToolCall(call("generate_image", {
+      prompt: "A blue circle on white",
+      references: ["one.png"],
+      outputPath: "generated/circle.png",
+    }), "running")).toMatchObject({
+      action: "Generating image",
+      subject: "A blue circle on white",
+      meta: "generated/circle.png",
+    });
     expect(describeToolCall(call("read", {
       path: "packages/desktop/renderer-next/src/components/Message/MessageBubble.tsx",
     }), "done").subject).toMatch(/MessageBubble\.tsx$/);
@@ -66,6 +79,12 @@ describe("describeToolCall", () => {
     expect(presentation.inputText).not.toContain("secret source");
   });
 
+  it("does not display text typed through computer use", () => {
+    const presentation = describeToolCall(call("computer_use", { action: "type", text: "private value" }), "done");
+    expect(presentation.inputText).toContain("[13 chars]");
+    expect(presentation.inputText).not.toContain("private value");
+  });
+
   it("localizes application metadata without changing technical subjects", () => {
     expect(describeToolCall(call("read", { path: "src/App.tsx", offset: 4, limit: 3 }), "running", "zh-CN"))
       .toMatchObject({ action: "正在读取", subject: "src/App.tsx", meta: "第 4–6 行" });
@@ -75,6 +94,10 @@ describe("describeToolCall", () => {
       .toMatchObject({ meta: "2 行 · 3 个字符" });
     expect(describeToolCall(call("write", { path: "a.ts", content: "a\nb" }), "done", "zh-CN").inputText)
       .toContain("[3 个字符，2 行]");
+    expect(describeToolCall(call("computer_use", { action: "screenshot" }), "done", "zh-CN"))
+      .toMatchObject({ action: "已截取屏幕" });
+    expect(describeToolCall(call("generate_image", { prompt: "蓝色圆形" }), "done", "zh-CN"))
+      .toMatchObject({ action: "已生成图片", subject: "蓝色圆形" });
     expect(toolPhaseLabel("queued", "zh-CN")).toBe("已排队");
   });
 });

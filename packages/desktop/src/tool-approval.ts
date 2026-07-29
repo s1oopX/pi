@@ -11,8 +11,8 @@
  * Modes:
  * - full: run everything without asking.
  * - auto: ask only for risky operations (destructive/privileged/network bash,
- *   or file writes outside the workspace).
- * - ask: ask before every bash command and file change.
+ *   file writes outside the workspace, computer control, or image generation).
+ * - ask: ask before commands, file changes, computer use, and image generation.
  */
 
 import { isAbsolute, relative, resolve, sep } from "node:path";
@@ -90,14 +90,34 @@ export function evaluateToolApproval(event: ToolCallEvent, cwd: string, mode: Pe
 		};
 	}
 
+	if (event.toolName === "computer_use") {
+		const action = String((event.input as { action?: unknown }).action ?? "");
+		const readOnly = action === "screenshot" || action === "wait";
+		return {
+			gate: mode === "ask" || !readOnly,
+			title: readOnly ? "Share the screen with the agent?" : "Let the agent control the computer?",
+			detail: action || "computer action",
+		};
+	}
+
+	if (event.toolName === "generate_image") {
+		const prompt = String((event.input as { prompt?: unknown }).prompt ?? "")
+			.replace(/\s+/g, " ")
+			.trim();
+		return {
+			gate: true,
+			title: "Generate an image?",
+			detail: prompt.length > 240 ? `${prompt.slice(0, 239)}…` : prompt,
+		};
+	}
+
 	return { gate: false, title: "", detail: "" };
 }
 
 export function toolApprovalExtension(pi: ExtensionAPI): void {
 	pi.registerFlag(PERMISSION_MODE_FLAG, {
 		type: "string",
-		description:
-			"Tool approval mode: full (allow all), auto (ask on risky), ask (ask before commands and file changes).",
+		description: "Tool approval mode: full (allow all), auto (ask on risky), ask (ask before tool actions).",
 		default: "ask",
 	});
 

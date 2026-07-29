@@ -191,6 +191,15 @@ function inputForDetails(call: ToolCall, language: ResolvedLanguage): unknown {
   if (call.name === "write" || call.name === "edit") {
     return mutationInput(call.name, call.arguments, language);
   }
+  if (call.name === "computer_use" && call.arguments.action === "type") {
+    const text = typeof call.arguments.text === "string" ? call.arguments.text : undefined;
+    return {
+      ...call.arguments,
+      text: text === undefined
+        ? localize(language, "[invalid or missing text]", "[文本无效或缺失]")
+        : localize(language, "[{count} chars]", "[{count} 个字符]", { count: text.length }),
+    };
+  }
   return call.arguments;
 }
 
@@ -341,6 +350,62 @@ export function describeToolCall(
         unknown: localize(language, "List", "列出"),
       });
       subject = displayPath ?? ".";
+      break;
+    }
+    case "computer_use": {
+      const computerAction = stringArg(args, "action") ?? "screenshot";
+      const labels = computerAction === "screenshot"
+        ? { running: ["Capturing screen", "正在截取屏幕"], done: ["Captured screen", "已截取屏幕"] }
+        : computerAction === "type"
+          ? { running: ["Typing", "正在输入"], done: ["Typed", "已输入"] }
+          : computerAction === "key"
+            ? { running: ["Pressing key", "正在按键"], done: ["Pressed key", "已按键"] }
+            : computerAction === "scroll"
+              ? { running: ["Scrolling", "正在滚动"], done: ["Scrolled", "已滚动"] }
+              : computerAction === "wait"
+                ? { running: ["Waiting", "正在等待"], done: ["Waited", "已等待"] }
+                : { running: ["Controlling computer", "正在操作电脑"], done: ["Controlled computer", "已操作电脑"] };
+      action = phase === "running" || phase === "queued"
+        ? localize(language, labels.running[0], labels.running[1])
+        : phase === "error"
+          ? localize(language, "Computer action failed", "电脑操作失败")
+          : localize(language, labels.done[0], labels.done[1]);
+      const x = numberArg(args, "x");
+      const y = numberArg(args, "y");
+      subject = computerAction === "key"
+        ? stringArg(args, "key")
+        : x !== undefined && y !== undefined
+          ? `${x}, ${y}`
+          : undefined;
+      const text = typeof args.text === "string" ? args.text : undefined;
+      const deltaY = numberArg(args, "deltaY");
+      const waitMs = numberArg(args, "ms");
+      meta = text !== undefined
+        ? localize(language, "{count} chars", "{count} 个字符", { count: text.length })
+        : deltaY !== undefined
+          ? localize(language, "delta {delta}", "滚动量 {delta}", { delta: deltaY })
+          : waitMs !== undefined
+            ? `${waitMs} ms`
+            : undefined;
+      break;
+    }
+    case "generate_image": {
+      action = phaseAction(phase, {
+        queued: localize(language, "Waiting to generate", "等待生成图片"),
+        running: localize(language, "Generating image", "正在生成图片"),
+        done: localize(language, "Generated image", "已生成图片"),
+        error: localize(language, "Image generation failed", "图片生成失败"),
+        unknown: localize(language, "Generate image", "生成图片"),
+      });
+      subject = stringArg(args, "prompt");
+      if (subject) subject = compactSingleLine(subject);
+      const references = Array.isArray(args.references) ? args.references.length : 0;
+      const outputPath = stringArg(args, "outputPath");
+      meta = outputPath
+        ? formatDisplayPath(outputPath)
+        : references > 0
+          ? localize(language, "{count} reference(s)", "{count} 个参考图", { count: references })
+          : undefined;
       break;
     }
     default: {

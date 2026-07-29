@@ -436,6 +436,39 @@ describe("SettingsManager", () => {
 		});
 	});
 
+	describe("image generation settings", () => {
+		it("defaults to disabled OpenRouter and persists global configuration", async () => {
+			const manager = SettingsManager.create(projectDir, agentDir);
+
+			expect(manager.getImageGenerationSettings()).toEqual({
+				enabled: false,
+				provider: "openrouter",
+				model: "google/gemini-2.5-flash-image",
+				baseUrl: "https://openrouter.ai/api/v1",
+			});
+			manager.setImageGenerationSettings({
+				enabled: true,
+				provider: " image-host ",
+				model: " image-model ",
+				baseUrl: " https://images.example/v1 ",
+			});
+			await manager.flush();
+
+			expect(manager.getImageGenerationSettings()).toEqual({
+				enabled: true,
+				provider: "image-host",
+				model: "image-model",
+				baseUrl: "https://images.example/v1",
+			});
+			expect(JSON.parse(readFileSync(join(agentDir, "settings.json"), "utf-8")).imageGeneration).toEqual({
+				enabled: true,
+				provider: "image-host",
+				model: "image-model",
+				baseUrl: "https://images.example/v1",
+			});
+		});
+	});
+
 	describe("shellCommandPrefix", () => {
 		it("should load shellCommandPrefix from settings", () => {
 			const settingsPath = join(agentDir, "settings.json");

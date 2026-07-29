@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { useI18n } from "../../i18n";
 import * as api from "../../ipc/api";
-import type { QueueMode, ThinkingLevel } from "../../ipc/types";
+import type { ImageGenerationSettings, QueueMode, ThinkingLevel } from "../../ipc/types";
 import { useStore, type PermissionMode } from "../../store";
 import { PERMISSION_MODE_OPTIONS } from "../PermissionSelector/permissionModes";
 import { showToast } from "../Toast";
@@ -26,6 +26,10 @@ export function AgentSettings() {
   >("unknown");
   const [poolSettings, setPoolSettings] = useState<api.TaskPoolSettings | null>(null);
   const [poolSettingsSaving, setPoolSettingsSaving] = useState(false);
+  const [imageSettings, setImageSettings] = useState<ImageGenerationSettings | null>(null);
+  const [imageApiKey, setImageApiKey] = useState("");
+  const [imageApiKeyStored, setImageApiKeyStored] = useState(false);
+  const [imageSettingsSaving, setImageSettingsSaving] = useState(false);
   const refreshTasks = useStore((state) => state.refreshTasks);
   const [leftovers, setLeftovers] = useState<api.WorktreeLeftover[]>([]);
   const [armedLeftover, setArmedLeftover] = useState<string | null>(null);
@@ -89,6 +93,17 @@ export function AgentSettings() {
 
   useEffect(() => {
     let cancelled = false;
+    void (async () => {
+      try {
+        const settings = await api.getImageGenerationSettings();
+        if (cancelled) return;
+        setImageSettings(settings);
+        const statuses = await api.getAuthStatus([settings.provider]);
+        if (!cancelled) setImageApiKeyStored(statuses[settings.provider]?.source === "stored");
+      } catch {
+        if (!cancelled) setImageSettings(null);
+      }
+    })();
     void api.getTaskSettings().then((settings) => {
       if (!cancelled && settings) setPoolSettings(settings);
     }).catch(() => {});
@@ -131,6 +146,25 @@ export function AgentSettings() {
       showToast(t("Failed: {message}", "失败：{message}", { message }), "error");
     } finally {
       setPoolSettingsSaving(false);
+    }
+  }
+
+  async function handleImageSettingsSave() {
+    if (!imageSettings) return;
+    setImageSettingsSaving(true);
+    try {
+      if (imageApiKey.trim()) await api.setApiKey(imageSettings.provider.trim(), imageApiKey.trim());
+      const saved = await api.setImageGenerationSettings(imageSettings);
+      const statuses = await api.getAuthStatus([saved.provider]);
+      setImageSettings(saved);
+      setImageApiKey("");
+      setImageApiKeyStored(statuses[saved.provider]?.source === "stored");
+      showToast(t("Image generation settings saved", "图片生成设置已保存"), "success");
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      showToast(t("Failed: {message}", "失败：{message}", { message }), "error");
+    } finally {
+      setImageSettingsSaving(false);
     }
   }
 
@@ -260,6 +294,84 @@ export function AgentSettings() {
             </label>
           ))}
         </div>
+      </div>
+
+      <div className="settings-group">
+        <span className="settings-group-label">{t("Capabilities", "能力")}</span>
+        <p className="settings-group-desc">
+          {t(
+            "Computer Use is built in on Windows. Image generation uses your configured provider and stores outputs in the workspace.",
+            "Windows 已内置电脑操作。图片生成使用你配置的提供商，并将产物保存到工作区。",
+          )}
+        </p>
+        <label className="settings-toggle">
+          <input
+            type="checkbox"
+            checked={imageSettings?.enabled ?? false}
+            disabled={!imageSettings || imageSettingsSaving}
+            onChange={(event) => setImageSettings((current) => current ? { ...current, enabled: event.target.checked } : current)}
+          />
+          <span>{t("Enable image generation", "启用图片生成")}</span>
+        </label>
+        <div className="form-row">
+          <label className="form-label" htmlFor="image-generation-provider">{t("Provider", "提供商")}</label>
+          <input
+            id="image-generation-provider"
+            className="form-input"
+            value={imageSettings?.provider ?? ""}
+            disabled={!imageSettings || imageSettingsSaving}
+            onChange={(event) => {
+              setImageApiKeyStored(false);
+              setImageSettings((current) => current ? { ...current, provider: event.target.value } : current);
+            }}
+            placeholder="openrouter"
+          />
+        </div>
+        <div className="form-row">
+          <label className="form-label" htmlFor="image-generation-model">{t("Image model", "图片模型")}</label>
+          <input
+            id="image-generation-model"
+            className="form-input"
+            value={imageSettings?.model ?? ""}
+            disabled={!imageSettings || imageSettingsSaving}
+            onChange={(event) => setImageSettings((current) => current ? { ...current, model: event.target.value } : current)}
+            placeholder="google/gemini-2.5-flash-image"
+          />
+        </div>
+        <div className="form-row">
+          <label className="form-label" htmlFor="image-generation-base-url">{t("Base URL", "基础 URL")}</label>
+          <input
+            id="image-generation-base-url"
+            className="form-input"
+            value={imageSettings?.baseUrl ?? ""}
+            disabled={!imageSettings || imageSettingsSaving}
+            onChange={(event) => setImageSettings((current) => current ? { ...current, baseUrl: event.target.value } : current)}
+            placeholder="https://openrouter.ai/api/v1"
+          />
+        </div>
+        <div className="form-row">
+          <label className="form-label" htmlFor="image-generation-api-key">{t("API key", "API 密钥")}</label>
+          <input
+            id="image-generation-api-key"
+            className="form-input"
+            type="password"
+            value={imageApiKey}
+            disabled={!imageSettings || imageSettingsSaving}
+            onChange={(event) => setImageApiKey(event.target.value)}
+            placeholder={imageApiKeyStored
+              ? t("Stored key; leave blank to keep it", "已保存密钥；留空即可保留")
+              : t("Enter an API key", "输入 API 密钥")}
+            autoComplete="off"
+          />
+        </div>
+        <button
+          className="settings-btn settings-btn-primary"
+          type="button"
+          disabled={!imageSettings || imageSettingsSaving || isStreaming || compacting}
+          onClick={() => void handleImageSettingsSave()}
+        >
+          {imageSettingsSaving ? t("Saving…", "保存中…") : t("Save image settings", "保存图片设置")}
+        </button>
       </div>
 
       <div className="settings-group">

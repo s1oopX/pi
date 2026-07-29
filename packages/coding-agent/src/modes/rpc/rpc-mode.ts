@@ -61,6 +61,7 @@ import type {
 	RpcGetCustomModelsDataDTO,
 	RpcGetMessagesDataDTO,
 	RpcGetSessionsDataDTO,
+	RpcImageGenerationSettingsDataDTO,
 	RpcMemorySettingsDataDTO,
 	RpcResetMemoriesDataDTO,
 	RpcSessionChangedEventDTO,
@@ -1123,6 +1124,90 @@ export async function runRpcMode(runtimeHost: AgentSessionRuntime): Promise<neve
 
 			case "get_memory_settings": {
 				return success(id, "get_memory_settings", getMemorySettingsData());
+			}
+
+			case "get_image_generation_settings": {
+				return success(
+					id,
+					"get_image_generation_settings",
+					session.settingsManager.getImageGenerationSettings() satisfies RpcImageGenerationSettingsDataDTO,
+				);
+			}
+
+			case "set_image_generation_settings": {
+				if (session.isStreaming) {
+					return error(
+						id,
+						"set_image_generation_settings",
+						"Wait for the current response to finish before changing image generation",
+					);
+				}
+				if (session.isCompacting) {
+					return error(
+						id,
+						"set_image_generation_settings",
+						"Wait for compaction to finish before changing image generation",
+					);
+				}
+				if (command.enabled !== undefined && typeof command.enabled !== "boolean") {
+					return error(id, "set_image_generation_settings", "enabled must be a boolean");
+				}
+				if (command.provider !== undefined && typeof command.provider !== "string") {
+					return error(id, "set_image_generation_settings", "provider must be a string");
+				}
+				if (command.model !== undefined && typeof command.model !== "string") {
+					return error(id, "set_image_generation_settings", "model must be a string");
+				}
+				if (command.baseUrl !== undefined && typeof command.baseUrl !== "string") {
+					return error(id, "set_image_generation_settings", "baseUrl must be a string");
+				}
+
+				const provider = command.provider === undefined ? undefined : normalizeProviderId(command.provider);
+				if (command.provider !== undefined && (!provider || command.provider.trim().length > 128)) {
+					return error(id, "set_image_generation_settings", "A valid provider id is required");
+				}
+				const model = command.model?.trim();
+				if (command.model !== undefined && (!model || model.length > 512)) {
+					return error(id, "set_image_generation_settings", "A valid image model id is required");
+				}
+				let baseUrl: string | undefined;
+				if (command.baseUrl !== undefined) {
+					const candidate = command.baseUrl.trim();
+					if (!candidate || candidate.length > 2048) {
+						return error(id, "set_image_generation_settings", "A valid image generation base URL is required");
+					}
+					let parsed: URL;
+					try {
+						parsed = new URL(candidate);
+					} catch {
+						return error(id, "set_image_generation_settings", "Image generation base URL is not valid");
+					}
+					if (
+						(parsed.protocol !== "http:" && parsed.protocol !== "https:") ||
+						parsed.username ||
+						parsed.password
+					) {
+						return error(
+							id,
+							"set_image_generation_settings",
+							"Image generation base URL must use HTTP or HTTPS without embedded credentials",
+						);
+					}
+					baseUrl = parsed.toString().replace(/\/$/, "");
+				}
+
+				session.settingsManager.setImageGenerationSettings({
+					enabled: command.enabled,
+					provider,
+					model,
+					baseUrl,
+				});
+				await session.reload();
+				return success(
+					id,
+					"set_image_generation_settings",
+					session.settingsManager.getImageGenerationSettings() satisfies RpcImageGenerationSettingsDataDTO,
+				);
 			}
 
 			case "set_memory_settings": {

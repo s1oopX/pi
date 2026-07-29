@@ -16,6 +16,7 @@ import type {
   RpcForkResultDTO,
   RpcGetResourcesDataDTO,
   RpcGetSessionsDataDTO,
+  RpcImageGenerationSettingsDataDTO,
   RpcImageContentDTO,
   RpcMemorySettingsDataDTO,
   RpcModelDTO,
@@ -44,6 +45,18 @@ export interface GetMessagesCommand {
 
 export interface GetMemorySettingsCommand {
   type: "get_memory_settings";
+}
+
+export interface GetImageGenerationSettingsCommand {
+  type: "get_image_generation_settings";
+}
+
+export interface SetImageGenerationSettingsCommand {
+  type: "set_image_generation_settings";
+  enabled?: boolean;
+  provider?: string;
+  model?: string;
+  baseUrl?: string;
 }
 
 export interface SetMemorySettingsCommand {
@@ -376,6 +389,8 @@ export type BackendCommand =
   | GetStateCommand
   | GetMessagesCommand
   | GetMemorySettingsCommand
+  | GetImageGenerationSettingsCommand
+  | SetImageGenerationSettingsCommand
   | SetMemorySettingsCommand
   | ResetMemoriesCommand
   | GetAvailableModelsCommand
@@ -452,6 +467,7 @@ export type ExtensionUIRequestClosedEvent = RpcExtensionUIRequestClosedEventDTO;
 
 export type Message = RpcAgentMessageDTO;
 export type MemorySettings = RpcMemorySettingsDataDTO;
+export type ImageGenerationSettings = RpcImageGenerationSettingsDataDTO;
 export type ResetMemoriesResult = RpcResetMemoriesDataDTO;
 export type ImageContent = RpcImageContentDTO;
 export type ToolCall = RpcToolCallDTO;

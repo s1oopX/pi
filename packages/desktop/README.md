@@ -10,7 +10,7 @@ Pi Studio is a source fork of `earendil-works/pi-mono`. It is not published to n
 
 Four product invariants shape every technical decision in this package:
 
-1. **Catalog-free, bring-your-own-endpoint.** The bundled backend ships no built-in provider catalogs and performs no catalog network refresh; the only models that exist are the ones declared in the user's `models.json`. There is no first-party OAuth. A build-time guard (`scripts/build-backend.mjs`) fails the build if catalog code reaches the bundle, and `src/backend-scope.js` enforces the boundary at runtime.
+1. **Catalog-free, bring-your-own-endpoint.** The bundled backend ships no built-in provider catalogs and performs no catalog network refresh; the only chat models that exist are the ones declared in the user's `models.json`, while optional image generation uses a separately configured BYO endpoint. There is no first-party OAuth. A build-time guard (`scripts/build-backend.mjs`) fails the build if catalog code reaches the bundle, and `src/backend-scope.js` enforces the boundary at runtime.
 2. **Portable, self-contained distribution.** One unpacked directory, no installer, no registry writes. All profile state relocates under a single user-data directory that tests can redirect (`PI_STUDIO_USER_DATA_DIR`).
 3. **Small supply-chain surface.** Exact-pinned dependencies, a self-drawn icon set instead of an icon library, renderer-origin network access blocked outside user-entered sandboxed browser frames, and a strict main-process IPC allowlist. Dev-dependency additions are treated as security decisions.
 4. **Bilingual by construction.** Every user-facing string carries English and Simplified Chinese inline (`t(en, zhCN)`); the language follows the OS with a manual override.
@@ -55,10 +55,10 @@ Pi Studio assumes the workspace may be hostile (a cloned repository) and the ren
 | --- | --- |
 | Renderer confinement | `sandbox: true`, `contextIsolation: true`, `nodeIntegration: false`; top-level navigation and window-open are denied and routed through a protocol-checked external opener, while user-entered HTTP(S) previews stay inside a sandboxed frame |
 | IPC allowlist | The main process forwards only the renderer's typed command set to the backend (`backend-command-allowlist.js`); unknown command types are rejected before they reach the RPC layer |
-| Tool approval | A bundled inline extension registers the `permission-mode` flag and gates every tool call at the agent loop's single choke point: `full` runs everything, `auto` asks before risky bash and out-of-workspace writes, `ask` asks always |
+| Tool approval | A bundled inline extension registers the `permission-mode` flag and gates tool calls at the agent loop's single choke point: `full` runs everything, `auto` asks before risky bash, out-of-workspace writes, computer control, and image generation, while `ask` also confirms passive screen access |
 | Project trust | Folders carrying project-local resources (`.pi` extensions, settings, skills) load **untrusted by default**; extensions do not execute until the user trusts the folder (persisted in `<agentDir>/trust.json`, revocable from Settings, hot-reloaded both ways) |
 | Process hygiene | All git and gh invocations use `execFile` with argument vectors — no shell anywhere; branch names and commit messages are validated before they become argv entries |
-| Path containment | Reveal/open operations resolve and verify paths against the workspace root before touching the shell |
+| Path containment | Reveal/open operations and image-generation references/outputs verify both lexical and real paths against the workspace root; generated files never overwrite existing paths |
 
 ### Git integration
 

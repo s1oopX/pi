@@ -14,6 +14,12 @@ function write(path) {
 function read(path) {
 	return { type: "tool_call", toolCallId: "t1", toolName: "read", input: { path } };
 }
+function computer(action) {
+	return { type: "tool_call", toolCallId: "t1", toolName: "computer_use", input: { action } };
+}
+function generateImage(prompt = "A blue circle") {
+	return { type: "tool_call", toolCallId: "t1", toolName: "generate_image", input: { prompt } };
+}
 
 describe("resolvePermissionMode", () => {
 	it("passes through full and auto, defaults everything else to ask", () => {
@@ -37,6 +43,9 @@ describe("evaluateToolApproval - ask mode", () => {
 	it("gates every bash command and file write", () => {
 		assert.equal(evaluateToolApproval(bash("ls"), CWD, "ask").gate, true);
 		assert.equal(evaluateToolApproval(write("in-workspace.txt"), CWD, "ask").gate, true);
+		assert.equal(evaluateToolApproval(computer("screenshot"), CWD, "ask").gate, true);
+		assert.equal(evaluateToolApproval(computer("click"), CWD, "ask").gate, true);
+		assert.equal(evaluateToolApproval(generateImage(), CWD, "ask").gate, true);
 	});
 
 	it("never gates read-only tools", () => {
@@ -49,6 +58,14 @@ describe("evaluateToolApproval - auto mode", () => {
 		assert.equal(evaluateToolApproval(bash("npm test"), CWD, "auto").gate, false);
 		assert.equal(evaluateToolApproval(write(join(CWD, "src", "a.ts")), CWD, "auto").gate, false);
 		assert.equal(evaluateToolApproval(write("relative/a.ts"), CWD, "auto").gate, false);
+	});
+
+	it("allows passive screen observation but gates computer control", () => {
+		assert.equal(evaluateToolApproval(computer("screenshot"), CWD, "auto").gate, false);
+		assert.equal(evaluateToolApproval(computer("wait"), CWD, "auto").gate, false);
+		assert.equal(evaluateToolApproval(computer("click"), CWD, "auto").gate, true);
+		assert.equal(evaluateToolApproval(computer("type"), CWD, "auto").gate, true);
+		assert.equal(evaluateToolApproval(generateImage(), CWD, "auto").gate, true);
 	});
 
 	it("gates risky bash commands", () => {

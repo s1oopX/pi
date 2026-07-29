@@ -15,6 +15,7 @@ import type { SessionEntry, SessionInfo } from "../../core/session-manager.ts";
 import type { SourceInfo } from "../../core/source-info.ts";
 import type {
 	RpcForkResultDTO,
+	RpcImageGenerationSettingsDataDTO,
 	RpcMemorySettingsDataDTO,
 	RpcResetMemoriesDataDTO,
 	RpcSessionChangeResultDTO,
@@ -62,6 +63,15 @@ export type RpcCommand =
 			allowToolChats?: boolean;
 			useMemories?: boolean;
 			generateMemories?: boolean;
+	  }
+	| { id?: string; type: "get_image_generation_settings" }
+	| {
+			id?: string;
+			type: "set_image_generation_settings";
+			enabled?: boolean;
+			provider?: string;
+			model?: string;
+			baseUrl?: string;
 	  }
 	| { id?: string; type: "reset_memories" }
 
@@ -255,6 +265,20 @@ export type RpcResponse =
 			command: "set_memory_settings";
 			success: true;
 			data: RpcMemorySettingsDataDTO;
+	  }
+	| {
+			id?: string;
+			type: "response";
+			command: "get_image_generation_settings";
+			success: true;
+			data: RpcImageGenerationSettingsDataDTO;
+	  }
+	| {
+			id?: string;
+			type: "response";
+			command: "set_image_generation_settings";
+			success: true;
+			data: RpcImageGenerationSettingsDataDTO;
 	  }
 	| {
 			id?: string;

@@ -21,6 +21,7 @@ import type {
   GitPrResult,
   GitPushResult,
   GitSwitchResult,
+  ImageGenerationSettings,
   ImageContent,
   LogEntry,
   MemorySettings,
@@ -407,6 +408,16 @@ export async function getMessages(): Promise<Message[]> {
 
 export async function getMemorySettings(): Promise<MemorySettings> {
   return (await backendRequest({ type: "get_memory_settings" })) as MemorySettings;
+}
+
+export async function getImageGenerationSettings(): Promise<ImageGenerationSettings> {
+  return (await backendRequest({ type: "get_image_generation_settings" })) as ImageGenerationSettings;
+}
+
+export async function setImageGenerationSettings(
+  settings: Partial<Pick<ImageGenerationSettings, "enabled" | "provider" | "model" | "baseUrl">>,
+): Promise<ImageGenerationSettings> {
+  return (await backendRequest({ type: "set_image_generation_settings", ...settings })) as ImageGenerationSettings;
 }
 
 export async function setMemorySettings(settings: Partial<Omit<MemorySettings, "count" | "path" | "useMemoriesLocked">>): Promise<MemorySettings> {

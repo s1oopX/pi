@@ -85,6 +85,20 @@ export function collectTaskSources(messages: readonly Message[]): TaskSource[] {
 export function collectTaskArtifacts(messages: readonly Message[]): TaskArtifact[] {
   const artifacts = new Map<string, TaskArtifact>();
   for (const message of messages) {
+    if (message.role === "toolResult" && message.toolName === "generate_image" && !message.isError) {
+      const details = message.details;
+      const rawPath =
+        details !== null && typeof details === "object" && !Array.isArray(details) && "path" in details
+          ? details.path
+          : undefined;
+      const path = typeof rawPath === "string" ? normalizeArtifactPath(rawPath) : null;
+      if (path) {
+        const key = path.toLocaleLowerCase("en");
+        artifacts.delete(key);
+        artifacts.set(key, { label: artifactLabel(path), operation: "created", path });
+      }
+      continue;
+    }
     if (message.role !== "assistant") continue;
     for (const block of message.content) {
       if (block.type === "toolCall" && (block.name === "write" || block.name === "edit")) {

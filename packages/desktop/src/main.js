@@ -1052,6 +1052,7 @@ const SESSION_MUTATION_COMMAND_TYPES = new Set([
 	"manage_package",
 	"new_session",
 	"prompt",
+	"set_image_generation_settings",
 	"set_session_name",
 	"switch_session",
 ]);

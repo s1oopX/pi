@@ -402,6 +402,13 @@ export interface RpcMemorySettingsDataDTO {
 	path: string;
 }
 
+export interface RpcImageGenerationSettingsDataDTO {
+	enabled: boolean;
+	provider: string;
+	model: string;
+	baseUrl: string;
+}
+
 export interface RpcGetCustomModelsDataDTO {
 	path: string;
 	providers: Record<string, RpcCustomModelProviderDTO>;
