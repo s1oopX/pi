@@ -1,5 +1,5 @@
 import { app, BrowserWindow, clipboard, dialog, ipcMain, nativeTheme, Notification, screen, shell } from "electron";
-import { spawn } from "node:child_process";
+import { execFile, spawn } from "node:child_process";
 import { existsSync, mkdirSync, readFileSync, readdirSync, statSync, writeFileSync } from "node:fs";
 import { copyFile, readFile, writeFile } from "node:fs/promises";
 import { basename, dirname, join, relative, resolve } from "node:path";
@@ -45,6 +45,7 @@ import { prepareSessionImport, resolveKnownSessionFile } from "./session-files.j
 import { createTaskRegistry } from "./task-registry.js";
 import {
 	createSshLaunchSpec,
+	createSshGitSpec,
 	createSshTestSpec,
 	createSshWorkspaceUri,
 	loadSshConnections,
@@ -1851,25 +1852,73 @@ function resolveTaskCwd(taskId) {
 	return taskRegistry.get(typeof taskId === "string" && taskId ? taskId : undefined).cwd();
 }
 
+/** @param {NonNullable<ReturnType<typeof getActiveSshWorkspace>>} remote */
+function createRemoteGitExecFile(remote) {
+	/**
+	 * @param {string} file
+	 * @param {readonly string[]} args
+	 * @param {import("node:child_process").ExecFileOptionsWithStringEncoding} options
+	 * @param {(error: import("node:child_process").ExecFileException | null, stdout: string, stderr: string) => void} callback
+	 */
+	const remoteExecFile = (file, args, options, callback) => {
+		if (file !== "git") throw new Error("Remote Git execution only supports git");
+		const spec = createSshGitSpec(remote.connection, remote.remotePath, args);
+		return execFile(spec.command, spec.args, { ...options, cwd: spec.cwd }, callback);
+	};
+	return /** @type {typeof execFile} */ (/** @type {unknown} */ (remoteExecFile));
+}
+
+/** @param {unknown} taskId */
+function resolveGitTarget(taskId) {
+	const displayCwd = resolveTaskCwd(taskId);
+	const remote = displayCwd === backendCwd ? getActiveSshWorkspace() : null;
+	if (!remote) return { displayCwd, cwd: displayCwd, remote: false, options: undefined };
+	return {
+		displayCwd,
+		cwd: remote.remotePath,
+		remote: true,
+		options: {
+			execFileImpl: createRemoteGitExecFile(remote),
+			realpathImpl: async (/** @type {string} */ _path) => remote.remotePath,
+			statImpl: async (/** @type {string} */ _path) => ({ isDirectory: () => true }),
+			timeoutMs: 15_000,
+		},
+	};
+}
+
+/** @param {unknown} taskId @param {string} feature */
+function resolveLocalGitCwd(taskId, feature) {
+	const target = resolveGitTarget(taskId);
+	if (target.remote) throw new Error(`${feature} is not available for SSH workspaces yet`);
+	return target.cwd;
+}
+
 ipcMain.handle("workspace:get-git-status", async (_event, taskId) => {
-	const cwd = resolveTaskCwd(taskId);
-	return { cwd, ...(await getGitWorkspaceStatus(cwd)) };
+	const target = resolveGitTarget(taskId);
+	return { cwd: target.displayCwd, ...(await getGitWorkspaceStatus(target.cwd, target.options)) };
 });
 
-ipcMain.handle("git:changes", async (_event, taskId) => listGitChanges(resolveTaskCwd(taskId)));
+ipcMain.handle("git:changes", async (_event, taskId) => {
+	const target = resolveGitTarget(taskId);
+	return listGitChanges(target.cwd, target.options);
+});
 
-ipcMain.handle("git:commit-all", async (_event, message, taskId) =>
-	commitAllChanges(resolveTaskCwd(taskId), message),
-);
+ipcMain.handle("git:commit-all", async (_event, message, taskId) => {
+	const target = resolveGitTarget(taskId);
+	return commitAllChanges(target.cwd, message, target.options);
+});
 
-ipcMain.handle("git:branches", async (_event, taskId) => listGitBranches(resolveTaskCwd(taskId)));
+ipcMain.handle("git:branches", async (_event, taskId) => {
+	const target = resolveGitTarget(taskId);
+	return listGitBranches(target.cwd, target.options);
+});
 
 ipcMain.handle("git:file-diff", async (_event, filePath, taskId) =>
-	getFileDiff(resolveTaskCwd(taskId), String(filePath ?? "")),
+	getFileDiff(resolveLocalGitCwd(taskId, "Remote file diffs"), String(filePath ?? "")),
 );
 
 ipcMain.handle("git:apply-hunk", async (_event, params, taskId) =>
-	applyGitHunk(resolveTaskCwd(taskId), String(params?.filePath ?? ""), {
+	applyGitHunk(resolveLocalGitCwd(taskId, "Remote hunk actions"), String(params?.filePath ?? ""), {
 		section: params?.section,
 		action: params?.action,
 		hunkIndex: params?.hunkIndex,
@@ -1878,7 +1927,7 @@ ipcMain.handle("git:apply-hunk", async (_event, params, taskId) =>
 );
 
 ipcMain.handle("git:restore-file", async (_event, filePath, taskId) => {
-	const cwd = resolveTaskCwd(taskId);
+	const cwd = resolveLocalGitCwd(taskId, "Remote discard");
 	const result = await restoreFileChanges(cwd, String(filePath ?? ""));
 	if (result.restored || !result.untracked) {
 		return { ...result, trashed: false };
@@ -1897,22 +1946,30 @@ ipcMain.handle("git:restore-file", async (_event, filePath, taskId) => {
 	return { ...result, trashed: false };
 });
 
-ipcMain.handle("git:push", async (_event, taskId) => pushCurrentBranch(resolveTaskCwd(taskId)));
+ipcMain.handle("git:push", async (_event, taskId) => {
+	const target = resolveGitTarget(taskId);
+	return pushCurrentBranch(target.cwd, target.options);
+});
 
-ipcMain.handle("git:switch-branch", async (_event, name, options, taskId) =>
-	switchGitBranch(resolveTaskCwd(taskId), name, { create: Boolean(options?.create) }),
+ipcMain.handle("git:switch-branch", async (_event, name, options, taskId) => {
+	const target = resolveGitTarget(taskId);
+	return switchGitBranch(target.cwd, name, { ...target.options, create: Boolean(options?.create) });
+});
+
+ipcMain.handle("git:pr-context", async (_event, taskId) =>
+	getPullRequestContext(resolveLocalGitCwd(taskId, "Remote pull requests")),
 );
 
-ipcMain.handle("git:pr-context", async (_event, taskId) => getPullRequestContext(resolveTaskCwd(taskId)));
-
-ipcMain.handle("git:pr-review", async (_event, taskId) => getPullRequestReview(resolveTaskCwd(taskId)));
+ipcMain.handle("git:pr-review", async (_event, taskId) =>
+	getPullRequestReview(resolveLocalGitCwd(taskId, "Remote pull requests")),
+);
 
 ipcMain.handle("git:pr-review-action", async (_event, action, taskId) =>
-	updatePullRequestReview(resolveTaskCwd(taskId), action),
+	updatePullRequestReview(resolveLocalGitCwd(taskId, "Remote pull requests"), action),
 );
 
 ipcMain.handle("git:create-pr", async (_event, params, taskId) => {
-	const result = await createPullRequest(resolveTaskCwd(taskId), {
+	const result = await createPullRequest(resolveLocalGitCwd(taskId, "Remote pull requests"), {
 		title: String(params?.title ?? ""),
 		body: String(params?.body ?? ""),
 		base: String(params?.base ?? ""),

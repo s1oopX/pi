@@ -12,6 +12,17 @@ const GIT_STATUS_ARGS = [
 	"--untracked-files=normal",
 ];
 
+/**
+ * @typedef {(path: string) => Promise<string>} RealpathImpl
+ * @typedef {(path: string) => Promise<{ isDirectory: () => boolean }>} StatImpl
+ * @typedef {{
+ *   execFileImpl?: import("node:child_process").execFile,
+ *   realpathImpl?: RealpathImpl,
+ *   statImpl?: StatImpl,
+ *   timeoutMs?: number,
+ * }} GitStatusOptions
+ */
+
 /** @param {"repository" | "not-repository" | "unavailable"} kind */
 function emptyStatus(kind) {
 	return {
@@ -115,7 +126,7 @@ function isNotRepositoryFailure(error, stderr) {
 	return Boolean(error) && /(?:^|\n)fatal: not a git repository(?:\s|:|$)/iu.test(stderr);
 }
 
-/** @param {string} workspace */
+/** @param {string} workspace @param {GitStatusOptions} [options] */
 export async function getGitWorkspaceStatus(
 	workspace,
 	{

@@ -20,6 +20,12 @@ const GIT_BASE_ARGS = ["-c", "color.status=false", "-c", "core.quotepath=false"]
  * @typedef {{ error: unknown, stdout: string, stderr: string }} GitRunResult
  * @typedef {(path: string) => Promise<string>} RealpathImpl
  * @typedef {(path: string) => Promise<{ isDirectory: () => boolean }>} StatImpl
+ * @typedef {{
+ *   execFileImpl?: import("node:child_process").execFile,
+ *   realpathImpl?: RealpathImpl,
+ *   statImpl?: StatImpl,
+ *   timeoutMs?: number,
+ * }} GitOperationOptions
  */
 
 /** @param {string} output */
@@ -187,7 +193,7 @@ export async function resolveWorkspaceDir(workspace, realpathImpl, statImpl) {
 	return cwd;
 }
 
-/** @param {string} workspace */
+/** @param {string} workspace @param {GitOperationOptions} [options] */
 export async function listGitChanges(
 	workspace,
 	{ execFileImpl = execFile, realpathImpl = realpath, statImpl = stat, timeoutMs = GIT_TIMEOUT_MS } = {},
@@ -201,6 +207,7 @@ export async function listGitChanges(
 /**
  * @param {string} workspace
  * @param {string} message
+ * @param {GitOperationOptions} [options]
  */
 export async function commitAllChanges(
 	workspace,
@@ -230,7 +237,7 @@ export async function commitAllChanges(
 	return { committed: true, summary: summary.trim() };
 }
 
-/** @param {string} workspace */
+/** @param {string} workspace @param {GitOperationOptions} [options] */
 export async function listGitBranches(
 	workspace,
 	{ execFileImpl = execFile, realpathImpl = realpath, statImpl = stat, timeoutMs = GIT_TIMEOUT_MS } = {},
@@ -257,7 +264,7 @@ export async function listGitBranches(
 	return { branches, current };
 }
 
-/** @param {string} workspace */
+/** @param {string} workspace @param {GitOperationOptions} [options] */
 export async function pushCurrentBranch(
 	workspace,
 	{ execFileImpl = execFile, realpathImpl = realpath, statImpl = stat, timeoutMs = GIT_TIMEOUT_MS } = {},
@@ -292,6 +299,7 @@ export async function pushCurrentBranch(
 /**
  * @param {string} workspace
  * @param {string} name
+ * @param {GitOperationOptions & { create?: boolean }} [options]
  */
 export async function switchGitBranch(
 	workspace,
@@ -424,6 +432,7 @@ async function readFileDiff(cwd, target, execFileImpl, timeoutMs) {
  * one file. Untracked files fall back to a no-index pure-addition patch.
  * @param {string} workspace
  * @param {string} filePath
+ * @param {GitOperationOptions} [options]
  */
 export async function getFileDiff(
 	workspace,
@@ -442,6 +451,7 @@ export async function getFileDiff(
  * @param {string} workspace
  * @param {string} filePath
  * @param {{ section?: unknown, action?: unknown, hunkIndex?: unknown, patchHash?: unknown }} selection
+ * @param {GitOperationOptions} [options]
  */
 export async function applyGitHunk(
 	workspace,
@@ -484,6 +494,7 @@ export async function applyGitHunk(
  * (the desktop moves it to the recycle bin rather than deleting).
  * @param {string} workspace
  * @param {string} filePath
+ * @param {GitOperationOptions} [options]
  * @returns {Promise<{ restored: boolean, untracked: boolean }>}
  */
 export async function restoreFileChanges(

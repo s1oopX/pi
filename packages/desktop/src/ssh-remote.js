@@ -266,3 +266,26 @@ export function createSshTestSpec(connectionValue) {
 		cwd: homedir(),
 	};
 }
+
+/**
+ * @param {unknown} connectionValue
+ * @param {string} remotePath
+ * @param {readonly string[]} args
+ */
+export function createSshGitSpec(connectionValue, remotePath, args) {
+	const connection = normalizeConnection(connectionValue, false);
+	const gitArgs = args.map((arg) => {
+		const value = String(arg);
+		if (value.includes("\0")) throw new Error("Git arguments cannot contain NUL bytes");
+		return quotePosixShell(value);
+	});
+	const remoteCommand = [
+		`cd ${remotePathExpression(remotePath)}`,
+		`GIT_OPTIONAL_LOCKS=0 LANG=C LC_ALL=C GIT_TERMINAL_PROMPT=0 exec git${gitArgs.length > 0 ? ` ${gitArgs.join(" ")}` : ""}`,
+	].join(" && ");
+	return {
+		command: "ssh",
+		args: [...sshArgs(connection, true), remoteCommand],
+		cwd: homedir(),
+	};
+}

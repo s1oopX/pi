@@ -4,6 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
 import {
+	createSshGitSpec,
 	createSshLaunchSpec,
 	createSshTestSpec,
 	createSshWorkspaceUri,
@@ -68,4 +69,15 @@ test("builds non-interactive SSH test and stdin-prefixed RPC launch specs", () =
 	const probe = createSshTestSpec(CONNECTION);
 	assert.ok(probe.args.includes("BatchMode=yes"));
 	assert.match(probe.args.at(-1), /exec 'pi' --version/u);
+});
+
+test("builds a non-interactive, shell-quoted remote git spec", () => {
+	const spec = createSshGitSpec(CONNECTION, "~/work/pi", ["commit", "-m", "fix 'quoted' $(nope)"]);
+	assert.equal(spec.command, "ssh");
+	assert.ok(spec.args.includes("BatchMode=yes"));
+	assert.equal(
+		spec.args.at(-1),
+		`cd "$HOME"/'work/pi' && GIT_OPTIONAL_LOCKS=0 LANG=C LC_ALL=C GIT_TERMINAL_PROMPT=0 exec git 'commit' '-m' 'fix '"'"'quoted'"'"' $(nope)'`,
+	);
+	assert.throws(() => createSshGitSpec(CONNECTION, "/srv/pi", ["bad\0arg"]), /NUL/);
 });

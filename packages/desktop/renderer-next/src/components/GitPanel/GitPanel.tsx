@@ -33,6 +33,7 @@ type LineCommentTarget = DiffLineSelection & { section: GitDiffSectionName };
 export function GitPanel({ onClose }: GitPanelProps) {
   const { t } = useI18n();
   const workspaceGitStatus = useStore((s) => s.workspaceGitStatus);
+  const workspaceCwd = useStore((s) => s.workspaceCwd);
   const refreshWorkspaceGitStatus = useStore((s) => s.refreshWorkspaceGitStatus);
   const isStreaming = useStore((s) => s.isStreaming);
   const setComposerDraft = useStore((s) => s.setComposerDraft);
@@ -70,6 +71,7 @@ export function GitPanel({ onClose }: GitPanelProps) {
   const [creatingPr, setCreatingPr] = useState(false);
 
   const sync = summarizeGitSync(workspaceGitStatus);
+  const isRemote = workspaceCwd.startsWith("ssh://");
   const busy = committing
     || pushing
     || Boolean(switchingBranch)
@@ -515,8 +517,11 @@ export function GitPanel({ onClose }: GitPanelProps) {
           <button
             className="git-panel-pr-toggle"
             type="button"
+            disabled={isRemote}
             aria-expanded={prOpen}
-            title={t("Create or review a pull request", "创建或审阅 Pull Request")}
+            title={isRemote
+              ? t("Remote pull requests are not available yet", "远程 Pull Request 尚不可用")
+              : t("Create or review a pull request", "创建或审阅 Pull Request")}
             onClick={() => {
               const next = !prOpen;
               setPrOpen(next);
@@ -890,8 +895,11 @@ export function GitPanel({ onClose }: GitPanelProps) {
               <button
                 className={`git-panel-file ${expandedFile === file.path ? "expanded" : ""}`}
                 type="button"
+                disabled={isRemote}
                 aria-expanded={expandedFile === file.path}
-                title={t("Show the diff for {path}", "查看 {path} 的差异", { path: file.path })}
+                title={isRemote
+                  ? t("Remote file diffs are not available yet", "远程文件差异尚不可用")
+                  : t("Show the diff for {path}", "查看 {path} 的差异", { path: file.path })}
                 onClick={() => void toggleFileDiff(file.path)}
               >
                 <span
