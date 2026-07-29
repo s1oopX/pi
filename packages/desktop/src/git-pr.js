@@ -76,6 +76,14 @@ const UNRESOLVE_REVIEW_THREAD_MUTATION = `mutation($threadId: ID!) {
  *   canResolve?: boolean,
  *   canUnresolve?: boolean,
  * }} PullRequestFeedback
+ * @typedef {(path: string) => Promise<string>} RealpathImpl
+ * @typedef {(path: string) => Promise<{ isDirectory: () => boolean }>} StatImpl
+ * @typedef {{
+ *   execFileImpl?: import("node:child_process").execFile,
+ *   realpathImpl?: RealpathImpl,
+ *   statImpl?: StatImpl,
+ *   timeoutMs?: number,
+ * }} GitPrOptions
  */
 
 /**
@@ -179,11 +187,9 @@ function runGh(cwd, args, execFileImpl, timeoutMs) {
 
 /** @param {{ error: unknown }} result */
 function isMissingExecutable(result) {
-	return Boolean(
-		result.error &&
-			typeof result.error === "object" &&
-			/** @type {{ code?: unknown }} */ (result.error).code === "ENOENT",
-	);
+	if (!result.error || typeof result.error !== "object") return false;
+	const code = /** @type {{ code?: unknown }} */ (result.error).code;
+	return code === "ENOENT" || code === 127;
 }
 
 /** @param {unknown} value @returns {Record<string, unknown> | undefined} */
@@ -352,7 +358,7 @@ async function readHasUpstream(cwd, execFileImpl, timeoutMs) {
 	return !result.error && result.stdout.trim().length > 0;
 }
 
-/** @param {string} workspace */
+/** @param {string} workspace @param {GitPrOptions} [options] */
 export async function getPullRequestContext(
 	workspace,
 	{ execFileImpl = execFile, realpathImpl = realpath, statImpl = stat, timeoutMs = GIT_TIMEOUT_MS } = {},
@@ -411,7 +417,7 @@ async function readCurrentPullRequest(cwd, execFileImpl, timeoutMs, fields) {
 	return { remote, repoSlug, pullRequest };
 }
 
-/** @param {string} workspace */
+/** @param {string} workspace @param {GitPrOptions} [options] */
 export async function getPullRequestReview(
 	workspace,
 	{ execFileImpl = execFile, realpathImpl = realpath, statImpl = stat, timeoutMs = GIT_TIMEOUT_MS } = {},
@@ -491,6 +497,7 @@ export async function getPullRequestReview(
 /**
  * @param {string} workspace
  * @param {unknown} params
+ * @param {GitPrOptions} [options]
  */
 export async function updatePullRequestReview(
 	workspace,
@@ -574,10 +581,14 @@ export async function updatePullRequestReview(
  * URL instead so the caller can open it in a browser. Throws when the state
  * cannot produce a PR at all (detached, non-GitHub remote, unpushed branch).
  */
-/** @param {string} workspace */
+/**
+ * @param {string} workspace
+ * @param {{title?: string, body?: string, base?: string}} [params]
+ * @param {GitPrOptions} [options]
+ */
 export async function createPullRequest(
 	workspace,
-	/** @type {{title?: string, body?: string, base?: string}} */ { title, body, base } = {},
+	{ title, body, base } = {},
 	{ execFileImpl = execFile, realpathImpl = realpath, statImpl = stat, timeoutMs = GIT_TIMEOUT_MS } = {},
 ) {
 	const validatedTitle = validatePrTitle(title);

@@ -272,6 +272,30 @@ describe("getFileDiff", () => {
 		assert.equal(git.calls[3].includes("--no-index"), true);
 	});
 
+	it("uses POSIX paths and /dev/null for a remote workspace", async () => {
+		const git = fakeGit([
+			{ stdout: "" },
+			{ stdout: "" },
+			{ stdout: "" },
+			{ error: new Error("exit 1"), stdout: "diff --git a/dev/null b/src/literal.ts\n+hello\n" },
+		]);
+		await getFileDiff("~/work/pi", "src\\literal.ts", {
+			...fsOk,
+			execFileImpl: git.execFileImpl,
+			posixPaths: true,
+		});
+		assert.equal(git.calls[3].includes("/dev/null"), true);
+		assert.equal(git.calls[3].at(-1), "src\\literal.ts");
+		await assert.rejects(
+			getFileDiff("~/work/pi", "../secret.txt", {
+				...fsOk,
+				execFileImpl: fakeGit([]).execFileImpl,
+				posixPaths: true,
+			}),
+			/inside the workspace/iu,
+		);
+	});
+
 	it("rejects empty paths", async () => {
 		await assert.rejects(getFileDiff("C:\\work", " ", { ...fsOk, execFileImpl: fakeGit([]).execFileImpl }), /path/iu);
 	});
@@ -347,7 +371,7 @@ describe("applyGitHunk", () => {
 				{ section: "unstaged", action: "discard", hunkIndex: 0, patchHash: hashPatch(untrackedPatch) },
 				{ ...fsOk, execFileImpl: git.execFileImpl },
 			),
-			/Recycle Bin/,
+			/whole new file/,
 		);
 		assert.equal(git.inputs.length, 0);
 	});

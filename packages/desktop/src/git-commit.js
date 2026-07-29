@@ -7,7 +7,7 @@
 import { execFile } from "node:child_process";
 import { createHash } from "node:crypto";
 import { realpath, stat } from "node:fs/promises";
-import { isAbsolute, relative, resolve, sep } from "node:path";
+import { isAbsolute, posix, relative, resolve, sep } from "node:path";
 
 const GIT_TIMEOUT_MS = 15000;
 const GIT_MAX_BUFFER_BYTES = 1024 * 1024;
@@ -25,6 +25,7 @@ const GIT_BASE_ARGS = ["-c", "color.status=false", "-c", "core.quotepath=false"]
  *   realpathImpl?: RealpathImpl,
  *   statImpl?: StatImpl,
  *   timeoutMs?: number,
+ *   posixPaths?: boolean,
  * }} GitOperationOptions
  */
 
@@ -337,13 +338,20 @@ export async function switchGitBranch(
  * by the resolved workspace.
  * @param {string} cwd
  * @param {unknown} filePath
+ * @param {boolean} posixPaths
  */
-function validateFilePath(cwd, filePath) {
+function validateFilePath(cwd, filePath, posixPaths) {
 	const target = String(filePath ?? "");
 	if (!target.trim()) throw new Error("A file path is required");
-	if (target.includes("\0") || isAbsolute(target)) throw new Error("File path must be relative to the workspace");
-	const relativeTarget = relative(cwd, resolve(cwd, target));
-	if (!relativeTarget || relativeTarget === ".." || relativeTarget.startsWith(`..${sep}`) || isAbsolute(relativeTarget)) {
+	const pathApi = posixPaths ? posix : { isAbsolute, relative, resolve, sep };
+	if (target.includes("\0") || pathApi.isAbsolute(target)) throw new Error("File path must be relative to the workspace");
+	const relativeTarget = pathApi.relative(cwd, pathApi.resolve(cwd, target));
+	if (
+		!relativeTarget ||
+		relativeTarget === ".." ||
+		relativeTarget.startsWith(`..${pathApi.sep}`) ||
+		pathApi.isAbsolute(relativeTarget)
+	) {
 		throw new Error("File path must stay inside the workspace");
 	}
 	return target;
@@ -396,8 +404,9 @@ function describePatch(patch, canDiscard) {
  * @param {string} target
  * @param {import("node:child_process").execFile} execFileImpl
  * @param {number} timeoutMs
+ * @param {boolean} posixPaths
  */
-async function readFileDiff(cwd, target, execFileImpl, timeoutMs) {
+async function readFileDiff(cwd, target, execFileImpl, timeoutMs, posixPaths) {
 	const inHeadResult = await runGit(cwd, ["ls-tree", "HEAD", "--", target], execFileImpl, timeoutMs);
 	const inHead = !inHeadResult.error && Boolean(inHeadResult.stdout.trim());
 	const stagedResult = await runGit(cwd, ["diff", "--cached", "--", target], execFileImpl, timeoutMs);
@@ -410,7 +419,7 @@ async function readFileDiff(cwd, target, execFileImpl, timeoutMs) {
 	if (!stagedResult.stdout.trim() && !unstagedPatch.trim()) {
 		// `--no-index` exits 1 when the sides differ, so the output matters more
 		// than the error flag here.
-		const nullDevice = process.platform === "win32" ? "NUL" : "/dev/null";
+		const nullDevice = !posixPaths && process.platform === "win32" ? "NUL" : "/dev/null";
 		const untrackedResult = await runGit(
 			cwd,
 			["diff", "--no-index", "--", nullDevice, target],
@@ -437,11 +446,17 @@ async function readFileDiff(cwd, target, execFileImpl, timeoutMs) {
 export async function getFileDiff(
 	workspace,
 	filePath,
-	{ execFileImpl = execFile, realpathImpl = realpath, statImpl = stat, timeoutMs = GIT_TIMEOUT_MS } = {},
+	{
+		execFileImpl = execFile,
+		realpathImpl = realpath,
+		statImpl = stat,
+		timeoutMs = GIT_TIMEOUT_MS,
+		posixPaths = false,
+	} = {},
 ) {
 	const cwd = await resolveWorkspaceDir(workspace, realpathImpl, statImpl);
-	const target = validateFilePath(cwd, filePath);
-	return readFileDiff(cwd, target, execFileImpl, timeoutMs);
+	const target = validateFilePath(cwd, filePath, posixPaths);
+	return readFileDiff(cwd, target, execFileImpl, timeoutMs, posixPaths);
 }
 
 /**
@@ -457,10 +472,16 @@ export async function applyGitHunk(
 	workspace,
 	filePath,
 	selection,
-	{ execFileImpl = execFile, realpathImpl = realpath, statImpl = stat, timeoutMs = GIT_TIMEOUT_MS } = {},
+	{
+		execFileImpl = execFile,
+		realpathImpl = realpath,
+		statImpl = stat,
+		timeoutMs = GIT_TIMEOUT_MS,
+		posixPaths = false,
+	} = {},
 ) {
 	const cwd = await resolveWorkspaceDir(workspace, realpathImpl, statImpl);
-	const target = validateFilePath(cwd, filePath);
+	const target = validateFilePath(cwd, filePath, posixPaths);
 	const section = selection?.section;
 	const action = selection?.action;
 	const hunkIndex = typeof selection?.hunkIndex === "number" ? selection.hunkIndex : Number.NaN;
@@ -475,11 +496,11 @@ export async function applyGitHunk(
 	const args = argsBySelection[`${section}:${action}`];
 	if (!args) throw new Error("Unsupported hunk action");
 
-	const diff = await readFileDiff(cwd, target, execFileImpl, timeoutMs);
+	const diff = await readFileDiff(cwd, target, execFileImpl, timeoutMs, posixPaths);
 	const patchSection = section === "staged" ? diff.staged : diff.unstaged;
 	if (requestedHash !== patchSection.hash) throw new Error("Diff changed; refresh it and try again");
 	if (action === "discard" && !patchSection.canDiscard) {
-		throw new Error("Discard the whole new file to move it to the Recycle Bin");
+		throw new Error("Discard the whole new file instead");
 	}
 	const patch = selectPatchHunk(patchSection.patch, hunkIndex);
 	const result = await runGitWithInput(cwd, args, patch, execFileImpl, timeoutMs);
@@ -500,10 +521,16 @@ export async function applyGitHunk(
 export async function restoreFileChanges(
 	workspace,
 	filePath,
-	{ execFileImpl = execFile, realpathImpl = realpath, statImpl = stat, timeoutMs = GIT_TIMEOUT_MS } = {},
+	{
+		execFileImpl = execFile,
+		realpathImpl = realpath,
+		statImpl = stat,
+		timeoutMs = GIT_TIMEOUT_MS,
+		posixPaths = false,
+	} = {},
 ) {
 	const cwd = await resolveWorkspaceDir(workspace, realpathImpl, statImpl);
-	const target = validateFilePath(cwd, filePath);
+	const target = validateFilePath(cwd, filePath, posixPaths);
 
 	const inHead = await runGit(cwd, ["ls-tree", "HEAD", "--", target], execFileImpl, timeoutMs);
 	if (!inHead.error && inHead.stdout.trim()) {

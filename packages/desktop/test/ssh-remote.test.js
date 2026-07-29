@@ -4,9 +4,11 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
 import {
+	createSshCliSpec,
 	createSshGitSpec,
 	createSshLaunchSpec,
 	createSshTestSpec,
+	createSshTrashSpec,
 	createSshWorkspaceUri,
 	loadSshConnections,
 	normalizeSshConnection,
@@ -80,4 +82,19 @@ test("builds a non-interactive, shell-quoted remote git spec", () => {
 		`cd "$HOME"/'work/pi' && GIT_OPTIONAL_LOCKS=0 LANG=C LC_ALL=C GIT_TERMINAL_PROMPT=0 exec git 'commit' '-m' 'fix '"'"'quoted'"'"' $(nope)'`,
 	);
 	assert.throws(() => createSshGitSpec(CONNECTION, "/srv/pi", ["bad\0arg"]), /NUL/);
+});
+
+test("builds remote gh and recoverable trash specs", () => {
+	const gh = createSshCliSpec(CONNECTION, "/srv/pi project", "gh", ["pr", "view", "topic/it's"]);
+	assert.match(gh.args.at(-1), /GH_PROMPT_DISABLED=1/u);
+	assert.match(gh.args.at(-1), /exec gh 'pr' 'view' 'topic\/it'"'"'s'/u);
+
+	const trash = createSshTrashSpec(CONNECTION, "~/work/pi", "src/it's $(unsafe).ts");
+	assert.ok(trash.args.includes("BatchMode=yes"));
+	assert.match(trash.trashPath, /^~\/\.pi\/studio\/trash\/\d+-[a-f0-9-]+-it's \$\(unsafe\)\.ts$/u);
+	assert.match(trash.args.at(-1), /dirname '\.\/src\/it'"'"'s \$\(unsafe\)\.ts'/u);
+	assert.match(trash.args.at(-1), /Remote trash path escaped the workspace/u);
+	assert.match(trash.args.at(-1), /mv -- "\$target_directory\/\$target_name"/u);
+	assert.throws(() => createSshTrashSpec(CONNECTION, "/srv/pi", "../secret"), /inside the workspace/);
+	assert.throws(() => createSshTrashSpec(CONNECTION, "/srv/pi", "dir/../secret"), /inside the workspace/);
 });

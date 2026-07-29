@@ -445,7 +445,9 @@ export function GitPanel({ onClose }: GitPanelProps) {
       const result = await api.restoreGitFile(path);
       showToast(
         result.trashed
-          ? t("Moved {path} to the Recycle Bin", "已将 {path} 移至回收站", { path })
+          ? isRemote
+            ? t("Moved {path} to remote trash", "已将 {path} 移至远程回收目录", { path })
+            : t("Moved {path} to the Recycle Bin", "已将 {path} 移至回收站", { path })
           : t("Restored {path}", "已还原 {path}", { path }),
         "success",
       );
@@ -517,11 +519,8 @@ export function GitPanel({ onClose }: GitPanelProps) {
           <button
             className="git-panel-pr-toggle"
             type="button"
-            disabled={isRemote}
             aria-expanded={prOpen}
-            title={isRemote
-              ? t("Remote pull requests are not available yet", "远程 Pull Request 尚不可用")
-              : t("Create or review a pull request", "创建或审阅 Pull Request")}
+            title={t("Create or review a pull request", "创建或审阅 Pull Request")}
             onClick={() => {
               const next = !prOpen;
               setPrOpen(next);
@@ -895,11 +894,8 @@ export function GitPanel({ onClose }: GitPanelProps) {
               <button
                 className={`git-panel-file ${expandedFile === file.path ? "expanded" : ""}`}
                 type="button"
-                disabled={isRemote}
                 aria-expanded={expandedFile === file.path}
-                title={isRemote
-                  ? t("Remote file diffs are not available yet", "远程文件差异尚不可用")
-                  : t("Show the diff for {path}", "查看 {path} 的差异", { path: file.path })}
+                title={t("Show the diff for {path}", "查看 {path} 的差异", { path: file.path })}
                 onClick={() => void toggleFileDiff(file.path)}
               >
                 <span

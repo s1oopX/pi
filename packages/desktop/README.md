@@ -62,7 +62,7 @@ Pi Studio assumes the workspace may be hostile (a cloned repository) and the ren
 
 ### Git integration
 
-The top-bar git panel covers the full local flow without leaving the app: status with ahead/behind, staged-all commits, push with automatic upstream creation, branch list/switch/create, and pull-request creation through the GitHub CLI (explicit `--repo/--head/--base`, non-interactive) with a pre-filled compare-page fallback when `gh` is absent. Remote parsing understands https/ssh/scp forms and GitHub Enterprise hosts.
+The top-bar git panel covers the full flow without leaving the app: status with ahead/behind, staged-all commits, push with automatic upstream creation, branch list/switch/create, per-file and per-hunk review, and pull-request creation/review through the GitHub CLI (explicit `--repo/--head/--base`, non-interactive) with a pre-filled compare-page fallback when `gh` is absent. SSH workspaces run the same Git and `gh` operations on the remote host; untracked-file discard moves files to `~/.pi/studio/trash`. Remote parsing understands https/ssh/scp forms and GitHub Enterprise hosts.
 
 ### Sessions
 
@@ -113,7 +113,7 @@ The fork root is an upstream commit, so upstream releases merge as plain three-w
 
 ## Roadmap
 
-Near-term: none — the roadmap through pool lifecycle, worktree ergonomics, and full-strict main-process type checking has landed.
+Near-term: complete SSH artifact preview, remote worktrees, trust-aware project extensions, Pi installation, and WSL-specific UX; then close the remaining Automations product-parity gaps.
 
 Deliberately deferred: code signing and auto-update, installer distribution, backend size reduction (~100 MB Bun runtime), macOS/Linux, additional locales.
 

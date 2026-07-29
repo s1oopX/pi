@@ -386,19 +386,19 @@ describe("createPullRequest", () => {
 	});
 
 	it("returns the compare URL when gh is not installed", async () => {
-		const exec = fakeExec(
-			happyPathResponses({ error: Object.assign(new Error("spawn gh ENOENT"), { code: "ENOENT" }) }),
-		);
-		const result = await createPullRequest(
-			"C:\\work",
-			{ title: "feat: thing", body: "", base: "main" },
-			{ ...fsOk, execFileImpl: exec.execFileImpl },
-		);
-		assert.deepEqual(result, {
-			created: false,
-			method: "compare",
-			url: "https://github.com/o/r/compare/main...feature%2Fx?expand=1",
-		});
+		for (const code of ["ENOENT", 127]) {
+			const exec = fakeExec(happyPathResponses({ error: Object.assign(new Error("gh missing"), { code }) }));
+			const result = await createPullRequest(
+				"C:\\work",
+				{ title: "feat: thing", body: "", base: "main" },
+				{ ...fsOk, execFileImpl: exec.execFileImpl },
+			);
+			assert.deepEqual(result, {
+				created: false,
+				method: "compare",
+				url: "https://github.com/o/r/compare/main...feature%2Fx?expand=1",
+			});
+		}
 	});
 
 	it("surfaces the existing PR URL when one is already open", async () => {

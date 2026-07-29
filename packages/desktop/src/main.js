@@ -44,9 +44,10 @@ import { createRollingLog } from "./rolling-log.js";
 import { prepareSessionImport, resolveKnownSessionFile } from "./session-files.js";
 import { createTaskRegistry } from "./task-registry.js";
 import {
+	createSshCliSpec,
 	createSshLaunchSpec,
-	createSshGitSpec,
 	createSshTestSpec,
+	createSshTrashSpec,
 	createSshWorkspaceUri,
 	loadSshConnections,
 	normalizeSshConnection,
@@ -1853,7 +1854,7 @@ function resolveTaskCwd(taskId) {
 }
 
 /** @param {NonNullable<ReturnType<typeof getActiveSshWorkspace>>} remote */
-function createRemoteGitExecFile(remote) {
+function createRemoteCliExecFile(remote) {
 	/**
 	 * @param {string} file
 	 * @param {readonly string[]} args
@@ -1861,36 +1862,60 @@ function createRemoteGitExecFile(remote) {
 	 * @param {(error: import("node:child_process").ExecFileException | null, stdout: string, stderr: string) => void} callback
 	 */
 	const remoteExecFile = (file, args, options, callback) => {
-		if (file !== "git") throw new Error("Remote Git execution only supports git");
-		const spec = createSshGitSpec(remote.connection, remote.remotePath, args);
+		if (file !== "git" && file !== "gh") throw new Error("Remote Git execution only supports git and gh");
+		const spec = createSshCliSpec(remote.connection, remote.remotePath, file, args);
 		return execFile(spec.command, spec.args, { ...options, cwd: spec.cwd }, callback);
 	};
 	return /** @type {typeof execFile} */ (/** @type {unknown} */ (remoteExecFile));
+}
+
+/**
+ * @param {NonNullable<ReturnType<typeof getActiveSshWorkspace>>} remote
+ * @param {string} filePath
+ */
+function trashRemoteGitPath(remote, filePath) {
+	const spec = createSshTrashSpec(remote.connection, remote.remotePath, filePath);
+	return new Promise((resolve, reject) => {
+		execFile(
+			spec.command,
+			spec.args,
+			{
+				cwd: spec.cwd,
+				encoding: "utf8",
+				maxBuffer: 256 * 1024,
+				shell: false,
+				timeout: 30_000,
+				windowsHide: true,
+			},
+			(error, stdout, stderr) => {
+				if (!error) {
+					resolve({ path: spec.trashPath });
+					return;
+				}
+				const detail = (stderr.trim() || stdout.trim() || error.message).slice(0, 500);
+				reject(new Error(`Could not move the remote file to trash: ${detail}`));
+			},
+		);
+	});
 }
 
 /** @param {unknown} taskId */
 function resolveGitTarget(taskId) {
 	const displayCwd = resolveTaskCwd(taskId);
 	const remote = displayCwd === backendCwd ? getActiveSshWorkspace() : null;
-	if (!remote) return { displayCwd, cwd: displayCwd, remote: false, options: undefined };
+	if (!remote) return { displayCwd, cwd: displayCwd, remote: null, options: undefined };
 	return {
 		displayCwd,
 		cwd: remote.remotePath,
-		remote: true,
+		remote,
 		options: {
-			execFileImpl: createRemoteGitExecFile(remote),
+			execFileImpl: createRemoteCliExecFile(remote),
 			realpathImpl: async (/** @type {string} */ _path) => remote.remotePath,
 			statImpl: async (/** @type {string} */ _path) => ({ isDirectory: () => true }),
-			timeoutMs: 15_000,
+			timeoutMs: 30_000,
+			posixPaths: true,
 		},
 	};
-}
-
-/** @param {unknown} taskId @param {string} feature */
-function resolveLocalGitCwd(taskId, feature) {
-	const target = resolveGitTarget(taskId);
-	if (target.remote) throw new Error(`${feature} is not available for SSH workspaces yet`);
-	return target.cwd;
 }
 
 ipcMain.handle("workspace:get-git-status", async (_event, taskId) => {
@@ -1913,29 +1938,36 @@ ipcMain.handle("git:branches", async (_event, taskId) => {
 	return listGitBranches(target.cwd, target.options);
 });
 
-ipcMain.handle("git:file-diff", async (_event, filePath, taskId) =>
-	getFileDiff(resolveLocalGitCwd(taskId, "Remote file diffs"), String(filePath ?? "")),
-);
+ipcMain.handle("git:file-diff", async (_event, filePath, taskId) => {
+	const target = resolveGitTarget(taskId);
+	return getFileDiff(target.cwd, String(filePath ?? ""), target.options);
+});
 
-ipcMain.handle("git:apply-hunk", async (_event, params, taskId) =>
-	applyGitHunk(resolveLocalGitCwd(taskId, "Remote hunk actions"), String(params?.filePath ?? ""), {
+ipcMain.handle("git:apply-hunk", async (_event, params, taskId) => {
+	const target = resolveGitTarget(taskId);
+	return applyGitHunk(target.cwd, String(params?.filePath ?? ""), {
 		section: params?.section,
 		action: params?.action,
 		hunkIndex: params?.hunkIndex,
 		patchHash: params?.patchHash,
-	}),
-);
+	}, target.options);
+});
 
 ipcMain.handle("git:restore-file", async (_event, filePath, taskId) => {
-	const cwd = resolveLocalGitCwd(taskId, "Remote discard");
-	const result = await restoreFileChanges(cwd, String(filePath ?? ""));
+	const target = resolveGitTarget(taskId);
+	const path = String(filePath ?? "");
+	const result = await restoreFileChanges(target.cwd, path, target.options);
 	if (result.restored || !result.untracked) {
 		return { ...result, trashed: false };
 	}
+	if (target.remote) {
+		await trashRemoteGitPath(target.remote, path);
+		return { ...result, trashed: true };
+	}
 	// A file git never knew about: recycle it (recoverable) instead of
 	// deleting, and only ever inside the workspace.
-	const absolutePath = resolveWorkspacePath(cwd, String(filePath ?? ""));
-	const { insideWorkspace } = describeRevealTarget(cwd, absolutePath);
+	const absolutePath = resolveWorkspacePath(target.cwd, path);
+	const { insideWorkspace } = describeRevealTarget(target.cwd, absolutePath);
 	if (!insideWorkspace) {
 		throw new Error(`Path is outside the workspace: ${absolutePath}`);
 	}
@@ -1956,24 +1988,28 @@ ipcMain.handle("git:switch-branch", async (_event, name, options, taskId) => {
 	return switchGitBranch(target.cwd, name, { ...target.options, create: Boolean(options?.create) });
 });
 
-ipcMain.handle("git:pr-context", async (_event, taskId) =>
-	getPullRequestContext(resolveLocalGitCwd(taskId, "Remote pull requests")),
-);
+ipcMain.handle("git:pr-context", async (_event, taskId) => {
+	const target = resolveGitTarget(taskId);
+	return getPullRequestContext(target.cwd, target.options);
+});
 
-ipcMain.handle("git:pr-review", async (_event, taskId) =>
-	getPullRequestReview(resolveLocalGitCwd(taskId, "Remote pull requests")),
-);
+ipcMain.handle("git:pr-review", async (_event, taskId) => {
+	const target = resolveGitTarget(taskId);
+	return getPullRequestReview(target.cwd, target.options);
+});
 
-ipcMain.handle("git:pr-review-action", async (_event, action, taskId) =>
-	updatePullRequestReview(resolveLocalGitCwd(taskId, "Remote pull requests"), action),
-);
+ipcMain.handle("git:pr-review-action", async (_event, action, taskId) => {
+	const target = resolveGitTarget(taskId);
+	return updatePullRequestReview(target.cwd, action, target.options);
+});
 
 ipcMain.handle("git:create-pr", async (_event, params, taskId) => {
-	const result = await createPullRequest(resolveLocalGitCwd(taskId, "Remote pull requests"), {
+	const target = resolveGitTarget(taskId);
+	const result = await createPullRequest(target.cwd, {
 		title: String(params?.title ?? ""),
 		body: String(params?.body ?? ""),
 		base: String(params?.base ?? ""),
-	});
+	}, target.options);
 	// Land the user on the PR (gh) or the pre-filled compare page (no gh).
 	if (result.url) {
 		await openExternalSafely(result.url);

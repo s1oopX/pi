@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { chmodSync, existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
-import { dirname, join } from "node:path";
+import { dirname, join, posix } from "node:path";
 
 const STORE_VERSION = 1;
 const SSH_TOKEN = /^[^\s\u0000-\u001f\u007f]+$/u;
@@ -273,19 +273,74 @@ export function createSshTestSpec(connectionValue) {
  * @param {readonly string[]} args
  */
 export function createSshGitSpec(connectionValue, remotePath, args) {
+	return createSshCliSpec(connectionValue, remotePath, "git", args);
+}
+
+/**
+ * @param {unknown} connectionValue
+ * @param {string} remotePath
+ * @param {"git" | "gh"} command
+ * @param {readonly string[]} args
+ */
+export function createSshCliSpec(connectionValue, remotePath, command, args) {
 	const connection = normalizeConnection(connectionValue, false);
-	const gitArgs = args.map((arg) => {
+	if (command !== "git" && command !== "gh") throw new Error("Unsupported remote CLI command");
+	const commandArgs = args.map((arg) => {
 		const value = String(arg);
-		if (value.includes("\0")) throw new Error("Git arguments cannot contain NUL bytes");
+		if (value.includes("\0")) throw new Error("Remote CLI arguments cannot contain NUL bytes");
 		return quotePosixShell(value);
 	});
+	const environment = command === "git"
+		? "GIT_OPTIONAL_LOCKS=0 LANG=C LC_ALL=C GIT_TERMINAL_PROMPT=0"
+		: "GH_NO_UPDATE_NOTIFIER=1 GH_PROMPT_DISABLED=1 NO_COLOR=1";
 	const remoteCommand = [
 		`cd ${remotePathExpression(remotePath)}`,
-		`GIT_OPTIONAL_LOCKS=0 LANG=C LC_ALL=C GIT_TERMINAL_PROMPT=0 exec git${gitArgs.length > 0 ? ` ${gitArgs.join(" ")}` : ""}`,
+		`${environment} exec ${command}${commandArgs.length > 0 ? ` ${commandArgs.join(" ")}` : ""}`,
 	].join(" && ");
 	return {
 		command: "ssh",
 		args: [...sshArgs(connection, true), remoteCommand],
 		cwd: homedir(),
+	};
+}
+
+/**
+ * @param {unknown} connectionValue
+ * @param {string} remotePath
+ * @param {unknown} filePath
+ */
+export function createSshTrashSpec(connectionValue, remotePath, filePath) {
+	const connection = normalizeConnection(connectionValue, false);
+	const target = String(filePath ?? "");
+	const normalized = posix.normalize(target);
+	if (
+		!target ||
+		/[\u0000-\u001f\u007f]/u.test(target) ||
+		posix.isAbsolute(target) ||
+		normalized === "." ||
+		normalized === ".." ||
+		normalized.startsWith("../") ||
+		target.split("/").includes("..")
+	) {
+		throw new Error("Remote trash path must stay inside the workspace");
+	}
+	const trashName = `${Date.now()}-${randomUUID()}-${posix.basename(normalized).slice(0, 50)}`;
+	const trashDirectory = '"$HOME/.pi/studio/trash"';
+	const targetExpression = quotePosixShell(`./${normalized}`);
+	const remoteCommand = [
+		"umask 077",
+		`cd ${remotePathExpression(remotePath)}`,
+		'workspace_directory=$(pwd -P)',
+		`target_directory=$(cd "$(dirname ${targetExpression})" && pwd -P)`,
+		`target_name=$(basename ${targetExpression})`,
+		'if [ "$workspace_directory" != "/" ]; then case "$target_directory" in "$workspace_directory"|"$workspace_directory"/*) : ;; *) echo "Remote trash path escaped the workspace" >&2; exit 64 ;; esac; fi',
+		`mkdir -p ${trashDirectory}`,
+		`mv -- "$target_directory/$target_name" ${trashDirectory}/${quotePosixShell(trashName)}`,
+	].join(" && ");
+	return {
+		command: "ssh",
+		args: [...sshArgs(connection, true), remoteCommand],
+		cwd: homedir(),
+		trashPath: `~/.pi/studio/trash/${trashName}`,
 	};
 }
