@@ -67,6 +67,12 @@ export interface SshConnectionList {
   activeConnectionId?: string;
 }
 
+export interface SshPiInstallResult {
+  piCommand: string;
+  version: string;
+  nodeVersion: string;
+}
+
 export interface PiDesktopApi {
   request(command: BackendCommand, taskId?: string): Promise<unknown>;
   send(command: BackendSendCommand, taskId?: string): Promise<void>;
@@ -96,6 +102,7 @@ export interface PiDesktopApi {
   saveSshConnection?: (input: SshConnectionInput) => Promise<{ connections: SshConnection[]; connection: SshConnection }>;
   deleteSshConnection?: (connectionId: string) => Promise<{ connections: SshConnection[] }>;
   testSshConnection?: (input: SshConnectionInput) => Promise<{ ok: boolean; message: string }>;
+  installSshPi?: (input: SshConnectionInput) => Promise<SshPiInstallResult>;
   connectSshConnection?: (connectionId: string) => Promise<{ cwd: string; changed: boolean; connectionId: string }>;
   chooseWorkspace(): Promise<{ cwd: string; changed: boolean }>;
   openWorkspace(cwd: string): Promise<{ cwd: string; changed: boolean }>;
@@ -783,6 +790,12 @@ export async function testSshConnection(input: SshConnectionInput): Promise<{ ok
   const api = requireApi();
   if (!api.testSshConnection) throw new Error("SSH connections need a newer Pi Studio build");
   return api.testSshConnection(input);
+}
+
+export async function installSshPi(input: SshConnectionInput): Promise<SshPiInstallResult> {
+  const api = requireApi();
+  if (!api.installSshPi) throw new Error("Remote Pi installation needs a newer Pi Studio build");
+  return api.installSshPi(input);
 }
 
 export async function connectSshConnection(

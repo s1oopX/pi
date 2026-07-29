@@ -422,7 +422,7 @@ function WorkbenchSpreadsheetPreview({ preview }: { preview: WorkspaceFilePrevie
         <table className="workbench-spreadsheet-grid" aria-label={sheet.name}>
           <thead>
             <tr>
-              <th aria-hidden="true" />
+              <th />
               {Array.from({ length: columnCount }, (_, index) => <th scope="col" key={index}>{spreadsheetColumnLabel(index)}</th>)}
             </tr>
           </thead>

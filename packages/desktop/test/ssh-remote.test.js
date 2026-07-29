@@ -8,6 +8,7 @@ import {
 	createSshFileReadSpec,
 	createSshGitSpec,
 	createSshLaunchSpec,
+	createSshPiInstallSpec,
 	createSshTestSpec,
 	createSshTrashSpec,
 	createSshWorktreeDeleteSpec,
@@ -80,6 +81,23 @@ test("builds non-interactive SSH test and stdin-prefixed RPC launch specs", () =
 	const probe = createSshTestSpec(CONNECTION);
 	assert.ok(probe.args.includes("BatchMode=yes"));
 	assert.match(probe.args.at(-1), /exec 'pi' --version/u);
+});
+
+test("builds a pinned user-local remote Pi installer", () => {
+	const spec = createSshPiInstallSpec(CONNECTION, "0.82.1");
+	const command = spec.args.at(-1);
+	assert.ok(spec.args.includes("BatchMode=yes"));
+	assert.equal(spec.piCommand, "~/.pi/studio/bin/pi");
+	assert.equal(spec.nodeVersion, "22.19.0");
+	assert.match(command, /nodejs\.org\/dist\/v\$node_version/u);
+	assert.match(command, /c0649af18e6a24f6fe5535a3e86b341dd49a8e71117c8b68bde973ef834f16f2/u);
+	assert.match(command, /d36e56998220085782c0ca965f9d51b7726335aed2f5fc7321c6c0ad233aa96d/u);
+	assert.match(command, /command -v xz.*node_archive_ext=tar\.xz.*node_archive_ext=tar\.gz/u);
+	assert.match(command, /@earendil-works\/pi-coding-agent@0\.82\.1/u);
+	assert.match(command, /npm install --global --ignore-scripts/u);
+	assert.match(command, /bin_root="\$HOME\/\.pi\/studio\/bin"/u);
+	assert.doesNotMatch(command, /sudo/u);
+	assert.throws(() => createSshPiInstallSpec(CONNECTION, "latest"), /version is invalid/iu);
 });
 
 test("builds a non-interactive, shell-quoted remote git spec", () => {

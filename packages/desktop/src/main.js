@@ -48,6 +48,7 @@ import { createTaskRegistry } from "./task-registry.js";
 import {
 	createSshCliSpec,
 	createSshLaunchSpec,
+	createSshPiInstallSpec,
 	createSshTestSpec,
 	createSshTrashSpec,
 	createSshWorktreeDeleteSpec,
@@ -676,9 +677,10 @@ function testSshConnection(connection) {
 /**
  * @param {{ command: string, args: string[], cwd: string }} spec
  * @param {string} label
+ * @param {number} [timeoutMs]
  * @returns {Promise<string>}
  */
-function runSshSpec(spec, label) {
+function runSshSpec(spec, label, timeoutMs = 30_000) {
 	return new Promise((resolvePromise, reject) => {
 		execFile(
 			spec.command,
@@ -688,7 +690,7 @@ function runSshSpec(spec, label) {
 				encoding: "utf8",
 				maxBuffer: 1024 * 1024,
 				shell: false,
-				timeout: 30_000,
+				timeout: timeoutMs,
 				windowsHide: true,
 			},
 			(error, stdout, stderr) => {
@@ -1924,6 +1926,18 @@ ipcMain.handle("ssh:delete", (_event, connectionId) => {
 });
 
 ipcMain.handle("ssh:test", async (_event, input) => testSshConnection(normalizeSshConnection(input)));
+
+ipcMain.handle("ssh:install-pi", async (_event, input) => {
+	const version = app.getVersion().match(/^(\d+\.\d+\.\d+)/u)?.[1];
+	if (!version) throw new Error(`Pi Studio version is invalid: ${app.getVersion()}`);
+	const spec = createSshPiInstallSpec(normalizeSshConnection(input), version);
+	await runSshSpec(spec, "Could not install Pi on the SSH host", 10 * 60_000);
+	return {
+		piCommand: spec.piCommand,
+		version: spec.piVersion,
+		nodeVersion: spec.nodeVersion,
+	};
+});
 
 ipcMain.handle("ssh:connect", async (_event, connectionId) => {
 	if (automationBusyHandles.has(primaryBackend)) throw new Error("Wait for the automation to finish before changing workspace");

@@ -47,6 +47,10 @@ The flagship capability: several agent runs at once, each in its own workspace w
 - **Same-repository isolation:** picking a local folder that is already running provisions a `git worktree` on a fresh `task/<name>` branch under the app's data directory — several agents work one repository without touching each other's files. In an SSH workspace, the add-task action instead provisions a managed worktree on the remote host under `~/.pi/studio/worktrees` on a fresh `task/remote-*` branch. Git, artifacts, and backend RPC follow the active local or remote task; stopping removes only a clean worktree (changes are kept, never forced) while the branch stays for review and landing. Local trust follows the repository identity — a trusted repo's worktrees start trusted — and kept local worktrees plus retained worktrees on the active SSH connection are listed and explicitly deletable under Settings → Agent. Non-git folders refuse a second concurrent task.
 - **Lifecycle:** the pool cap (1–5) and the idle window are settings; a task whose backend has been silent past the window stops itself — never the task being viewed, never the primary — and its session reopens instantly from the on-disk session file.
 
+### SSH workspaces
+
+Settings → Connections can install or repair the Pi CLI on Linux x64/arm64 hosts that do not already have Node.js. The explicit confirmation downloads the checksum-pinned Node.js 22.19.0 archive, installs the exact Pi version matching the Studio build with npm lifecycle scripts disabled, and writes a stable wrapper under `~/.pi/studio`; it never uses sudo or changes the host's system runtime. SSH config, agent, or identity-file authentication remains non-interactive.
+
 ### Security model
 
 Pi Studio assumes the workspace may be hostile (a cloned repository) and the renderer may be compromised:
@@ -117,7 +121,7 @@ The fork root is an upstream commit, so upstream releases merge as plain three-w
 
 ## Roadmap
 
-Near-term: complete SSH trust-aware project extensions, Pi installation, and WSL-specific UX; then close the remaining Automations product-parity gaps.
+Near-term: complete SSH trust-aware project extensions and WSL-specific UX; then close the remaining Automations product-parity gaps.
 
 Deliberately deferred: code signing and auto-update, installer distribution, backend size reduction (~100 MB Bun runtime), macOS/Linux, additional locales.
 

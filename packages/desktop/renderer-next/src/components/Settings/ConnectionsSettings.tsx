@@ -98,6 +98,32 @@ export function ConnectionsSettings() {
     }
   }
 
+  async function installPi(): Promise<void> {
+    const input = connectionInput(draft);
+    const target = input.alias || input.hostname || input.name;
+    if (!window.confirm(t(
+      "Install or repair Pi on {target}? Pi Studio will download a checksum-verified private Node.js runtime and install the exact matching @earendil-works/pi-coding-agent package under ~/.pi/studio with lifecycle scripts disabled. No sudo is used.",
+      "在 {target} 上安装或修复 Pi？Pi Studio 会下载经过校验和验证的私有 Node.js 运行时，并在 ~/.pi/studio 下安装与当前版本精确匹配的 @earendil-works/pi-coding-agent，同时禁用生命周期脚本。不会使用 sudo。",
+      { target },
+    ))) return;
+    setBusy("install");
+    try {
+      const result = await api.installSshPi(input);
+      updateDraft("piCommand", result.piCommand);
+      showToast(t(
+        "Pi {version} installed with Node.js {nodeVersion}. Save the connection to use it.",
+        "已使用 Node.js {nodeVersion} 安装 Pi {version}。请保存连接以使用它。",
+        { version: result.version, nodeVersion: result.nodeVersion },
+      ), "success");
+    } catch (installError) {
+      showToast(t("Could not install Pi: {message}", "安装 Pi 失败：{message}", {
+        message: errorMessage(installError),
+      }), "error");
+    } finally {
+      setBusy(null);
+    }
+  }
+
   async function connect(connection: SshConnection): Promise<void> {
     if (useStore.getState().isStreaming) {
       showToast(t("Finish or stop the current run before connecting.", "请先完成或停止当前运行，再连接远程工作区。"), "warning");
@@ -178,8 +204,8 @@ export function ConnectionsSettings() {
         </span>
         <p className="settings-group-desc">
           {t(
-            "Password prompts are not supported. Use SSH config, an agent, or an identity file. Remote extension discovery stays disabled for safety.",
-            "不支持密码提示。请使用 SSH config、密钥代理或身份文件。为保证安全，远程扩展发现保持禁用。",
+            "Password prompts are not supported. Use SSH config, an agent, or an identity file. Install / Repair Pi can bootstrap a private runtime on Linux x64 or arm64 without sudo. Remote extension discovery stays disabled for safety.",
+            "不支持密码提示。请使用 SSH config、密钥代理或身份文件。“安装 / 修复 Pi”可在 Linux x64 或 arm64 上无 sudo 引导私有运行时。为保证安全，远程扩展发现保持禁用。",
           )}
         </p>
         <div className="form-row">
@@ -229,6 +255,9 @@ export function ConnectionsSettings() {
         <div className="settings-radio-group">
           <button className="settings-btn" type="button" disabled={disabled} onClick={() => void testConnection(connectionInput(draft), draft.id ?? "draft")}>
             {busy?.startsWith("test:") ? t("Testing…", "正在测试…") : t("Test", "测试")}
+          </button>
+          <button className="settings-btn" type="button" disabled={disabled} onClick={() => void installPi()}>
+            {busy === "install" ? t("Installing Pi…", "正在安装 Pi…") : t("Install / Repair Pi", "安装 / 修复 Pi")}
           </button>
           <button className="settings-btn" type="button" disabled={disabled} onClick={() => void save(false)}>
             {busy === "save" ? t("Saving…", "正在保存…") : t("Save", "保存")}

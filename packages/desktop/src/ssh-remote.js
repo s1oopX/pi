@@ -9,6 +9,18 @@ const SSH_ID = /^[a-z0-9._-]{1,128}$/u;
 const SSH_WORKTREE_NAME = /^[a-z0-9][a-z0-9._-]{0,63}$/u;
 const SSH_FILE_METADATA_PREFIX = "PI_STUDIO_FILE_V1";
 const SSH_WORKTREE_METADATA_PREFIX = "PI_STUDIO_WORKTREE_V1";
+const SSH_MANAGED_PI_COMMAND = "~/.pi/studio/bin/pi";
+const SSH_NODE_VERSION = "22.19.0";
+const SSH_NODE_SHA256 = {
+	arm64: {
+		gzip: "d32817b937219b8f131a28546035183d79e7fd17a86e38ccb8772901a7cd9009",
+		xz: "0b2d9f564b6594222a62c82e1df2efe119dd4a4aff29644f4dd325bf360b6bcc",
+	},
+	x64: {
+		gzip: "d36e56998220085782c0ca965f9d51b7726335aed2f5fc7321c6c0ad233aa96d",
+		xz: "c0649af18e6a24f6fe5535a3e86b341dd49a8e71117c8b68bde973ef834f16f2",
+	},
+};
 
 /**
  * @typedef {"none" | "identity"} SshAuth
@@ -81,6 +93,13 @@ function normalizeSshWorktreeName(value) {
 		throw new Error("Remote worktree name is invalid");
 	}
 	return name;
+}
+
+/** @param {unknown} value */
+function normalizePiVersion(value) {
+	const version = text(value, "Pi version", { max: 32 });
+	if (!/^\d+\.\d+\.\d+$/u.test(version)) throw new Error("Pi version is invalid");
+	return version;
 }
 
 /** @param {unknown} value */
@@ -290,6 +309,84 @@ export function createSshTestSpec(connectionValue) {
 		command: "ssh",
 		args: [...sshArgs(connection, true), remoteCommand],
 		cwd: homedir(),
+	};
+}
+
+/**
+ * Install a matching Pi CLI without sudo. A checksum-pinned Node runtime and
+ * exact npm package version live under ~/.pi/studio; npm lifecycle scripts are
+ * disabled, and the stable wrapper keeps later SSH launches independent of the
+ * remote host's PATH.
+ * @param {unknown} connectionValue
+ * @param {unknown} piVersionValue
+ */
+export function createSshPiInstallSpec(connectionValue, piVersionValue) {
+	const connection = normalizeConnection(connectionValue, false);
+	const piVersion = normalizePiVersion(piVersionValue);
+	const packageSpec = `@earendil-works/pi-coding-agent@${piVersion}`;
+	const remoteCommand = [
+		"set -eu",
+		"umask 077",
+		"export LANG=C LC_ALL=C",
+		'if [ "$(uname -s)" != "Linux" ]; then echo "Automatic Pi installation currently supports Linux SSH hosts" >&2; exit 69; fi',
+		'case "$(uname -m)" in',
+		`x86_64|amd64) node_arch=x64; node_sha_xz=${quotePosixShell(SSH_NODE_SHA256.x64.xz)}; node_sha_gzip=${quotePosixShell(SSH_NODE_SHA256.x64.gzip)} ;;`,
+		`aarch64|arm64) node_arch=arm64; node_sha_xz=${quotePosixShell(SSH_NODE_SHA256.arm64.xz)}; node_sha_gzip=${quotePosixShell(SSH_NODE_SHA256.arm64.gzip)} ;;`,
+		'*) echo "Automatic Pi installation supports Linux x64 and arm64 hosts" >&2; exit 69 ;;',
+		"esac",
+		`node_version=${quotePosixShell(SSH_NODE_VERSION)}`,
+		`pi_version=${quotePosixShell(piVersion)}`,
+		'runtime_root="$HOME/.pi/studio/runtime"',
+		'package_parent="$HOME/.pi/studio/packages"',
+		'bin_root="$HOME/.pi/studio/bin"',
+		'node_root="$runtime_root/node-v$node_version-linux-$node_arch"',
+		'package_root="$package_parent/pi-$pi_version"',
+		'wrapper="$bin_root/pi"',
+		'mkdir -p "$runtime_root" "$package_parent" "$bin_root"',
+		'for tool in tar sha256sum; do command -v "$tool" >/dev/null 2>&1 || { echo "Automatic Pi installation needs $tool" >&2; exit 69; }; done',
+		'if command -v xz >/dev/null 2>&1; then node_archive_ext=tar.xz; node_sha="$node_sha_xz"; else command -v gzip >/dev/null 2>&1 || { echo "Automatic Pi installation needs xz or gzip" >&2; exit 69; }; node_archive_ext=tar.gz; node_sha="$node_sha_gzip"; fi',
+		'install_tmp=""',
+		'cleanup() { if [ -n "$install_tmp" ]; then rm -rf -- "$install_tmp"; fi; }',
+		"trap cleanup EXIT HUP INT TERM",
+		'if [ ! -x "$node_root/bin/node" ] || [ "$("$node_root/bin/node" --version 2>/dev/null || :)" != "v$node_version" ]; then',
+		'  install_tmp=$(mktemp -d "$runtime_root/.node.XXXXXX")',
+		'  archive="$install_tmp/node.$node_archive_ext"',
+		'  node_url="https://nodejs.org/dist/v$node_version/node-v$node_version-linux-$node_arch.$node_archive_ext"',
+		'  if command -v curl >/dev/null 2>&1; then curl --fail --location --silent --show-error --output "$archive" "$node_url"; elif command -v wget >/dev/null 2>&1; then wget -q -O "$archive" "$node_url"; else echo "Automatic Pi installation needs curl or wget" >&2; exit 69; fi',
+		'  printf "%s  %s\\n" "$node_sha" "$archive" | sha256sum -c - >/dev/null',
+		'  mkdir -p "$install_tmp/node"',
+		'  if [ "$node_archive_ext" = "tar.xz" ]; then tar -xJf "$archive" -C "$install_tmp/node" --strip-components=1; else tar -xzf "$archive" -C "$install_tmp/node" --strip-components=1; fi',
+		'  [ "$("$install_tmp/node/bin/node" --version)" = "v$node_version" ]',
+		'  rm -rf -- "$node_root"',
+		'  mv -- "$install_tmp/node" "$node_root"',
+		'  rm -rf -- "$install_tmp"',
+		'  install_tmp=""',
+		"fi",
+		'export PATH="$node_root/bin:$PATH"',
+		'if [ ! -x "$package_root/bin/pi" ] || ! "$package_root/bin/pi" --version >/dev/null 2>&1; then',
+		'  rm -rf -- "$package_root"',
+		'  mkdir -p "$package_root"',
+		`  npm install --global --ignore-scripts --no-audit --no-fund --loglevel=error --prefix "$package_root" ${quotePosixShell(packageSpec)}`,
+		"fi",
+		'"$package_root/bin/pi" --version >/dev/null',
+		'wrapper_tmp="$wrapper.$$"',
+		`cat > "$wrapper_tmp" <<EOF
+#!/bin/sh
+PATH="\\$HOME/.pi/studio/runtime/node-v$node_version-linux-$node_arch/bin:\\$PATH"
+export PATH
+exec "\\$HOME/.pi/studio/packages/pi-$pi_version/bin/pi" "\\$@"
+EOF`,
+		'chmod 700 "$wrapper_tmp"',
+		'mv -f -- "$wrapper_tmp" "$wrapper"',
+		'exec "$wrapper" --version',
+	].join("\n");
+	return {
+		command: "ssh",
+		args: [...sshArgs(connection, true), remoteCommand],
+		cwd: homedir(),
+		piCommand: SSH_MANAGED_PI_COMMAND,
+		piVersion,
+		nodeVersion: SSH_NODE_VERSION,
 	};
 }
 

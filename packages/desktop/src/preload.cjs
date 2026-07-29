@@ -98,6 +98,9 @@ contextBridge.exposeInMainWorld("piDesktop", {
 	testSshConnection(/** @type {unknown} */ input) {
 		return ipcRenderer.invoke("ssh:test", input);
 	},
+	installSshPi(/** @type {unknown} */ input) {
+		return ipcRenderer.invoke("ssh:install-pi", input);
+	},
 	connectSshConnection(/** @type {unknown} */ connectionId) {
 		return ipcRenderer.invoke("ssh:connect", connectionId);
 	},
