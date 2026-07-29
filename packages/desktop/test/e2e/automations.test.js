@@ -42,7 +42,10 @@ test("automations: create a worktree task, run it, persist settings, and reopen 
 		assert.equal(await form.locator('[name="prompt"]').inputValue(), "/automation-summary");
 		await form.locator('[name="destination"]').selectOption("worktree");
 		await form.locator('[name="model"]').selectOption({ label: "Faux 1 — faux" });
-		await form.locator('[name="schedule"]').selectOption("daily");
+		await form.locator('[name="schedule"]').selectOption("weekly");
+		await form.locator('[name="scheduleInterval"]').fill("2");
+		await form.locator('[name="scheduleWeekday"]').selectOption("FR");
+		await form.locator('[name="scheduleTime"]').fill("16:30");
 		await form.locator('[name="notificationPolicy"]').selectOption("failures");
 		await studio.page.locator('.automation-editor-dialog button[type="submit"]').click();
 
@@ -51,6 +54,7 @@ test("automations: create a worktree task, run it, persist settings, and reopen 
 		const created = JSON.parse(readFileSync(join(studio.tempRoot, "user-data", "automations.json"), "utf8"));
 		assert.equal(created.automations[0].destination, "worktree");
 		assert.equal(created.automations[0].model.id, "faux-1");
+		assert.equal(created.automations[0].rrule, "FREQ=WEEKLY;INTERVAL=2;BYDAY=FR;BYHOUR=16;BYMINUTE=30");
 		assert.ok(created.automations[0].worktree.branch.startsWith("task/"));
 		assert.ok(existsSync(created.automations[0].worktree.path), "automation worktree was not provisioned");
 		await card.locator(".automation-run-now").click();

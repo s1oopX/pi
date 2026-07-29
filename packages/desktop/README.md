@@ -44,12 +44,12 @@ The flagship capability: several agent runs at once, each in its own workspace w
 - The **task registry** (main process) caps the pool (default 3), allocates stable ids, enforces one running task per folder, and lazily spawns `BackendHandle`s.
 - **Events are tagged** with their originating backend. The renderer routes them: the active task feeds the full conversation pipeline; background tasks only update summaries — a streaming indicator, an unread counter, a completion state with a toast and an OS notification.
 - **Switching is hydration, not restart.** Activating a task re-pulls its state over RPC (the same battle-tested path used for workspace switches); no process is stopped, and background runs continue uninterrupted. The backend session file remains the single source of truth, so nothing is lost mid-stream.
-- **Same-repository isolation:** picking a local folder that is already running provisions a `git worktree` on a fresh `task/<name>` branch under the app's data directory — several agents work one repository without touching each other's files. In an SSH workspace, the add-task action instead provisions a managed worktree on the remote host under `~/.pi/studio/worktrees` on a fresh `task/remote-*` branch. Git, artifacts, and backend RPC follow the active local or remote task; stopping removes only a clean worktree (changes are kept, never forced) while the branch stays for review and landing. Local trust follows the repository identity — a trusted repo's worktrees start trusted — and kept local worktrees plus retained worktrees on the active SSH connection are listed and explicitly deletable under Settings → Agent. Non-git folders refuse a second concurrent task.
+- **Same-repository isolation:** picking a local folder that is already running provisions a `git worktree` on a fresh `task/<name>` branch under the app's data directory — several agents work one repository without touching each other's files. In an SSH or WSL workspace, the add-task action instead provisions a managed worktree in that Linux environment under `~/.pi/studio/worktrees` on a fresh `task/remote-*` branch. Git, artifacts, and backend RPC follow the active local or remote task; stopping removes only a clean worktree (changes are kept, never forced) while the branch stays for review and landing. Local trust follows the repository identity — a trusted repo's worktrees start trusted — and kept local worktrees plus retained worktrees on the active remote connection are listed and explicitly deletable under Settings → Agent. Non-git folders refuse a second concurrent task.
 - **Lifecycle:** the pool cap (1–5) and the idle window are settings; a task whose backend has been silent past the window stops itself — never the task being viewed, never the primary — and its session reopens instantly from the on-disk session file.
 
-### SSH workspaces
+### Remote workspaces (SSH and WSL)
 
-Settings → Connections can install or repair the managed runtime on Linux x64/arm64 hosts that do not already have Node.js. The explicit confirmation downloads the checksum-pinned Node.js 22.19.0 archive, installs the exact Pi version matching the Studio build with npm lifecycle scripts disabled, and writes stable runtime/package links under `~/.pi/studio`; it never uses sudo or changes the host's system runtime. On connect, Pi Studio streams its catalog-free Node RPC bundle and runs it against those installed dependencies and assets. Remote project extensions, settings, skills, prompts, themes, and context files use the same untrusted-by-default banner as local workspaces; decisions persist in the remote Pi agent directory and hot-reload resources in place. SSH config, agent, or identity-file authentication remains non-interactive.
+Settings → Connections discovers local WSL distributions and also accepts saved OpenSSH hosts. WSL connects directly through `wsl.exe` and requires no SSH server; Docker Desktop distributions are excluded from discovery. Both transports reuse the same remote backend, Git, worktree, artifact, and project-trust paths. The Install / Repair action can provision the managed runtime on Linux x64/arm64 environments that do not already have Node.js: after explicit confirmation it downloads the checksum-pinned Node.js 22.19.0 archive, installs the exact Pi version matching the Studio build with npm lifecycle scripts disabled, and writes stable runtime/package links under `~/.pi/studio`; it never uses sudo or changes the system runtime. On connect, Pi Studio streams its catalog-free Node RPC bundle and runs it against those installed dependencies and assets. Remote project extensions, settings, skills, prompts, themes, and context files use the same untrusted-by-default banner as local workspaces; decisions persist in the remote Pi agent directory and hot-reload resources in place. SSH config, agent, or identity-file authentication remains non-interactive.
 
 ### Security model
 
@@ -61,16 +61,20 @@ Pi Studio assumes the workspace may be hostile (a cloned repository) and the ren
 | IPC allowlist | The main process forwards only the renderer's typed command set to the backend (`backend-command-allowlist.js`); unknown command types are rejected before they reach the RPC layer |
 | Tool approval | A bundled inline extension registers the `permission-mode` flag and gates tool calls at the agent loop's single choke point: `full` runs everything, `auto` asks before risky bash, out-of-workspace writes, computer control, and image generation, while `ask` also confirms passive screen access |
 | Project trust | Folders carrying project-local resources (`.pi` extensions, settings, skills) load **untrusted by default**; extensions do not execute until the user trusts the folder (persisted in `<agentDir>/trust.json`, revocable from Settings, hot-reloaded both ways) |
-| Process hygiene | Local git and gh use `execFile` argument vectors; SSH operations allow only fixed commands and quote every remote-shell argument. Branch names and commit messages are validated before they become argv entries |
+| Process hygiene | Local git and gh use `execFile` argument vectors; SSH and WSL operations allow only fixed commands and quote every remote-shell argument. Branch names and commit messages are validated before they become argv entries |
 | Path containment | Reveal/open operations and image-generation references/outputs verify both lexical and real paths against the workspace root. SSH artifact reads bind validation and transfer to one opened descriptor, so symlink swaps cannot escape the remote workspace |
 
 ### Git integration
 
-The top-bar git panel covers the full flow without leaving the app: status with ahead/behind, staged-all commits, push with automatic upstream creation, branch list/switch/create, per-file and per-hunk review, and pull-request creation/review through the GitHub CLI (explicit `--repo/--head/--base`, non-interactive) with a pre-filled compare-page fallback when `gh` is absent. SSH workspaces run the same Git and `gh` operations on the remote host; untracked-file discard moves files to `~/.pi/studio/trash`. Remote parsing understands https/ssh/scp forms and GitHub Enterprise hosts.
+The top-bar git panel covers the full flow without leaving the app: status with ahead/behind, staged-all commits, push with automatic upstream creation, branch list/switch/create, per-file and per-hunk review, and pull-request creation/review through the GitHub CLI (explicit `--repo/--head/--base`, non-interactive) with a pre-filled compare-page fallback when `gh` is absent. SSH and WSL workspaces run the same Git and `gh` operations in the remote Linux environment; untracked-file discard moves files to `~/.pi/studio/trash`. Remote parsing understands https/ssh/scp forms and GitHub Enterprise hosts.
 
 ### Artifact previews
 
-The workbench previews text, Markdown, sandboxed HTML, images, PDF, CSV, TSV, and XLSX files with a 40 MB in-panel limit. In SSH workspaces the selected file is streamed through a non-interactive, descriptor-bound SSH read: its physical target must remain inside the remote workspace, metadata and byte length are verified, and Open/Reveal materializes a content-addressed copy in Pi Studio's private local cache (512 MB download limit). The remote workspace is otherwise untouched.
+The workbench previews text, Markdown, sandboxed HTML, images, PDF, CSV, TSV, and XLSX files with a 40 MB in-panel limit. In SSH and WSL workspaces the selected file is streamed through a non-interactive, descriptor-bound read: its physical target must remain inside the remote workspace, metadata and byte length are verified, and Open/Reveal materializes a content-addressed copy in Pi Studio's private local cache (512 MB download limit). The remote workspace is otherwise untouched.
+
+### Automations
+
+Scheduled tasks run independent prompts in the selected workspace or a retained git worktree, while heartbeats continue a main-process-verified conversation. The editor exposes native interval, weekday, and time controls for hourly, daily, weekday, and weekly schedules, with advanced RRULE entry for unsupported patterns. Runs retain sessions, model/reasoning choices, notification policy, unread/archive state, and safe worktree cleanup.
 
 ### Sessions
 
@@ -121,7 +125,7 @@ The fork root is an upstream commit, so upstream releases merge as plain three-w
 
 ## Roadmap
 
-Near-term: complete WSL-specific UX; then close the remaining Automations product-parity gaps.
+Near-term: close the remaining Automations product-parity gaps.
 
 Deliberately deferred: code signing and auto-update, installer distribution, backend size reduction (~100 MB Bun runtime), macOS/Linux, additional locales.
 

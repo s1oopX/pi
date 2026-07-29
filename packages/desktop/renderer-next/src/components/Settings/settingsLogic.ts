@@ -16,6 +16,15 @@ export function buildCustomModelInput(supportsImages: boolean): ("text" | "image
   return supportsImages ? ["text", "image"] : ["text"];
 }
 
+export function normalizeFetchedModels(
+  models: readonly { id: string; name?: string }[],
+): { id: string; name?: string }[] {
+  return models.flatMap((model) => {
+    const id = model.id.trim() || model.name?.trim();
+    return id ? [{ id, ...(model.name?.trim() ? { name: model.name.trim() } : {}) }] : [];
+  });
+}
+
 export function getConnectionTestFailure(result: unknown, language: ResolvedLanguage = "en"): string | null {
   if (!isRecord(result) || typeof result.ok !== "boolean") {
     return translateText(language, "The backend returned an invalid connection test response", "后端返回了无效的连接测试响应");

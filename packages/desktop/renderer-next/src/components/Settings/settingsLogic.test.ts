@@ -4,6 +4,7 @@ import {
   createModelConfigBackup,
   getConnectionTestFailure,
   hasPermissionModeExtension,
+  normalizeFetchedModels,
   readModelConfigBackupProviders,
 } from "./settingsLogic";
 
@@ -11,6 +12,13 @@ describe("settings logic", () => {
   it("builds explicit custom model input capabilities", () => {
     expect(buildCustomModelInput(false)).toEqual(["text"]);
     expect(buildCustomModelInput(true)).toEqual(["text", "image"]);
+  });
+
+  it("uses a fetched model name when a compatible endpoint omits its ID", () => {
+    expect(normalizeFetchedModels([{ id: "", name: " grok " }, { id: " gpt-5 ", name: "GPT-5" }])).toEqual([
+      { id: "grok", name: "grok" },
+      { id: "gpt-5", name: "GPT-5" },
+    ]);
   });
 
   it("treats backend connection failures as failures", () => {

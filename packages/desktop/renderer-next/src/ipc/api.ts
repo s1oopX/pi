@@ -46,10 +46,12 @@ import type {
 } from "./types";
 
 export type SshAuth = "none" | "identity";
+export type RemoteTransport = "ssh" | "wsl";
 
 export interface SshConnection {
   id: string;
   name: string;
+  transport: RemoteTransport;
   alias: string;
   hostname: string;
   port?: number;
@@ -65,6 +67,8 @@ export type SshConnectionInput = Omit<SshConnection, "id"> & { id?: string };
 export interface SshConnectionList {
   connections: SshConnection[];
   activeConnectionId?: string;
+  wslDistributions: string[];
+  wslError?: string;
 }
 
 export interface SshPiInstallResult {
@@ -769,7 +773,8 @@ export async function restartBackend(): Promise<void> {
 export async function listSshConnections(): Promise<SshConnectionList> {
   const api = requireApi();
   if (!api.listSshConnections) throw new Error("SSH connections need a newer Pi Studio build");
-  return api.listSshConnections();
+  const result = await api.listSshConnections();
+  return { ...result, wslDistributions: result.wslDistributions ?? [] };
 }
 
 export async function saveSshConnection(

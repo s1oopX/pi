@@ -56,9 +56,11 @@ import {
 	createSshWorktreeRemoveSpec,
 	createSshWorktreeSpec,
 	createSshWorkspaceUri,
+	createWslListSpec,
 	loadSshConnections,
 	normalizeSshConnection,
 	parseSshWorktreeList,
+	parseWslDistroList,
 	resolveSshWorkspace,
 	saveSshConnections,
 	upsertSshConnection,
@@ -187,9 +189,9 @@ function getActiveSshWorkspace() {
 function getBackendDisplayPath(cwd) {
 	try {
 		const remote = resolveSshCwd(cwd);
-		return remote ? `ssh:${remote.connection.name}` : getBackendPath();
+		return remote ? `${remote.connection.transport}:${remote.connection.name}` : getBackendPath();
 	} catch {
-		return "ssh";
+		return "remote";
 	}
 }
 
@@ -648,7 +650,8 @@ function testSshConnection(connection) {
 			windowsHide: true,
 		});
 		let settled = false;
-		let output = "";
+		let stdout = "";
+		let stderr = "";
 		/** @type {NodeJS.Timeout | undefined} */
 		let timer;
 		/** @param {Error | undefined} error */
@@ -657,24 +660,65 @@ function testSshConnection(connection) {
 			settled = true;
 			clearTimeout(timer);
 			if (error) reject(error);
-			else resolve({ ok: true, message: output.trim() || "SSH connection succeeded" });
+			else resolve({
+				ok: true,
+				message: stdout.trim() || `${connection.transport === "wsl" ? "WSL" : "SSH"} connection succeeded`,
+			});
 		};
-		/** @param {Buffer} chunk */
-		const append = (chunk) => {
-			output = `${output}${chunk.toString("utf8")}`.slice(-32 * 1024);
-		};
-		child.stdout.on("data", append);
-		child.stderr.on("data", append);
+		child.stdout.on("data", (/** @type {Buffer} */ chunk) => {
+			stdout = `${stdout}${chunk.toString("utf8")}`.slice(-32 * 1024);
+		});
+		child.stderr.on("data", (/** @type {Buffer} */ chunk) => {
+			stderr = `${stderr}${chunk.toString("utf8")}`.slice(-32 * 1024);
+		});
 		child.on("error", (error) => finish(error));
 		child.on("close", (code, signal) => {
 			finish(code === 0
 				? undefined
-				: new Error(output.trim() || `SSH probe exited code=${code} signal=${signal}`));
+				: new Error(stderr.trim() || stdout.trim() || `Remote probe exited code=${code} signal=${signal}`));
 		});
 		timer = setTimeout(() => {
 			child.kill();
-			finish(new Error("SSH connection test timed out after 15 seconds"));
+			finish(new Error("Remote connection test timed out after 15 seconds"));
 		}, 15_000);
+	});
+}
+
+/** @returns {Promise<{ wslDistributions: string[], wslError?: string }>} */
+function discoverWslDistributions() {
+	if (process.platform !== "win32") return Promise.resolve({ wslDistributions: [] });
+	const spec = createWslListSpec();
+	return new Promise((resolvePromise) => {
+		execFile(
+			spec.command,
+			spec.args,
+			{
+				cwd: spec.cwd,
+				encoding: null,
+				maxBuffer: 64 * 1024,
+				shell: false,
+				timeout: 10_000,
+				windowsHide: true,
+			},
+			(error, stdout, stderr) => {
+				if (error) {
+					const detail = (stderr.toString("utf8").trim() || error.message).slice(0, 500);
+					resolvePromise({
+						wslDistributions: [],
+						wslError: `Could not list WSL distributions: ${detail}`,
+					});
+					return;
+				}
+				try {
+					resolvePromise({ wslDistributions: parseWslDistroList(stdout) });
+				} catch (parseError) {
+					resolvePromise({
+						wslDistributions: [],
+						wslError: `Could not parse WSL distributions: ${parseError instanceof Error ? parseError.message : String(parseError)}`,
+					});
+				}
+			},
+		);
 	});
 }
 
@@ -1898,7 +1942,7 @@ ipcMain.handle("backend:restart", async () => {
 	primaryBackend.start();
 });
 
-ipcMain.handle("ssh:list", () => {
+ipcMain.handle("ssh:list", async () => {
 	const connections = loadSshConnections(getSshConnectionsPath());
 	let activeConnectionId;
 	try {
@@ -1906,7 +1950,7 @@ ipcMain.handle("ssh:list", () => {
 	} catch {
 		activeConnectionId = undefined;
 	}
-	return { connections, activeConnectionId };
+	return { connections, activeConnectionId, ...(await discoverWslDistributions()) };
 });
 
 ipcMain.handle("ssh:save", (_event, input) => {
@@ -1935,7 +1979,7 @@ ipcMain.handle("ssh:install-pi", async (_event, input) => {
 	const version = app.getVersion().match(/^(\d+\.\d+\.\d+)/u)?.[1];
 	if (!version) throw new Error(`Pi Studio version is invalid: ${app.getVersion()}`);
 	const spec = createSshPiInstallSpec(normalizeSshConnection(input), version);
-	await runSshSpec(spec, "Could not install Pi on the SSH host", 10 * 60_000);
+	await runSshSpec(spec, "Could not install Pi on the remote Linux host", 10 * 60_000);
 	return {
 		piCommand: spec.piCommand,
 		version: spec.piVersion,

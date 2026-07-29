@@ -16,11 +16,13 @@ import {
 	createSshWorktreeRemoveSpec,
 	createSshWorktreeSpec,
 	createSshWorkspaceUri,
+	createWslListSpec,
 	loadSshConnections,
 	normalizeSshConnection,
 	parseSshFileMetadata,
 	parseSshWorktreeList,
 	parseSshWorkspaceUri,
+	parseWslDistroList,
 	quotePosixShell,
 	saveSshConnections,
 	upsertSshConnection,
@@ -29,6 +31,7 @@ import {
 const CONNECTION = {
 	id: "11111111-1111-4111-8111-111111111111",
 	name: "Dev box",
+	transport: "ssh",
 	alias: "devbox",
 	hostname: "user@example.com",
 	port: 2222,
@@ -37,6 +40,15 @@ const CONNECTION = {
 	remotePath: "~/work/pi",
 	piCommand: "pi",
 	autoConnect: true,
+};
+
+const WSL_CONNECTION = {
+	...CONNECTION,
+	id: "33333333-3333-4333-8333-333333333333",
+	name: "Ubuntu",
+	transport: "wsl",
+	alias: "ignored",
+	hostname: "Ubuntu-26.04",
 };
 
 test("validates, persists, and updates SSH connections", (t) => {
@@ -64,6 +76,20 @@ test("round-trips remote workspace URIs and POSIX shell quoting", () => {
 	assert.equal(quotePosixShell("a'b"), `'a'"'"'b'`);
 });
 
+test("discovers and normalizes local WSL distributions", () => {
+	const output = Buffer.from("\uFEFFUbuntu-26.04\r\ndocker-desktop\r\nUbuntu-26.04\r\nDebian\r\n", "utf16le");
+	assert.deepEqual(parseWslDistroList(output), ["Ubuntu-26.04", "Debian"]);
+	assert.deepEqual(createWslListSpec().args, ["--list", "--quiet"]);
+
+	const normalized = normalizeSshConnection(WSL_CONNECTION);
+	assert.equal(normalized.transport, "wsl");
+	assert.equal(normalized.alias, "");
+	assert.equal(normalized.port, undefined);
+	assert.equal(normalized.auth, "none");
+	assert.equal(normalized.identityFile, "");
+	assert.throws(() => normalizeSshConnection({ ...CONNECTION, transport: "serial" }), /transport/iu);
+});
+
 test("builds non-interactive SSH test and stdin-prefixed Studio RPC launch specs", () => {
 	const backend = Buffer.from("console.log('studio');\n");
 	const launch = createSshLaunchSpec(CONNECTION, "/srv/pi project", backend);
@@ -83,6 +109,23 @@ test("builds non-interactive SSH test and stdin-prefixed Studio RPC launch specs
 	const probe = createSshTestSpec(CONNECTION);
 	assert.ok(probe.args.includes("BatchMode=yes"));
 	assert.match(probe.args.at(-1), /exec 'pi' --version/u);
+});
+
+test("routes the same remote operations through a local WSL distribution", () => {
+	const backend = Buffer.from("console.log('studio');\n");
+	const launch = createSshLaunchSpec(WSL_CONNECTION, "~/work/pi", backend);
+	assert.equal(launch.command, "wsl.exe");
+	assert.deepEqual(launch.args.slice(0, 5), ["-d", "Ubuntu-26.04", "--exec", "sh", "-lc"]);
+	assert.match(launch.args.at(-1), /cd "\$HOME"\/'work\/pi'/u);
+	assert.doesNotMatch(launch.args.join(" "), /BatchMode/u);
+
+	const probe = createSshTestSpec(WSL_CONNECTION);
+	assert.equal(probe.command, "wsl.exe");
+	assert.match(probe.args.at(-1), /exec 'pi' --version/u);
+
+	const git = createSshGitSpec(WSL_CONNECTION, "~/work/pi", ["status", "--short"]);
+	assert.equal(git.command, "wsl.exe");
+	assert.match(git.args.at(-1), /exec git 'status' '--short'/u);
 });
 
 test("builds a pinned user-local remote Pi installer", () => {

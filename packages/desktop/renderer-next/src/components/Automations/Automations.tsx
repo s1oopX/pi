@@ -18,6 +18,15 @@ import { PRIMARY_TASK_ID } from "../../store/taskRegistry";
 import { Dialog } from "../Dialog";
 import { Icon } from "../Icon";
 import { showToast } from "../Toast";
+import {
+  AUTOMATION_WEEKDAYS,
+  buildAutomationRRule,
+  defaultAutomationSchedule,
+  parseAutomationSchedule,
+  type AutomationSchedule,
+  type AutomationScheduleMode,
+  type AutomationWeekday,
+} from "./automationSchedule";
 
 interface AutomationsProps {
   onClose: () => void;
@@ -37,21 +46,11 @@ interface AutomationDraft {
 
 type RunFilter = "current" | "unread" | "archived";
 
-const SCHEDULE_PRESETS = [
-  { id: "hourly", rrule: "FREQ=HOURLY;INTERVAL=1;BYMINUTE=0" },
-  { id: "daily", rrule: "FREQ=DAILY;INTERVAL=1;BYHOUR=9;BYMINUTE=0" },
-  { id: "weekdays", rrule: "FREQ=WEEKLY;INTERVAL=1;BYDAY=MO,TU,WE,TH,FR;BYHOUR=9;BYMINUTE=0" },
-  { id: "weekly", rrule: "FREQ=WEEKLY;INTERVAL=1;BYDAY=MO;BYHOUR=9;BYMINUTE=0" },
-] as const;
 const THINKING_LEVELS: ThinkingLevel[] = ["off", "minimal", "low", "medium", "high", "xhigh", "max"];
 
 function errorText(error: unknown): string {
   const raw = error instanceof Error ? error.message : String(error);
   return raw.split("Error: ").pop()?.trim() || raw;
-}
-
-function presetId(rrule: string): string {
-  return SCHEDULE_PRESETS.find((preset) => preset.rrule === rrule)?.id ?? "custom";
 }
 
 function hasRunningRun(automation: AutomationRecord): boolean {
@@ -83,11 +82,12 @@ export function Automations({ onClose }: AutomationsProps) {
     name: "",
     prompt: "",
     cwd: workspaceCwd,
-    rrule: SCHEDULE_PRESETS[1].rrule,
+    rrule: buildAutomationRRule(defaultAutomationSchedule()),
     kind: "cron",
     destination: "local",
     notificationPolicy: "all",
   });
+  const [scheduleMode, setScheduleMode] = useState<AutomationScheduleMode>("daily");
   const [formError, setFormError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
   const [busyId, setBusyId] = useState<string | null>(null);
@@ -127,6 +127,7 @@ export function Automations({ onClose }: AutomationsProps) {
     ? THINKING_LEVELS.filter((level) => selectedModel.thinkingLevelMap?.[level] !== null)
     : [],
   [selectedModel]);
+  const schedule = useMemo(() => parseAutomationSchedule(draft.rrule), [draft.rrule]);
 
   const unreadCount = useMemo(() => automations.reduce(
     (count, automation) => count + automation.runs.filter(isUnreadRun).length,
@@ -168,13 +169,47 @@ export function Automations({ onClose }: AutomationsProps) {
   }
 
   function scheduleLabel(rrule: string): string {
-    switch (presetId(rrule)) {
-      case "hourly": return t("Every hour at :00", "每小时整点");
-      case "daily": return t("Every day at 09:00", "每天 09:00");
-      case "weekdays": return t("Weekdays at 09:00", "工作日 09:00");
-      case "weekly": return t("Mondays at 09:00", "每周一 09:00");
-      default: return rrule;
+    const parsed = parseAutomationSchedule(rrule);
+    switch (parsed.mode) {
+      case "hourly":
+        return parsed.interval === 1
+          ? t("Every hour at :{minute}", "每小时第 {minute} 分钟", { minute: String(parsed.minute).padStart(2, "0") })
+          : t("Every {interval} hours at :{minute}", "每 {interval} 小时第 {minute} 分钟", {
+              interval: parsed.interval,
+              minute: String(parsed.minute).padStart(2, "0"),
+            });
+      case "daily":
+        return parsed.interval === 1
+          ? t("Every day at {time}", "每天 {time}", { time: parsed.time })
+          : t("Every {interval} days at {time}", "每 {interval} 天 {time}", { interval: parsed.interval, time: parsed.time });
+      case "weekdays":
+        return parsed.interval === 1
+          ? t("Weekdays at {time}", "工作日 {time}", { time: parsed.time })
+          : t("Every {interval} weeks on weekdays at {time}", "每 {interval} 周的工作日 {time}", { interval: parsed.interval, time: parsed.time });
+      case "weekly":
+        return parsed.interval === 1
+          ? t("Every {weekday} at {time}", "每周{weekday} {time}", { weekday: weekdayLabel(parsed.weekday), time: parsed.time })
+          : t("Every {interval} weeks on {weekday} at {time}", "每 {interval} 周的{weekday} {time}", {
+              interval: parsed.interval,
+              weekday: weekdayLabel(parsed.weekday),
+              time: parsed.time,
+            });
+      default:
+        return rrule;
     }
+  }
+
+  function weekdayLabel(weekday: AutomationWeekday): string {
+    const labels: Record<AutomationWeekday, string> = {
+      MO: t("Monday", "星期一"),
+      TU: t("Tuesday", "星期二"),
+      WE: t("Wednesday", "星期三"),
+      TH: t("Thursday", "星期四"),
+      FR: t("Friday", "星期五"),
+      SA: t("Saturday", "星期六"),
+      SU: t("Sunday", "星期日"),
+    };
+    return labels[weekday];
   }
 
   function runStatusLabel(status: AutomationRunStatus): string {
@@ -206,13 +241,14 @@ export function Automations({ onClose }: AutomationsProps) {
       name: "",
       prompt: "",
       cwd: workspaceCwd,
-      rrule: SCHEDULE_PRESETS[1].rrule,
+      rrule: buildAutomationRRule(defaultAutomationSchedule()),
       kind: "cron",
       destination: "local",
       notificationPolicy: "all",
       ...(currentModel ? { model: currentModel } : {}),
       ...(currentModel && session?.model?.reasoning ? { reasoningEffort: session.thinkingLevel as ThinkingLevel } : {}),
     });
+    setScheduleMode("daily");
     setFormError(null);
     setEditorId("new");
   }
@@ -229,6 +265,7 @@ export function Automations({ onClose }: AutomationsProps) {
       ...(automation.model ? { model: automation.model } : {}),
       ...(automation.reasoningEffort ? { reasoningEffort: automation.reasoningEffort } : {}),
     });
+    setScheduleMode(parseAutomationSchedule(automation.rrule).mode);
     setFormError(null);
     setEditorId(automation.id);
   }
@@ -251,6 +288,14 @@ export function Automations({ onClose }: AutomationsProps) {
     } finally {
       setSaving(false);
     }
+  }
+
+  function updateStructuredSchedule(patch: Partial<AutomationSchedule>): void {
+    setDraft((current) => {
+      const parsed = parseAutomationSchedule(current.rrule);
+      const base = parsed.mode === scheduleMode ? parsed : defaultAutomationSchedule(scheduleMode);
+      return { ...current, rrule: buildAutomationRRule({ ...base, ...patch, mode: scheduleMode }) };
+    });
   }
 
   async function chooseAutomationWorkspace(): Promise<void> {
@@ -666,26 +711,85 @@ export function Automations({ onClose }: AutomationsProps) {
             </select>
           </label>
           <label>
-            <span>{t("Common schedule", "常用计划")}</span>
+            <span>{t("Repeat", "重复")}</span>
             <select
               name="schedule"
-              value={presetId(draft.rrule)}
+              value={scheduleMode}
               onChange={(event) => {
-                const preset = SCHEDULE_PRESETS.find((candidate) => candidate.id === event.target.value);
-                if (preset) setDraft((current) => ({ ...current, rrule: preset.rrule }));
+                const mode = event.target.value as AutomationScheduleMode;
+                setScheduleMode(mode);
+                if (mode !== "custom") {
+                  setDraft((current) => ({ ...current, rrule: buildAutomationRRule(defaultAutomationSchedule(mode)) }));
+                }
               }}
             >
               <option value="hourly">{t("Every hour", "每小时")}</option>
-              <option value="daily">{t("Every day at 09:00", "每天 09:00")}</option>
-              <option value="weekdays">{t("Weekdays at 09:00", "工作日 09:00")}</option>
-              <option value="weekly">{t("Mondays at 09:00", "每周一 09:00")}</option>
-              <option value="custom">{t("Custom RRULE", "自定义 RRULE")}</option>
+              <option value="daily">{t("Every day", "每天")}</option>
+              <option value="weekdays">{t("Weekdays", "工作日")}</option>
+              <option value="weekly">{t("Every week", "每周")}</option>
+              <option value="custom">{t("Advanced RRULE", "高级 RRULE")}</option>
             </select>
           </label>
-          <label>
-            <span>{t("RRULE (local time)", "RRULE（本地时间）")}</span>
-            <input name="rrule" className="automation-rrule-input" value={draft.rrule} onChange={(event) => setDraft((current) => ({ ...current, rrule: event.target.value }))} maxLength={500} required spellCheck={false} />
-          </label>
+          {scheduleMode === "custom" ? (
+            <label>
+              <span>{t("RRULE (local time)", "RRULE（本地时间）")}</span>
+              <input name="rrule" className="automation-rrule-input" value={draft.rrule} onChange={(event) => setDraft((current) => ({ ...current, rrule: event.target.value }))} maxLength={500} required spellCheck={false} />
+            </label>
+          ) : (
+            <div className="automation-schedule-fields">
+              <label>
+                <span>{scheduleMode === "hourly"
+                  ? t("Interval (hours)", "间隔（小时）")
+                  : scheduleMode === "daily"
+                    ? t("Interval (days)", "间隔（天）")
+                    : t("Interval (weeks)", "间隔（周）")}</span>
+                <input
+                  name="scheduleInterval"
+                  type="number"
+                  min="1"
+                  max="365"
+                  value={schedule.interval}
+                  onChange={(event) => {
+                    const interval = Number(event.target.value);
+                    if (Number.isSafeInteger(interval) && interval >= 1 && interval <= 365) updateStructuredSchedule({ interval });
+                  }}
+                  required
+                />
+              </label>
+              {scheduleMode === "hourly" ? (
+                <label>
+                  <span>{t("At minute", "在第几分钟")}</span>
+                  <input
+                    name="scheduleMinute"
+                    type="number"
+                    min="0"
+                    max="59"
+                    value={schedule.minute}
+                    onChange={(event) => {
+                      const minute = Number(event.target.value);
+                      if (Number.isSafeInteger(minute) && minute >= 0 && minute <= 59) updateStructuredSchedule({ minute });
+                    }}
+                    required
+                  />
+                </label>
+              ) : (
+                <>
+                  {scheduleMode === "weekly" && (
+                    <label>
+                      <span>{t("On", "在星期几")}</span>
+                      <select name="scheduleWeekday" value={schedule.weekday} onChange={(event) => updateStructuredSchedule({ weekday: event.target.value as AutomationWeekday })}>
+                        {AUTOMATION_WEEKDAYS.map((weekday) => <option value={weekday} key={weekday}>{weekdayLabel(weekday)}</option>)}
+                      </select>
+                    </label>
+                  )}
+                  <label>
+                    <span>{t("At", "时间")}</span>
+                    <input name="scheduleTime" type="time" value={schedule.time} onChange={(event) => event.target.value && updateStructuredSchedule({ time: event.target.value })} required />
+                  </label>
+                </>
+              )}
+            </div>
+          )}
           <label>
             <span>{t("Notifications", "通知")}</span>
             <select

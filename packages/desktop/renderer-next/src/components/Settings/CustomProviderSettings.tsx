@@ -5,7 +5,7 @@ import type { CustomModelApi } from "../../ipc/types";
 import { useStore } from "../../store";
 import { showToast } from "../Toast";
 import { Icon } from "../Icon";
-import { buildCustomModelInput, getConnectionTestFailure } from "./settingsLogic";
+import { buildCustomModelInput, getConnectionTestFailure, normalizeFetchedModels } from "./settingsLogic";
 import { SettingsSectionIcon } from "./SettingsSectionIcon";
 
 type AuthKind = "api_key" | "none";
@@ -358,12 +358,13 @@ export function CustomProviderSettings({ onDirtyChange }: { onDirtyChange?: (dir
         preserveHeadersFromProvider: editingProviderId ?? undefined,
         proxyUrl: proxyUrl.trim() || undefined,
       });
-      if (result.models.length === 0) {
+      const availableModels = normalizeFetchedModels(result.models);
+      if (availableModels.length === 0) {
         showToast(t("Endpoint returned no models", "端点未返回任何模型"), "error");
       } else {
-        setFetchedModels(result.models);
-        setSelectedIds(new Set(result.models.map((model) => model.id)));
-        showToast(t("Found {count} model(s)", "找到 {count} 个模型", { count: result.models.length }), "success");
+        setFetchedModels(availableModels);
+        setSelectedIds(new Set(availableModels.map((model) => model.id)));
+        showToast(t("Found {count} model(s)", "找到 {count} 个模型", { count: availableModels.length }), "success");
       }
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);

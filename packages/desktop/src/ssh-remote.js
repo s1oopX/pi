@@ -24,9 +24,11 @@ const SSH_NODE_SHA256 = {
 
 /**
  * @typedef {"none" | "identity"} SshAuth
+ * @typedef {"ssh" | "wsl"} RemoteTransport
  * @typedef {{
  *   id: string,
  *   name: string,
+ *   transport: RemoteTransport,
  *   alias: string,
  *   hostname: string,
  *   port?: number,
@@ -117,20 +119,26 @@ function normalizeManagedSshWorktreePath(value) {
 /** @param {unknown} value @param {boolean} allowNewId @returns {SshConnection} */
 function normalizeConnection(value, allowNewId) {
 	const input = record(value);
-	const auth = input.auth === undefined || input.auth === "none" ? "none" : input.auth;
-	if (auth !== "none" && auth !== "identity") throw new Error("SSH auth must be none or identity");
-	const identityFile = text(input.identityFile, "Identity file", { required: false });
+	const transport = input.transport === undefined || input.transport === "ssh" ? "ssh" : input.transport;
+	if (transport !== "ssh" && transport !== "wsl") throw new Error("Remote transport must be ssh or wsl");
+	const requestedAuth = input.auth === undefined || input.auth === "none" ? "none" : input.auth;
+	if (requestedAuth !== "none" && requestedAuth !== "identity") throw new Error("SSH auth must be none or identity");
+	const auth = transport === "wsl" ? "none" : requestedAuth;
+	const identityFile = transport === "wsl" ? "" : text(input.identityFile, "Identity file", { required: false });
 	if (auth === "identity" && !identityFile) throw new Error("Identity file is required for identity auth");
 	const remotePath = text(input.remotePath ?? "~", "Remote path");
 	if (remotePath !== "~" && !remotePath.startsWith("~/") && !remotePath.startsWith("/")) {
 		throw new Error("Remote path must be absolute or start with ~/");
 	}
-	const port = normalizePort(input.port);
+	const port = transport === "ssh" ? normalizePort(input.port) : undefined;
 	return {
 		id: normalizeId(input.id, allowNewId),
 		name: text(input.name, "Display name", { max: 100 }),
-		alias: sshToken(input.alias, "Alias", false),
-		hostname: sshToken(input.hostname, "Hostname", true),
+		transport,
+		alias: transport === "wsl" ? "" : sshToken(input.alias, "Alias", false),
+		hostname: transport === "wsl"
+			? text(input.hostname, "WSL distribution", { max: 255 })
+			: sshToken(input.hostname, "Hostname", true),
 		...(port === undefined ? {} : { port }),
 		auth,
 		identityFile,
@@ -143,6 +151,34 @@ function normalizeConnection(value, allowNewId) {
 /** @param {unknown} value @returns {SshConnection} */
 export function normalizeSshConnection(value) {
 	return normalizeConnection(value, true);
+}
+
+export function createWslListSpec() {
+	return { command: "wsl.exe", args: ["--list", "--quiet"], cwd: homedir() };
+}
+
+/** @param {Buffer | string} value */
+export function parseWslDistroList(value) {
+	const bytes = Buffer.isBuffer(value)
+		? value
+		: String(value).includes("\0")
+			? Buffer.from(String(value), "latin1")
+			: undefined;
+	const output = (bytes?.includes(0) ? bytes.toString("utf16le") : bytes?.toString("utf8") ?? String(value))
+		.replace(/^\uFEFF/u, "");
+	const distributions = [];
+	const seen = new Set();
+	for (const line of output.split(/\r?\n/u)) {
+		if (!line.trim()) continue;
+		const name = text(line, "WSL distribution", { max: 255 });
+		if (/^docker-desktop(?:-data)?$/iu.test(name)) continue;
+		const key = name.toLowerCase();
+		if (seen.has(key)) continue;
+		seen.add(key);
+		distributions.push(name);
+		if (distributions.length >= 100) break;
+	}
+	return distributions;
 }
 
 /** @param {string} path @returns {SshConnection[]} */
@@ -273,6 +309,21 @@ function sshArgs(connection, batchMode) {
 	return args;
 }
 
+/** @param {SshConnection} connection @param {string} remoteCommand @param {boolean} batchMode */
+function remoteCommandSpec(connection, remoteCommand, batchMode) {
+	return connection.transport === "wsl"
+		? {
+				command: "wsl.exe",
+				args: ["-d", connection.hostname, "--exec", "sh", "-lc", remoteCommand],
+				cwd: homedir(),
+			}
+		: {
+				command: "ssh",
+				args: [...sshArgs(connection, batchMode), remoteCommand],
+				cwd: homedir(),
+			};
+}
+
 /**
  * @param {unknown} connectionValue
  * @param {string} remotePath
@@ -298,9 +349,7 @@ export function createSshLaunchSpec(connectionValue, remotePath, backendSource) 
 		`PI_PACKAGE_DIR="$HOME/.pi/studio/package-root" exec "$HOME/.pi/studio/bin/node" ${backendPath}`,
 	].join(" && ");
 	return {
-		command: "ssh",
-		args: [...sshArgs(connection, false), remoteCommand],
-		cwd: homedir(),
+		...remoteCommandSpec(connection, remoteCommand, false),
 		checkExists: false,
 		stdinPrefix: prefix,
 	};
@@ -310,11 +359,7 @@ export function createSshLaunchSpec(connectionValue, remotePath, backendSource) 
 export function createSshTestSpec(connectionValue) {
 	const connection = normalizeConnection(connectionValue, true);
 	const remoteCommand = `cd ${remotePathExpression(connection.remotePath)} && exec ${executableExpression(connection.piCommand)} --version`;
-	return {
-		command: "ssh",
-		args: [...sshArgs(connection, true), remoteCommand],
-		cwd: homedir(),
-	};
+	return remoteCommandSpec(connection, remoteCommand, true);
 }
 
 /**
@@ -398,9 +443,7 @@ EOF`,
 		'exec "$wrapper" --version',
 	].join("\n");
 	return {
-		command: "ssh",
-		args: [...sshArgs(connection, true), remoteCommand],
-		cwd: homedir(),
+		...remoteCommandSpec(connection, remoteCommand, true),
 		piCommand: SSH_MANAGED_PI_COMMAND,
 		piVersion,
 		nodeVersion: SSH_NODE_VERSION,
@@ -443,9 +486,7 @@ export function createSshWorktreeSpec(connectionValue, remotePath, nameValue) {
 		`exec git worktree add -b ${quotePosixShell(branch)} "$worktree_path"`,
 	].join(" && ");
 	return {
-		command: "ssh",
-		args: [...sshArgs(connection, true), remoteCommand],
-		cwd: homedir(),
+		...remoteCommandSpec(connection, remoteCommand, true),
 		branch,
 		worktreePath,
 	};
@@ -468,9 +509,7 @@ export function createSshWorktreeRemoveSpec(connectionValue, sourceRemotePath, w
 		`exec git worktree remove ${remotePathExpression(worktreePath)}`,
 	].join(" && ");
 	return {
-		command: "ssh",
-		args: [...sshArgs(connection, true), remoteCommand],
-		cwd: homedir(),
+		...remoteCommandSpec(connection, remoteCommand, true),
 		worktreePath,
 	};
 }
@@ -499,11 +538,7 @@ export function createSshWorktreeListSpec(connectionValue) {
 		'worktree_root="$HOME/.pi/studio/worktrees"',
 		scanCommand,
 	].join(" && ");
-	return {
-		command: "ssh",
-		args: [...sshArgs(connection, true), remoteCommand],
-		cwd: homedir(),
-	};
+	return remoteCommandSpec(connection, remoteCommand, true);
 }
 
 /** @param {unknown} value */
@@ -548,9 +583,7 @@ export function createSshWorktreeDeleteSpec(connectionValue, worktreePathValue) 
 		'exec git worktree remove --force "$worktree_path"',
 	].join(" && ");
 	return {
-		command: "ssh",
-		args: [...sshArgs(connection, true), remoteCommand],
-		cwd: homedir(),
+		...remoteCommandSpec(connection, remoteCommand, true),
 		worktreePath,
 	};
 }
@@ -576,11 +609,7 @@ export function createSshCliSpec(connectionValue, remotePath, command, args) {
 		`cd ${remotePathExpression(remotePath)}`,
 		`${environment} exec ${command}${commandArgs.length > 0 ? ` ${commandArgs.join(" ")}` : ""}`,
 	].join(" && ");
-	return {
-		command: "ssh",
-		args: [...sshArgs(connection, true), remoteCommand],
-		cwd: homedir(),
-	};
+	return remoteCommandSpec(connection, remoteCommand, true);
 }
 
 /** @param {unknown} filePath */
@@ -636,9 +665,7 @@ export function createSshFileReadSpec(connectionValue, remotePath, filePath, max
 		readCommand,
 	].join(" && ");
 	return {
-		command: "ssh",
-		args: [...sshArgs(connection, true), remoteCommand],
-		cwd: homedir(),
+		...remoteCommandSpec(connection, remoteCommand, true),
 		relativePath,
 	};
 }
@@ -678,9 +705,7 @@ export function createSshTrashSpec(connectionValue, remotePath, filePath) {
 		`mv -- "$target_directory/$target_name" ${trashDirectory}/${quotePosixShell(trashName)}`,
 	].join(" && ");
 	return {
-		command: "ssh",
-		args: [...sshArgs(connection, true), remoteCommand],
-		cwd: homedir(),
+		...remoteCommandSpec(connection, remoteCommand, true),
 		trashPath: `~/.pi/studio/trash/${trashName}`,
 	};
 }
