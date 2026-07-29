@@ -22,6 +22,7 @@ let temporaryFileCounter = 0;
 /** @typedef {"local" | "worktree"} AutomationDestination */
 /** @typedef {"off" | "minimal" | "low" | "medium" | "high" | "xhigh" | "max"} AutomationReasoningEffort */
 /** @typedef {{ provider: string, id: string }} AutomationModel */
+/** @typedef {{ source: string, scope: "user" | "project", name: string }} AutomationPromptTemplate */
 /** @typedef {{ sessionId: string, sessionFile: string, cwd: string, sessionName?: string }} AutomationThread */
 /** @typedef {{ path: string, branch: string }} AutomationWorktree */
 /**
@@ -49,6 +50,7 @@ let temporaryFileCounter = 0;
  * @property {AutomationNotificationPolicy} notificationPolicy
  * @property {AutomationModel | undefined} [model]
  * @property {AutomationReasoningEffort | undefined} [reasoningEffort]
+ * @property {AutomationPromptTemplate | undefined} [promptTemplate]
  * @property {AutomationThread | undefined} [thread]
  * @property {AutomationWorktree | undefined} [worktree]
  * @property {string} createdAt
@@ -212,6 +214,23 @@ function requiredText(value, label, maxLength) {
 	return text;
 }
 
+/** @param {unknown} value @returns {AutomationPromptTemplate | undefined} */
+function parsePromptTemplate(value) {
+	if (value === undefined) return undefined;
+	if (!value || typeof value !== "object" || Array.isArray(value)) {
+		throw new Error("Prompt template must include a package source, scope, and name");
+	}
+	const record = /** @type {Record<string, unknown>} */ (value);
+	if (record.scope !== "user" && record.scope !== "project") {
+		throw new Error("Prompt template scope must be user or project");
+	}
+	return {
+		source: requiredText(record.source, "Prompt template source", 4096),
+		scope: record.scope,
+		name: requiredText(record.name, "Prompt template name", 500),
+	};
+}
+
 /** @param {string} path */
 function isDirectory(path) {
 	try {
@@ -224,7 +243,7 @@ function isDirectory(path) {
 /**
  * @param {unknown} input
  * @param {(path: string) => boolean} directoryCheck
- * @returns {{ name: string, prompt: string, cwd: string, rrule: string, kind: AutomationKind, destination: AutomationDestination, status: AutomationStatus, notificationPolicy: AutomationNotificationPolicy, model?: AutomationModel, reasoningEffort?: AutomationReasoningEffort }}
+ * @returns {{ name: string, prompt: string, cwd: string, rrule: string, kind: AutomationKind, destination: AutomationDestination, status: AutomationStatus, notificationPolicy: AutomationNotificationPolicy, model?: AutomationModel, reasoningEffort?: AutomationReasoningEffort, promptTemplate?: AutomationPromptTemplate }}
  */
 function validateInput(input, directoryCheck) {
 	if (!input || typeof input !== "object" || Array.isArray(input)) throw new Error("Automation details are required");
@@ -268,6 +287,7 @@ function validateInput(input, directoryCheck) {
 		throw new Error("Reasoning effort is invalid");
 	}
 	const reasoningEffort = /** @type {AutomationReasoningEffort | undefined} */ (record.reasoningEffort);
+	const promptTemplate = parsePromptTemplate(record.promptTemplate);
 	return {
 		name,
 		prompt,
@@ -279,6 +299,7 @@ function validateInput(input, directoryCheck) {
 		notificationPolicy,
 		model,
 		reasoningEffort,
+		promptTemplate,
 	};
 }
 
@@ -341,6 +362,11 @@ function sanitizeAutomation(value, nowMs) {
 	const reasoningEffort = REASONING_EFFORTS.has(String(record.reasoningEffort))
 		? /** @type {AutomationReasoningEffort} */ (record.reasoningEffort)
 		: undefined;
+	/** @type {AutomationPromptTemplate | undefined} */
+	let promptTemplate;
+	try {
+		promptTemplate = parsePromptTemplate(record.promptTemplate);
+	} catch {}
 	/** @type {AutomationThread | undefined} */
 	let thread;
 	if (record.thread && typeof record.thread === "object" && !Array.isArray(record.thread)) {
@@ -381,6 +407,7 @@ function sanitizeAutomation(value, nowMs) {
 		notificationPolicy: record.notificationPolicy === "failures" ? "failures" : "all",
 		...(model ? { model } : {}),
 		...(reasoningEffort ? { reasoningEffort } : {}),
+		...(promptTemplate ? { promptTemplate } : {}),
 		...(thread ? { thread } : {}),
 		...(worktree ? { worktree } : {}),
 		createdAt: isoString(record.createdAt) ?? now,
@@ -398,6 +425,7 @@ function snapshot(automation) {
 	return {
 		...automation,
 		...(automation.model ? { model: { ...automation.model } } : {}),
+		...(automation.promptTemplate ? { promptTemplate: { ...automation.promptTemplate } } : {}),
 		...(automation.thread ? { thread: { ...automation.thread } } : {}),
 		...(automation.worktree ? { worktree: { ...automation.worktree } } : {}),
 		runs: automation.runs.map((run) => ({ ...run })),

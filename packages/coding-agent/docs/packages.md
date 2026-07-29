@@ -164,6 +164,21 @@ If no `pi` manifest is present, pi auto-discovers resources from these directori
 - `prompts/` loads `.md` files
 - `themes/` loads `.json` files
 
+### Scheduled Task Templates
+
+Pi Studio can expose a package prompt as an Automation template. Add the task name and RRULE to the prompt frontmatter; the Markdown body becomes the default prompt:
+
+```md
+---
+description: Summarize the workspace
+scheduled-task-name: Daily workspace summary
+scheduled-task-rrule: FREQ=DAILY;INTERVAL=1;BYHOUR=9;BYMINUTE=0
+---
+Summarize the workspace.
+```
+
+Installed user and project packages appear under **From Pi packages** on the Scheduled tasks page. Tasks keep a stable link to the package prompt, so customized names, prompts, and schedules can later be reset to the currently installed package defaults.
+
 ## Dependencies
 
 Third party runtime dependencies belong in `dependencies` in `package.json`. Dependencies that do not register extensions, skills, prompt templates, or themes also belong in `dependencies`. When pi installs a package from npm or git, it runs `npm install`, so those dependencies are installed automatically.

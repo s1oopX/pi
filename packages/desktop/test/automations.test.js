@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { mkdirSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
@@ -235,4 +235,44 @@ test("advanced targets, models, and reasoning persist without trusting renderer 
 	t.after(() => reloaded.stop());
 	assert.equal(reloaded.list().find((automation) => automation.id === heartbeat.id).thread.sessionName, "Trusted thread");
 	assert.equal(reloaded.list().find((automation) => automation.id === worktree.id).worktree.branch, "task/worktree-1");
+});
+
+test("package prompt template references validate, persist, and sanitize", (t) => {
+	const paths = tempWorkspace();
+	t.after(() => rmSync(paths.root, { recursive: true, force: true }));
+	const service = createAutomationService({
+		filePath: paths.statePath,
+		runAutomation: async () => ({}),
+	});
+	t.after(() => service.stop());
+
+	assert.throws(() => service.create({
+		name: "Invalid template",
+		prompt: "Review",
+		cwd: paths.workspace,
+		rrule: "FREQ=DAILY",
+		promptTemplate: { source: "package", scope: "temporary", name: "review" },
+	}), /scope must be user or project/);
+	const created = service.create({
+		name: "Package review",
+		prompt: "Review",
+		cwd: paths.workspace,
+		rrule: "FREQ=DAILY",
+		status: "paused",
+		promptTemplate: { source: "npm:review-package", scope: "user", name: "review" },
+	});
+	assert.deepEqual(created.promptTemplate, { source: "npm:review-package", scope: "user", name: "review" });
+	service.stop();
+
+	const stored = JSON.parse(readFileSync(paths.statePath, "utf8"));
+	assert.deepEqual(stored.automations[0].promptTemplate, created.promptTemplate);
+	stored.automations[0].promptTemplate = { source: "", scope: "temporary", name: "" };
+	writeFileSync(paths.statePath, `${JSON.stringify(stored, null, 2)}\n`);
+
+	const reloaded = createAutomationService({
+		filePath: paths.statePath,
+		runAutomation: async () => ({}),
+	});
+	t.after(() => reloaded.stop());
+	assert.equal(reloaded.list()[0].promptTemplate, undefined);
 });

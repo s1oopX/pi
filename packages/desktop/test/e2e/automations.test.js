@@ -6,20 +6,33 @@ import test from "node:test";
 import { assertPrerequisites, launchStudio, LAUNCH_TIMEOUT_MS, REPLY_TIMEOUT_MS } from "./harness.mjs";
 
 const AUTOMATION_PROMPT = "AUTOMATION_TEMPLATE_PROMPT: summarize this workspace";
+const CUSTOM_AUTOMATION_PROMPT = "CUSTOM_AUTOMATION_PROMPT: summarize this workspace";
 const AUTOMATION_REPLY = "Automation reply from faux provider.";
+const AUTOMATION_TEMPLATE_NAME = "Daily workspace summary";
 
 test("automations: create a worktree task, run it, persist settings, and reopen its session", async (t) => {
 	assertPrerequisites();
 
+	let packageDir;
 	const studio = await launchStudio({
 		reply: AUTOMATION_REPLY,
 		setupWorkspace: (workspaceDir, tempRoot) => {
-			const promptsDir = join(tempRoot, "agent", "prompts");
+			packageDir = join(tempRoot, "automation-package");
+			const promptsDir = join(packageDir, "prompts");
 			mkdirSync(promptsDir, { recursive: true });
 			writeFileSync(
-				join(promptsDir, "automation-summary.md"),
-				`---\ndescription: Summarize the current workspace\n---\n${AUTOMATION_PROMPT}\n`,
+				join(packageDir, "package.json"),
+				`${JSON.stringify({
+					name: "pi-studio-automation-e2e",
+					private: true,
+					pi: { prompts: ["./prompts"] },
+				}, null, 2)}\n`,
 			);
+			writeFileSync(
+				join(promptsDir, "automation-summary.md"),
+				`---\ndescription: Summarize the current workspace\nscheduled-task-name: ${AUTOMATION_TEMPLATE_NAME}\nscheduled-task-rrule: FREQ=DAILY;INTERVAL=1;BYHOUR=9;BYMINUTE=0\n---\n${AUTOMATION_PROMPT}\n`,
+			);
+			writeFileSync(join(tempRoot, "agent", "settings.json"), `${JSON.stringify({ packages: [packageDir] }, null, 2)}\n`);
 			writeFileSync(join(workspaceDir, "README.md"), "# automation workspace\n");
 			execFileSync("git", ["init"], { cwd: workspaceDir });
 			execFileSync("git", ["config", "user.email", "pi-studio@example.invalid"], { cwd: workspaceDir });
@@ -35,11 +48,16 @@ test("automations: create a worktree task, run it, persist settings, and reopen 
 		await studio.page.locator(".sidebar-automations-button").click();
 		await studio.page.locator(".automations-page").waitFor({ state: "visible" });
 
-		await studio.page.locator(".automations-new").click();
+		const packageTemplate = studio.page.locator(".automation-package-template").filter({ hasText: AUTOMATION_TEMPLATE_NAME });
+		await packageTemplate.waitFor({ state: "visible" });
+		await packageTemplate.click();
 		const form = studio.page.locator("#automation-editor-form");
+		assert.equal(await form.locator('[name="name"]').inputValue(), AUTOMATION_TEMPLATE_NAME);
+		assert.equal(await form.locator('[name="prompt"]').inputValue(), AUTOMATION_PROMPT);
+		assert.equal(await form.locator('[name="schedule"]').inputValue(), "daily");
+		assert.equal(await form.locator('[name="scheduleTime"]').inputValue(), "09:00");
 		await form.locator('[name="name"]').fill("Workspace summary");
-		await form.locator('[name="template"]').selectOption("automation-summary");
-		assert.equal(await form.locator('[name="prompt"]').inputValue(), "/automation-summary");
+		await form.locator('[name="prompt"]').fill(CUSTOM_AUTOMATION_PROMPT);
 		await form.locator('[name="destination"]').selectOption("worktree");
 		await form.locator('[name="model"]').selectOption({ label: "Faux 1 — faux" });
 		await form.locator('[name="schedule"]').selectOption("weekly");
@@ -49,14 +67,33 @@ test("automations: create a worktree task, run it, persist settings, and reopen 
 		await form.locator('[name="notificationPolicy"]').selectOption("failures");
 		await studio.page.locator('.automation-editor-dialog button[type="submit"]').click();
 
-		const card = studio.page.locator(".automation-card").filter({ hasText: "Workspace summary" });
+		let card = studio.page.locator(".automation-card").filter({ hasText: "Workspace summary" });
 		await card.waitFor({ state: "visible" });
 		const created = JSON.parse(readFileSync(join(studio.tempRoot, "user-data", "automations.json"), "utf8"));
 		assert.equal(created.automations[0].destination, "worktree");
 		assert.equal(created.automations[0].model.id, "faux-1");
+		assert.equal(created.automations[0].prompt, CUSTOM_AUTOMATION_PROMPT);
 		assert.equal(created.automations[0].rrule, "FREQ=WEEKLY;INTERVAL=2;BYDAY=FR;BYHOUR=16;BYMINUTE=30");
+		assert.deepEqual(created.automations[0].promptTemplate, {
+			source: packageDir,
+			scope: "user",
+			name: "automation-summary",
+		});
 		assert.ok(created.automations[0].worktree.branch.startsWith("task/"));
 		assert.ok(existsSync(created.automations[0].worktree.path), "automation worktree was not provisioned");
+		assert.equal(await card.locator(".automation-template-source").textContent(), packageDir);
+		await card.locator(".automation-reset-template").click();
+		await studio.page.locator(".automation-reset-template-confirm").click();
+		card = studio.page.locator(".automation-card").filter({ hasText: AUTOMATION_TEMPLATE_NAME });
+		await card.waitFor({ state: "visible" });
+		const reset = JSON.parse(readFileSync(join(studio.tempRoot, "user-data", "automations.json"), "utf8"));
+		assert.equal(reset.automations[0].name, AUTOMATION_TEMPLATE_NAME);
+		assert.equal(reset.automations[0].prompt, AUTOMATION_PROMPT);
+		assert.equal(reset.automations[0].rrule, "FREQ=DAILY;INTERVAL=1;BYHOUR=9;BYMINUTE=0");
+		assert.equal(reset.automations[0].destination, "worktree");
+		assert.equal(reset.automations[0].notificationPolicy, "failures");
+		assert.equal(reset.automations[0].model.id, "faux-1");
+		assert.deepEqual(reset.automations[0].promptTemplate, created.automations[0].promptTemplate);
 		await card.locator(".automation-run-now").click();
 		await card.locator(".automation-run-status.success").first().waitFor({ state: "visible", timeout: REPLY_TIMEOUT_MS });
 		await card.locator(".automation-unread-count").waitFor({ state: "visible" });

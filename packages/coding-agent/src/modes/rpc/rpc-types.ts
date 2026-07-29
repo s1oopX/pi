@@ -208,6 +208,12 @@ export interface RpcSlashCommand {
 	source: "extension" | "prompt" | "skill";
 	/** Source metadata for the owning resource */
 	sourceInfo: SourceInfo;
+	/** Optional package-provided defaults for Pi Studio Automations */
+	scheduledTask?: {
+		name: string;
+		prompt: string;
+		rrule: string;
+	};
 }
 
 // ============================================================================

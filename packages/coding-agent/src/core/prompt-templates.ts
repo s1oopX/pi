@@ -12,6 +12,10 @@ export interface PromptTemplate {
 	name: string;
 	description: string;
 	argumentHint?: string;
+	scheduledTask?: {
+		name: string;
+		rrule: string;
+	};
 	content: string;
 	sourceInfo: SourceInfo;
 	filePath: string; // Absolute path to the template file
@@ -118,11 +122,18 @@ function loadTemplateFromFile(filePath: string, sourceInfo: SourceInfo): PromptT
 				if (firstLine.length > 60) description += "...";
 			}
 		}
+		const scheduledTaskName =
+			typeof frontmatter["scheduled-task-name"] === "string" ? frontmatter["scheduled-task-name"].trim() : "";
+		const scheduledTaskRrule =
+			typeof frontmatter["scheduled-task-rrule"] === "string" ? frontmatter["scheduled-task-rrule"].trim() : "";
 
 		return {
 			name,
 			description,
 			...(frontmatter["argument-hint"] && { argumentHint: frontmatter["argument-hint"] }),
+			...(scheduledTaskName && scheduledTaskRrule
+				? { scheduledTask: { name: scheduledTaskName, rrule: scheduledTaskRrule } }
+				: {}),
 			content: body,
 			sourceInfo,
 			filePath,

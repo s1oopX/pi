@@ -164,10 +164,73 @@
 }
 
 .automations-list,
+.automations-package-templates,
 .automations-empty,
 .automations-error {
   width: min(100%, 1040px);
   margin-inline: auto;
+}
+
+.automations-package-templates {
+  margin-bottom: var(--space-7);
+}
+
+.automations-package-templates-heading {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--space-5);
+  margin-bottom: var(--space-4);
+}
+
+.automations-package-templates-heading h2,
+.automations-package-templates-heading p {
+  margin: 0;
+}
+
+.automations-package-templates-heading h2 {
+  font-size: var(--font-size-section);
+}
+
+.automations-package-templates-heading p {
+  color: var(--muted);
+  font-size: var(--font-size-compact);
+}
+
+.automations-package-templates-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: var(--space-4);
+}
+
+.automation-package-template {
+  min-width: 0;
+  display: flex;
+  align-items: flex-start;
+  flex-direction: column;
+  gap: var(--space-2);
+  padding: var(--space-5);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  background: var(--elevated);
+  color: var(--text);
+  text-align: left;
+  box-shadow: var(--shadow-sm);
+}
+
+.automation-package-template:hover:not(:disabled) {
+  border-color: var(--focus-ring);
+  background: var(--control-hover);
+}
+
+.automation-package-template span,
+.automation-package-template small {
+  width: 100%;
+  overflow: hidden;
+  color: var(--muted);
+  font-size: var(--font-size-compact);
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .automations-list {

@@ -287,6 +287,11 @@ export interface RpcSlashCommandDTO {
 	description?: string;
 	source: "extension" | "prompt" | "skill";
 	sourceInfo: RpcSourceInfoDTO;
+	scheduledTask?: {
+		name: string;
+		prompt: string;
+		rrule: string;
+	};
 }
 
 export type RpcResourceKindDTO = "extension" | "skill" | "prompt";

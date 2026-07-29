@@ -1880,6 +1880,9 @@ export async function runRpcMode(runtimeHost: AgentSessionRuntime): Promise<neve
 						description: template.description,
 						source: "prompt",
 						sourceInfo: template.sourceInfo,
+						...(template.scheduledTask
+							? { scheduledTask: { ...template.scheduledTask, prompt: template.content } }
+							: {}),
 					});
 				}
 

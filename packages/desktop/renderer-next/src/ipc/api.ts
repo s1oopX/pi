@@ -248,6 +248,12 @@ export interface AutomationModel {
   id: string;
 }
 
+export interface AutomationPromptTemplate {
+  source: string;
+  scope: "user" | "project";
+  name: string;
+}
+
 export interface AutomationThread {
   sessionId: string;
   sessionFile: string;
@@ -284,6 +290,7 @@ export interface AutomationRecord {
   notificationPolicy: AutomationNotificationPolicy;
   model?: AutomationModel;
   reasoningEffort?: ThinkingLevel;
+  promptTemplate?: AutomationPromptTemplate;
   thread?: AutomationThread;
   worktree?: AutomationWorktree;
   worktreeCleanup?: { removed: boolean; reason?: string };
@@ -307,6 +314,7 @@ export interface AutomationInput {
   notificationPolicy?: AutomationNotificationPolicy;
   model?: AutomationModel;
   reasoningEffort?: ThinkingLevel;
+  promptTemplate?: AutomationPromptTemplate;
 }
 
 export interface AutomationsChangedEvent {

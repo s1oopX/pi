@@ -7,6 +7,7 @@ import type {
   AutomationKind,
   AutomationModel,
   AutomationNotificationPolicy,
+  AutomationPromptTemplate,
   AutomationRecord,
   AutomationRun,
   AutomationRunAction,
@@ -42,6 +43,15 @@ interface AutomationDraft {
   notificationPolicy: AutomationNotificationPolicy;
   model?: AutomationModel;
   reasoningEffort?: ThinkingLevel;
+  promptTemplate?: AutomationPromptTemplate;
+}
+
+interface PackageScheduledTask {
+  ref: AutomationPromptTemplate;
+  name: string;
+  prompt: string;
+  rrule: string;
+  description?: string;
 }
 
 type RunFilter = "current" | "unread" | "archived";
@@ -100,6 +110,10 @@ export function Automations({ onClose }: AutomationsProps) {
     automation: AutomationRecord;
     runs: AutomationRun[];
   } | null>(null);
+  const [resetTemplateTarget, setResetTemplateTarget] = useState<{
+    automation: AutomationRecord;
+    template: PackageScheduledTask;
+  } | null>(null);
 
   function replaceAutomation(updated: AutomationRecord): void {
     setAutomations((current) => current.some((automation) => automation.id === updated.id)
@@ -124,6 +138,25 @@ export function Automations({ onClose }: AutomationsProps) {
     return api.onAutomationsChanged((payload) => setAutomations(payload.automations));
   }, []);
 
+  const packageScheduledTasks = useMemo(() => commands.flatMap((command): PackageScheduledTask[] => {
+    const scheduledTask = command.scheduledTask;
+    const scope = command.sourceInfo.scope;
+    if (
+      command.source !== "prompt"
+      || command.sourceInfo.origin !== "package"
+      || (scope !== "user" && scope !== "project")
+      || !scheduledTask?.name.trim()
+      || !scheduledTask.prompt.trim()
+      || !scheduledTask.rrule.trim()
+    ) return [];
+    return [{
+      ref: { source: command.sourceInfo.source, scope, name: command.name },
+      name: scheduledTask.name,
+      prompt: scheduledTask.prompt,
+      rrule: scheduledTask.rrule,
+      description: command.description,
+    }];
+  }), [commands]);
   const promptTemplates = useMemo(() => commands.filter((command) =>
     command.source === "prompt" && (command.sourceInfo.scope !== "project" || draft.cwd === workspaceCwd)),
   [commands, draft.cwd, workspaceCwd]);
@@ -243,20 +276,22 @@ export function Automations({ onClose }: AutomationsProps) {
     return `${model?.name ?? automation.model.id} · ${thinkingLabel(automation.reasoningEffort)}`;
   }
 
-  function openNew(): void {
+  function openNew(template?: PackageScheduledTask): void {
     const currentModel = session?.model ? { provider: session.model.provider, id: session.model.id } : undefined;
+    const rrule = template?.rrule ?? buildAutomationRRule(defaultAutomationSchedule());
     setDraft({
-      name: "",
-      prompt: "",
+      name: template?.name ?? "",
+      prompt: template?.prompt ?? "",
       cwd: workspaceCwd,
-      rrule: buildAutomationRRule(defaultAutomationSchedule()),
+      rrule,
       kind: "cron",
       destination: "local",
       notificationPolicy: "all",
       ...(currentModel ? { model: currentModel } : {}),
       ...(currentModel && session?.model?.reasoning ? { reasoningEffort: session.thinkingLevel as ThinkingLevel } : {}),
+      ...(template ? { promptTemplate: template.ref } : {}),
     });
-    setScheduleMode("daily");
+    setScheduleMode(parseAutomationSchedule(rrule).mode);
     setFormError(null);
     setEditorId("new");
   }
@@ -301,6 +336,7 @@ export function Automations({ onClose }: AutomationsProps) {
       notificationPolicy: automation.notificationPolicy,
       ...(automation.model ? { model: automation.model } : {}),
       ...(automation.reasoningEffort ? { reasoningEffort: automation.reasoningEffort } : {}),
+      ...(automation.promptTemplate ? { promptTemplate: automation.promptTemplate } : {}),
     });
     setScheduleMode(parseAutomationSchedule(automation.rrule).mode);
     setFormError(null);
@@ -365,6 +401,34 @@ export function Automations({ onClose }: AutomationsProps) {
       replaceAutomation(await api.setAutomationStatus(automation.id, status));
     } catch (error) {
       showToast(t("Could not update automation: {error}", "更新自动任务失败：{error}", { error: errorText(error) }), "error");
+    } finally {
+      setBusyId(null);
+    }
+  }
+
+  async function resetPromptTemplateDefaults(): Promise<void> {
+    if (!resetTemplateTarget || busyId) return;
+    const { automation, template } = resetTemplateTarget;
+    setBusyId(automation.id);
+    try {
+      replaceAutomation(await api.updateAutomation(automation.id, {
+        name: template.name,
+        prompt: template.prompt,
+        cwd: automation.cwd,
+        rrule: template.rrule,
+        kind: automation.kind,
+        destination: automation.destination,
+        notificationPolicy: automation.notificationPolicy,
+        promptTemplate: template.ref,
+        ...(automation.model ? { model: automation.model } : {}),
+        ...(automation.reasoningEffort ? { reasoningEffort: automation.reasoningEffort } : {}),
+      }));
+      setResetTemplateTarget(null);
+      showToast(t("Package defaults restored", "已恢复包默认值"), "success");
+    } catch (error) {
+      showToast(t("Could not reset automation: {error}", "无法重置自动任务：{error}", {
+        error: errorText(error),
+      }), "error");
     } finally {
       setBusyId(null);
     }
@@ -484,7 +548,7 @@ export function Automations({ onClose }: AutomationsProps) {
             <Icon name="activity" size={15} />
             {creatingChat ? t("Starting…", "正在启动…") : t("Create with Pi", "使用 Pi 创建")}
           </button>
-          <button className="dialog-btn dialog-btn-secondary automations-new" type="button" disabled={creatingChat} onClick={openNew}>
+          <button className="dialog-btn dialog-btn-secondary automations-new" type="button" disabled={creatingChat} onClick={() => openNew()}>
             <Icon name="plus" size={15} />
             {t("Set up manually", "手动设置")}
           </button>
@@ -544,6 +608,29 @@ export function Automations({ onClose }: AutomationsProps) {
       </div>
 
       <div className="automations-content">
+        {packageScheduledTasks.length > 0 && (
+          <section className="automations-package-templates" aria-labelledby="automations-package-templates-title">
+            <div className="automations-package-templates-heading">
+              <h2 id="automations-package-templates-title">{t("From Pi packages", "来自 Pi 包")}</h2>
+              <p>{t("Start from defaults provided by installed packages.", "使用已安装包提供的默认值创建任务。")}</p>
+            </div>
+            <div className="automations-package-templates-grid">
+              {packageScheduledTasks.map((template) => (
+                <button
+                  className="automation-package-template"
+                  type="button"
+                  disabled={creatingChat}
+                  onClick={() => openNew(template)}
+                  key={`${template.ref.scope}:${template.ref.source}:${template.ref.name}`}
+                >
+                  <strong>{template.name}</strong>
+                  <span>{template.description || template.prompt}</span>
+                  <small>{template.ref.source} · {scheduleLabel(template.rrule)}</small>
+                </button>
+              ))}
+            </div>
+          </section>
+        )}
         {loadError && (
           <div className="automations-error" role="alert">
             <span>{loadError}</span>
@@ -555,7 +642,7 @@ export function Automations({ onClose }: AutomationsProps) {
           <div className="automations-empty">
             <Icon name="calendar" size={24} />
             <strong>{query || filter !== "all" || runFilter !== "current" ? t("No matching automations", "没有匹配的自动任务") : t("No scheduled tasks yet", "尚无定时任务")}</strong>
-            {!query && filter === "all" && runFilter === "current" && <button className="dialog-btn dialog-btn-primary" type="button" onClick={openNew}>{t("Create one", "创建一个")}</button>}
+            {!query && filter === "all" && runFilter === "current" && <button className="dialog-btn dialog-btn-primary" type="button" onClick={() => openNew()}>{t("Create one", "创建一个")}</button>}
           </div>
         )}
         <div className="automations-list">
@@ -568,6 +655,12 @@ export function Automations({ onClose }: AutomationsProps) {
             const visibleRuns = automation.runs.filter((run) =>
               runFilter === "archived" ? Boolean(run.archivedAt) : runFilter === "unread" ? isUnreadRun(run) : !run.archivedAt,
             );
+            const linkedTemplate = automation.promptTemplate
+              ? packageScheduledTasks.find((template) =>
+                  template.ref.source === automation.promptTemplate?.source
+                  && template.ref.scope === automation.promptTemplate.scope
+                  && template.ref.name === automation.promptTemplate.name)
+              : undefined;
             return (
               <article className="automation-card" key={automation.id}>
                 <div className="automation-card-header">
@@ -591,6 +684,11 @@ export function Automations({ onClose }: AutomationsProps) {
                     <button className="dialog-btn dialog-btn-secondary" type="button" disabled={busy} onClick={() => void toggleStatus(automation)}>
                       {automation.status === "active" ? t("Pause", "暂停") : t("Resume", "恢复")}
                     </button>
+                    {linkedTemplate && (
+                      <button className="dialog-btn dialog-btn-secondary automation-reset-template" type="button" disabled={busy || running} onClick={() => setResetTemplateTarget({ automation, template: linkedTemplate })}>
+                        {t("Reset to package defaults", "恢复包默认值")}
+                      </button>
+                    )}
                     <button className="icon-button" type="button" disabled={busy || running} onClick={() => openEdit(automation)} aria-label={t("Edit {name}", "编辑 {name}", { name: automation.name })}>
                       <Icon name="pencil" size={16} />
                     </button>
@@ -610,6 +708,7 @@ export function Automations({ onClose }: AutomationsProps) {
                   <div><dt>{t("Workspace", "工作区")}</dt><dd title={automation.cwd}>{automation.cwd}</dd></div>
                   <div><dt>{t("Model", "模型")}</dt><dd title={automation.model ? `${automation.model.provider}/${automation.model.id}` : undefined}>{automationModelLabel(automation)}</dd></div>
                   <div><dt>{t("Notifications", "通知")}</dt><dd>{automation.notificationPolicy === "failures" ? t("Failures only", "仅失败") : t("All runs", "全部运行")}</dd></div>
+                  {automation.promptTemplate && <div><dt>{t("Package", "包")}</dt><dd className="automation-template-source" title={automation.promptTemplate.source}>{automation.promptTemplate.source}</dd></div>}
                 </dl>
                 {automation.lastError && <p className="automation-last-error" role="status">{automation.lastError}</p>}
                 <details className="automation-history">
@@ -907,6 +1006,24 @@ export function Automations({ onClose }: AutomationsProps) {
           <p className="automation-permission-note">{t("Background runs use Auto tool permissions. Heartbeats exclusively lock their bound session while running; independent tasks keep separate session history.", "后台运行使用“自动”工具权限。会话心跳运行时会独占绑定会话；独立任务保留各自的会话历史。")}</p>
           {formError && <p className="automation-form-error" role="alert">{formError}</p>}
         </form>
+      </Dialog>
+
+      <Dialog
+        open={resetTemplateTarget !== null}
+        title={t("Reset to package defaults?", "恢复包默认值？")}
+        onClose={busyId ? undefined : () => setResetTemplateTarget(null)}
+        actions={
+          <>
+            <button className="dialog-btn dialog-btn-secondary" type="button" disabled={Boolean(busyId)} onClick={() => setResetTemplateTarget(null)}>{t("Cancel", "取消")}</button>
+            <button className="dialog-btn dialog-btn-danger automation-reset-template-confirm" type="button" disabled={Boolean(busyId)} onClick={() => void resetPromptTemplateDefaults()}>{t("Reset", "恢复")}</button>
+          </>
+        }
+      >
+        <p>{t(
+          "Replace the customized name, prompt, and schedule with the current defaults from {source}? Model, destination, workspace, notifications, status, and history stay unchanged.",
+          "使用 {source} 当前提供的默认值替换已自定义的名称、提示词和计划？模型、运行目标、工作区、通知、状态和历史记录保持不变。",
+          { source: resetTemplateTarget?.template.ref.source ?? "" },
+        )}</p>
       </Dialog>
 
       <Dialog

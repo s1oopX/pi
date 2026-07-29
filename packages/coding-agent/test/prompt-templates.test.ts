@@ -616,6 +616,51 @@ Analyze GitHub issue(s): $ARGUMENTS`,
 		expect(is!.argumentHint).toBe("<issue>");
 	});
 
+	test("should parse scheduled-task defaults", () => {
+		writeTemplate(
+			"daily-summary",
+			`---
+description: Summarize the workspace
+scheduled-task-name: Daily workspace summary
+scheduled-task-rrule: FREQ=DAILY;INTERVAL=1;BYHOUR=9;BYMINUTE=0
+---
+Summarize the workspace.`,
+		);
+
+		const templates = loadPromptTemplates({
+			cwd: process.cwd(),
+			agentDir: getAgentDir(),
+			promptPaths: [testDir],
+			includeDefaults: false,
+		});
+
+		const summary = templates.find((template) => template.name === "daily-summary");
+		expect(summary?.scheduledTask).toEqual({
+			name: "Daily workspace summary",
+			rrule: "FREQ=DAILY;INTERVAL=1;BYHOUR=9;BYMINUTE=0",
+		});
+		expect(summary?.content.trim()).toBe("Summarize the workspace.");
+	});
+
+	test("should ignore incomplete scheduled-task defaults", () => {
+		writeTemplate(
+			"incomplete-schedule",
+			`---
+scheduled-task-rrule: FREQ=DAILY;BYHOUR=9;BYMINUTE=0
+---
+Summarize the workspace.`,
+		);
+
+		const templates = loadPromptTemplates({
+			cwd: process.cwd(),
+			agentDir: getAgentDir(),
+			promptPaths: [testDir],
+			includeDefaults: false,
+		});
+
+		expect(templates.find((template) => template.name === "incomplete-schedule")?.scheduledTask).toBeUndefined();
+	});
+
 	afterAll(() => {
 		try {
 			rmSync(testDir, { recursive: true, force: true });
