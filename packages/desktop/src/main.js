@@ -42,6 +42,7 @@ import { describeRevealTarget, resolveWorkspacePath } from "./path-reveal.js";
 import { createProject } from "./project-templates.js";
 import { createRollingLog } from "./rolling-log.js";
 import { prepareSessionImport, resolveKnownSessionFile } from "./session-files.js";
+import { materializeSshArtifact, readSshArtifactPreview } from "./ssh-artifact.js";
 import { createTaskRegistry } from "./task-registry.js";
 import {
 	createSshCliSpec,
@@ -74,6 +75,7 @@ const TASK_WORKSPACE_DIRECTORY = "tasks";
 const TASK_SETTINGS_FILE = "task-settings.json";
 const AUTOMATIONS_FILE = "automations.json";
 const SSH_CONNECTIONS_FILE = "ssh-connections.json";
+const REMOTE_ARTIFACT_CACHE_DIRECTORY = "remote-artifacts";
 const MAX_IDLE_MINUTES = 240;
 const DEFAULT_TASK_SETTINGS = { maxTasks: 3, idleMinutes: 30 };
 const AUTOMATION_START_TIMEOUT_MS = 30_000;
@@ -146,6 +148,10 @@ function getAutomationsPath() {
 
 function getSshConnectionsPath() {
 	return join(app.getPath("userData"), SSH_CONNECTIONS_FILE);
+}
+
+function getRemoteArtifactCachePath() {
+	return join(app.getPath("userData"), REMOTE_ARTIFACT_CACHE_DIRECTORY);
 }
 
 function getRemoteBridgeSource() {
@@ -1853,6 +1859,12 @@ function resolveTaskCwd(taskId) {
 	return taskRegistry.get(typeof taskId === "string" && taskId ? taskId : undefined).cwd();
 }
 
+/** @param {unknown} taskId */
+function resolveTaskWorkspace(taskId) {
+	const cwd = resolveTaskCwd(taskId);
+	return { cwd, remote: cwd === backendCwd ? getActiveSshWorkspace() : null };
+}
+
 /** @param {NonNullable<ReturnType<typeof getActiveSshWorkspace>>} remote */
 function createRemoteCliExecFile(remote) {
 	/**
@@ -1901,8 +1913,7 @@ function trashRemoteGitPath(remote, filePath) {
 
 /** @param {unknown} taskId */
 function resolveGitTarget(taskId) {
-	const displayCwd = resolveTaskCwd(taskId);
-	const remote = displayCwd === backendCwd ? getActiveSshWorkspace() : null;
+	const { cwd: displayCwd, remote } = resolveTaskWorkspace(taskId);
 	if (!remote) return { displayCwd, cwd: displayCwd, remote: null, options: undefined };
 	return {
 		displayCwd,
@@ -2037,12 +2048,18 @@ ipcMain.handle("workspace:reveal", async (_event, cwd) => {
 });
 
 ipcMain.handle("workspace:reveal-path", async (_event, targetPath, taskId) => {
-	const taskCwd = resolveTaskCwd(taskId);
-	const absolutePath = resolveWorkspacePath(taskCwd, String(targetPath ?? ""));
+	const target = resolveTaskWorkspace(taskId);
+	const path = String(targetPath ?? "");
+	if (target.remote) {
+		const localPath = await materializeSshArtifact(target.remote, path, getRemoteArtifactCachePath());
+		shell.showItemInFolder(localPath);
+		return { revealed: true, path: localPath, insideWorkspace: true, remote: true };
+	}
+	const absolutePath = resolveWorkspacePath(target.cwd, path);
 	if (!existsSync(absolutePath)) {
 		throw new Error(`Path not found: ${absolutePath}`);
 	}
-	const { insideWorkspace } = describeRevealTarget(taskCwd, absolutePath);
+	const { insideWorkspace } = describeRevealTarget(target.cwd, absolutePath);
 	if (!insideWorkspace) {
 		throw new Error(`Path is outside the workspace: ${absolutePath}`);
 	}
@@ -2051,15 +2068,23 @@ ipcMain.handle("workspace:reveal-path", async (_event, targetPath, taskId) => {
 });
 
 ipcMain.handle("workspace:open-path", async (_event, targetPath, taskId) => {
-	const { absolutePath } = await resolveWorkspaceFilePath(resolveTaskCwd(taskId), String(targetPath ?? ""));
+	const target = resolveTaskWorkspace(taskId);
+	const path = String(targetPath ?? "");
+	const absolutePath = target.remote
+		? await materializeSshArtifact(target.remote, path, getRemoteArtifactCachePath())
+		: (await resolveWorkspaceFilePath(target.cwd, path)).absolutePath;
 	const error = await shell.openPath(absolutePath);
 	if (error) throw new Error(error);
-	return { opened: true, path: absolutePath };
+	return { opened: true, path: absolutePath, remote: Boolean(target.remote) };
 });
 
-ipcMain.handle("workspace:read-file", async (_event, targetPath, taskId) =>
-	readWorkspaceFilePreview(resolveTaskCwd(taskId), String(targetPath ?? "")),
-);
+ipcMain.handle("workspace:read-file", async (_event, targetPath, taskId) => {
+	const target = resolveTaskWorkspace(taskId);
+	const path = String(targetPath ?? "");
+	return target.remote
+		? readSshArtifactPreview(target.remote, path)
+		: readWorkspaceFilePreview(target.cwd, path);
+});
 
 const hasSingleInstanceLock = app.requestSingleInstanceLock();
 if (!hasSingleInstanceLock) {

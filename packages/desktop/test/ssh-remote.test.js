@@ -5,6 +5,7 @@ import { join } from "node:path";
 import test from "node:test";
 import {
 	createSshCliSpec,
+	createSshFileReadSpec,
 	createSshGitSpec,
 	createSshLaunchSpec,
 	createSshTestSpec,
@@ -12,6 +13,7 @@ import {
 	createSshWorkspaceUri,
 	loadSshConnections,
 	normalizeSshConnection,
+	parseSshFileMetadata,
 	parseSshWorkspaceUri,
 	quotePosixShell,
 	saveSshConnections,
@@ -97,4 +99,23 @@ test("builds remote gh and recoverable trash specs", () => {
 	assert.match(trash.args.at(-1), /mv -- "\$target_directory\/\$target_name"/u);
 	assert.throws(() => createSshTrashSpec(CONNECTION, "/srv/pi", "../secret"), /inside the workspace/);
 	assert.throws(() => createSshTrashSpec(CONNECTION, "/srv/pi", "dir/../secret"), /inside the workspace/);
+});
+
+test("builds a descriptor-bound remote file stream and parses its metadata", () => {
+	const spec = createSshFileReadSpec(CONNECTION, "/srv/pi project", "reports/it's $(unsafe).pdf", 4096);
+	assert.ok(spec.args.includes("BatchMode=yes"));
+	assert.equal(spec.relativePath, "reports/it's $(unsafe).pdf");
+	assert.match(spec.args.at(-1), /exec 3<'\.\/reports\/it'"'"'s \$\(unsafe\)\.pdf'/u);
+	assert.match(spec.args.at(-1), /readlink -f "\/proc\/\$\$\/fd\/3"/u);
+	assert.match(spec.args.at(-1), /Remote artifact path escaped the workspace/u);
+	assert.match(spec.args.at(-1), /PI_STUDIO_FILE_V1 %s %s/u);
+	assert.match(spec.args.at(-1), /head -c 4097 <&3/u);
+	assert.deepEqual(parseSshFileMetadata("Warning\nPI_STUDIO_FILE_V1 42 1700000000\n"), {
+		size: 42,
+		modifiedAt: 1_700_000_000_000,
+	});
+	assert.throws(() => createSshFileReadSpec(CONNECTION, "/srv/pi", "../secret", 10), /inside the workspace/);
+	assert.throws(() => createSshFileReadSpec(CONNECTION, "/srv/pi", "/etc/passwd", 10), /inside the workspace/);
+	assert.throws(() => createSshFileReadSpec(CONNECTION, "/srv/pi", "report.md", -1), /byte limit/);
+	assert.throws(() => parseSshFileMetadata("missing"), /metadata/);
 });

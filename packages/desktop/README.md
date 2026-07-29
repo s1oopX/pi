@@ -57,12 +57,16 @@ Pi Studio assumes the workspace may be hostile (a cloned repository) and the ren
 | IPC allowlist | The main process forwards only the renderer's typed command set to the backend (`backend-command-allowlist.js`); unknown command types are rejected before they reach the RPC layer |
 | Tool approval | A bundled inline extension registers the `permission-mode` flag and gates tool calls at the agent loop's single choke point: `full` runs everything, `auto` asks before risky bash, out-of-workspace writes, computer control, and image generation, while `ask` also confirms passive screen access |
 | Project trust | Folders carrying project-local resources (`.pi` extensions, settings, skills) load **untrusted by default**; extensions do not execute until the user trusts the folder (persisted in `<agentDir>/trust.json`, revocable from Settings, hot-reloaded both ways) |
-| Process hygiene | All git and gh invocations use `execFile` with argument vectors — no shell anywhere; branch names and commit messages are validated before they become argv entries |
-| Path containment | Reveal/open operations and image-generation references/outputs verify both lexical and real paths against the workspace root; generated files never overwrite existing paths |
+| Process hygiene | Local git and gh use `execFile` argument vectors; SSH operations allow only fixed commands and quote every remote-shell argument. Branch names and commit messages are validated before they become argv entries |
+| Path containment | Reveal/open operations and image-generation references/outputs verify both lexical and real paths against the workspace root. SSH artifact reads bind validation and transfer to one opened descriptor, so symlink swaps cannot escape the remote workspace |
 
 ### Git integration
 
 The top-bar git panel covers the full flow without leaving the app: status with ahead/behind, staged-all commits, push with automatic upstream creation, branch list/switch/create, per-file and per-hunk review, and pull-request creation/review through the GitHub CLI (explicit `--repo/--head/--base`, non-interactive) with a pre-filled compare-page fallback when `gh` is absent. SSH workspaces run the same Git and `gh` operations on the remote host; untracked-file discard moves files to `~/.pi/studio/trash`. Remote parsing understands https/ssh/scp forms and GitHub Enterprise hosts.
+
+### Artifact previews
+
+The workbench previews text, Markdown, sandboxed HTML, images, PDF, CSV, TSV, and XLSX files with a 40 MB in-panel limit. In SSH workspaces the selected file is streamed through a non-interactive, descriptor-bound SSH read: its physical target must remain inside the remote workspace, metadata and byte length are verified, and Open/Reveal materializes a content-addressed copy in Pi Studio's private local cache (512 MB download limit). The remote workspace is otherwise untouched.
 
 ### Sessions
 
@@ -113,7 +117,7 @@ The fork root is an upstream commit, so upstream releases merge as plain three-w
 
 ## Roadmap
 
-Near-term: complete SSH artifact preview, remote worktrees, trust-aware project extensions, Pi installation, and WSL-specific UX; then close the remaining Automations product-parity gaps.
+Near-term: complete SSH remote worktrees, trust-aware project extensions, Pi installation, and WSL-specific UX; then close the remaining Automations product-parity gaps.
 
 Deliberately deferred: code signing and auto-update, installer distribution, backend size reduction (~100 MB Bun runtime), macOS/Linux, additional locales.
 

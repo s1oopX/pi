@@ -61,6 +61,55 @@ const SPREADSHEET_MIME_TYPES = new Map([
 ]);
 
 /**
+ * Build the renderer preview from trusted metadata and lazily supplied bytes.
+ * Unsupported and oversized files never invoke the reader.
+ * @param {string} path
+ * @param {number} size
+ * @param {number} modifiedAt
+ * @param {() => Promise<Buffer>} readContent
+ */
+export async function buildWorkspaceFilePreview(path, size, modifiedAt, readContent) {
+	if (!Number.isSafeInteger(size) || size < 0) throw new Error("File size is invalid");
+	if (!Number.isFinite(modifiedAt)) throw new Error("File modified time is invalid");
+
+	const extension = extname(path).toLocaleLowerCase("en");
+	const textMimeType = TEXT_MIME_TYPES.get(extension)
+		?? (/^(?:license|readme)(?:\.|$)/iu.test(basename(path)) ? "text/plain" : undefined);
+	const binaryMimeType = BINARY_MIME_TYPES.get(extension);
+	const spreadsheetMimeType = SPREADSHEET_MIME_TYPES.get(extension);
+	const mimeType = textMimeType ?? binaryMimeType ?? spreadsheetMimeType ?? "application/octet-stream";
+	const base = { path, size, modifiedAt, mimeType };
+
+	if (size > MAX_WORKSPACE_FILE_PREVIEW_BYTES) return { ...base, kind: "too-large" };
+	if (!textMimeType && !binaryMimeType && extension !== ".csv" && extension !== ".tsv" && extension !== ".xlsx") {
+		return { ...base, kind: "unsupported" };
+	}
+	const content = await readContent();
+	if (!Buffer.isBuffer(content)) throw new Error("File content is invalid");
+	if (textMimeType === "image/svg+xml" || binaryMimeType?.startsWith("image/")) {
+		return { ...base, kind: "image", dataBase64: content.toString("base64") };
+	}
+	if (binaryMimeType === "application/pdf") {
+		return { ...base, kind: "pdf", dataBase64: content.toString("base64") };
+	}
+	if (extension === ".csv" || extension === ".tsv") {
+		return {
+			...base,
+			kind: "spreadsheet",
+			...parseDelimitedSpreadsheet(content.toString("utf8"), extension === ".csv" ? "," : "\t", basename(path, extension)),
+		};
+	}
+	if (extension === ".xlsx") {
+		return { ...base, kind: "spreadsheet", ...parseXlsxSpreadsheet(content) };
+	}
+	return {
+		...base,
+		kind: textMimeType === "text/html" ? "html" : "text",
+		content: content.toString("utf8"),
+	};
+}
+
+/**
  * Resolve an existing path twice: lexically first, then through symlinks.
  * Preview/open must not let a workspace symlink expose files elsewhere.
  * @param {string} workspaceCwd
@@ -86,38 +135,5 @@ export async function readWorkspaceFilePreview(workspaceCwd, targetPath) {
 	const { absolutePath, realPath } = await resolveWorkspaceFilePath(workspaceCwd, targetPath);
 	const info = await stat(realPath);
 	if (!info.isFile()) throw new Error(`Path is not a file: ${absolutePath}`);
-
-	const extension = extname(realPath).toLocaleLowerCase("en");
-	const textMimeType = TEXT_MIME_TYPES.get(extension)
-		?? (/^(?:license|readme)(?:\.|$)/iu.test(basename(realPath)) ? "text/plain" : undefined);
-	const binaryMimeType = BINARY_MIME_TYPES.get(extension);
-	const spreadsheetMimeType = SPREADSHEET_MIME_TYPES.get(extension);
-	const mimeType = textMimeType ?? binaryMimeType ?? spreadsheetMimeType ?? "application/octet-stream";
-	const base = { path: absolutePath, size: info.size, modifiedAt: info.mtimeMs, mimeType };
-
-	if (info.size > MAX_WORKSPACE_FILE_PREVIEW_BYTES) return { ...base, kind: "too-large" };
-	if (textMimeType === "image/svg+xml" || binaryMimeType?.startsWith("image/")) {
-		return { ...base, kind: "image", dataBase64: (await readFile(realPath)).toString("base64") };
-	}
-	if (binaryMimeType === "application/pdf") {
-		return { ...base, kind: "pdf", dataBase64: (await readFile(realPath)).toString("base64") };
-	}
-	if (extension === ".csv" || extension === ".tsv") {
-		return {
-			...base,
-			kind: "spreadsheet",
-			...parseDelimitedSpreadsheet(await readFile(realPath, "utf8"), extension === ".csv" ? "," : "\t", basename(realPath, extension)),
-		};
-	}
-	if (extension === ".xlsx") {
-		return { ...base, kind: "spreadsheet", ...parseXlsxSpreadsheet(await readFile(realPath)) };
-	}
-	if (textMimeType) {
-		return {
-			...base,
-			kind: textMimeType === "text/html" ? "html" : "text",
-			content: await readFile(realPath, "utf8"),
-		};
-	}
-	return { ...base, kind: "unsupported" };
+	return buildWorkspaceFilePreview(absolutePath, info.size, info.mtimeMs, () => readFile(realPath));
 }

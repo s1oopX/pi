@@ -6,6 +6,7 @@ import { dirname, join, posix } from "node:path";
 const STORE_VERSION = 1;
 const SSH_TOKEN = /^[^\s\u0000-\u001f\u007f]+$/u;
 const SSH_ID = /^[a-z0-9._-]{1,128}$/u;
+const SSH_FILE_METADATA_PREFIX = "PI_STUDIO_FILE_V1";
 
 /**
  * @typedef {"none" | "identity"} SshAuth
@@ -304,13 +305,8 @@ export function createSshCliSpec(connectionValue, remotePath, command, args) {
 	};
 }
 
-/**
- * @param {unknown} connectionValue
- * @param {string} remotePath
- * @param {unknown} filePath
- */
-export function createSshTrashSpec(connectionValue, remotePath, filePath) {
-	const connection = normalizeConnection(connectionValue, false);
+/** @param {unknown} filePath */
+function normalizeRemoteWorkspacePath(filePath) {
 	const target = String(filePath ?? "");
 	const normalized = posix.normalize(target);
 	if (
@@ -322,8 +318,74 @@ export function createSshTrashSpec(connectionValue, remotePath, filePath) {
 		normalized.startsWith("../") ||
 		target.split("/").includes("..")
 	) {
-		throw new Error("Remote trash path must stay inside the workspace");
+		throw new Error("Remote path must stay inside the workspace");
 	}
+	return normalized;
+}
+
+/**
+ * Open a remote regular file once, verify the opened descriptor resolves
+ * inside the physical workspace, emit bounded metadata on stderr, then stream
+ * its bytes on stdout. Linux `/proc` keeps the containment check and read on
+ * the same descriptor so a symlink swap cannot redirect the transfer.
+ * @param {unknown} connectionValue
+ * @param {string} remotePath
+ * @param {unknown} filePath
+ * @param {number} [maxBytes]
+ */
+export function createSshFileReadSpec(connectionValue, remotePath, filePath, maxBytes) {
+	const connection = normalizeConnection(connectionValue, false);
+	const relativePath = normalizeRemoteWorkspacePath(filePath);
+	if (maxBytes !== undefined && (!Number.isSafeInteger(maxBytes) || maxBytes < 0 || maxBytes >= Number.MAX_SAFE_INTEGER)) {
+		throw new Error("Remote file byte limit is invalid");
+	}
+	const targetExpression = quotePosixShell(`./${relativePath}`);
+	const readCommand = maxBytes === undefined
+		? "cat <&3"
+		: `if [ "$file_size" -le ${maxBytes} ]; then head -c ${maxBytes + 1} <&3; fi`;
+	const remoteCommand = [
+		"umask 077",
+		"export LANG=C LC_ALL=C",
+		`cd ${remotePathExpression(remotePath)}`,
+		'workspace_directory=$(pwd -P)',
+		`if [ ! -f ${targetExpression} ]; then echo "Remote artifact is not a file" >&2; exit 66; fi`,
+		`exec 3<${targetExpression}`,
+		'target_path=$(readlink -f "/proc/$$/fd/3")',
+		'if [ "$workspace_directory" != "/" ]; then case "$target_path" in "$workspace_directory"/*) : ;; *) echo "Remote artifact path escaped the workspace" >&2; exit 64 ;; esac; fi',
+		'file_size=$(stat -Lc %s "/proc/$$/fd/3")',
+		'file_modified=$(stat -Lc %Y "/proc/$$/fd/3")',
+		`printf '${SSH_FILE_METADATA_PREFIX} %s %s\\n' "$file_size" "$file_modified" >&2`,
+		readCommand,
+	].join(" && ");
+	return {
+		command: "ssh",
+		args: [...sshArgs(connection, true), remoteCommand],
+		cwd: homedir(),
+		relativePath,
+	};
+}
+
+/** @param {unknown} value */
+export function parseSshFileMetadata(value) {
+	const output = Buffer.isBuffer(value) ? value.toString("utf8") : String(value ?? "");
+	const match = output.match(new RegExp(`${SSH_FILE_METADATA_PREFIX} ([0-9]+) (-?[0-9]+)(?:\\r?\\n|$)`, "u"));
+	if (!match) throw new Error("Remote file metadata was not returned");
+	const size = Number(match[1]);
+	const modifiedAt = Number(match[2]) * 1000;
+	if (!Number.isSafeInteger(size) || size < 0 || !Number.isSafeInteger(modifiedAt)) {
+		throw new Error("Remote file metadata is invalid");
+	}
+	return { size, modifiedAt };
+}
+
+/**
+ * @param {unknown} connectionValue
+ * @param {string} remotePath
+ * @param {unknown} filePath
+ */
+export function createSshTrashSpec(connectionValue, remotePath, filePath) {
+	const connection = normalizeConnection(connectionValue, false);
+	const normalized = normalizeRemoteWorkspacePath(filePath);
 	const trashName = `${Date.now()}-${randomUUID()}-${posix.basename(normalized).slice(0, 50)}`;
 	const trashDirectory = '"$HOME/.pi/studio/trash"';
 	const targetExpression = quotePosixShell(`./${normalized}`);
