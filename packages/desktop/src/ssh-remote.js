@@ -8,6 +8,7 @@ const SSH_TOKEN = /^[^\s\u0000-\u001f\u007f]+$/u;
 const SSH_ID = /^[a-z0-9._-]{1,128}$/u;
 const SSH_WORKTREE_NAME = /^[a-z0-9][a-z0-9._-]{0,63}$/u;
 const SSH_FILE_METADATA_PREFIX = "PI_STUDIO_FILE_V1";
+const SSH_WORKTREE_METADATA_PREFIX = "PI_STUDIO_WORKTREE_V1";
 
 /**
  * @typedef {"none" | "identity"} SshAuth
@@ -80,6 +81,18 @@ function normalizeSshWorktreeName(value) {
 		throw new Error("Remote worktree name is invalid");
 	}
 	return name;
+}
+
+/** @param {unknown} value */
+function normalizeManagedSshWorktreePath(value) {
+	const worktreePath = text(value, "Remote worktree path");
+	const prefix = "~/.pi/studio/worktrees/";
+	const rawName = worktreePath.startsWith(prefix) ? worktreePath.slice(prefix.length) : "";
+	const name = rawName ? normalizeSshWorktreeName(rawName) : "";
+	if (!name || rawName !== name || worktreePath !== `${prefix}${name}`) {
+		throw new Error("Remote worktree path is outside Pi Studio's managed folder");
+	}
+	return { name, worktreePath };
 }
 
 /** @param {unknown} value @param {boolean} allowNewId @returns {SshConnection} */
@@ -334,16 +347,91 @@ export function createSshWorktreeSpec(connectionValue, remotePath, nameValue) {
 export function createSshWorktreeRemoveSpec(connectionValue, sourceRemotePath, worktreePathValue) {
 	const connection = normalizeConnection(connectionValue, false);
 	const sourcePath = normalizeConnection({ ...connection, remotePath: sourceRemotePath }, false).remotePath;
-	const worktreePath = text(worktreePathValue, "Remote worktree path");
-	const prefix = "~/.pi/studio/worktrees/";
-	const name = worktreePath.startsWith(prefix) ? worktreePath.slice(prefix.length) : "";
-	if (!name || worktreePath !== `${prefix}${normalizeSshWorktreeName(name)}`) {
-		throw new Error("Remote worktree path is outside Pi Studio's managed folder");
-	}
+	const { worktreePath } = normalizeManagedSshWorktreePath(worktreePathValue);
 	const remoteCommand = [
 		"export LANG=C LC_ALL=C GIT_OPTIONAL_LOCKS=0 GIT_TERMINAL_PROMPT=0",
 		`cd ${remotePathExpression(sourcePath)}`,
 		`exec git worktree remove ${remotePathExpression(worktreePath)}`,
+	].join(" && ");
+	return {
+		command: "ssh",
+		args: [...sshArgs(connection, true), remoteCommand],
+		cwd: homedir(),
+		worktreePath,
+	};
+}
+
+/** @param {unknown} connectionValue */
+export function createSshWorktreeListSpec(connectionValue) {
+	const connection = normalizeConnection(connectionValue, false);
+	const scanCommand = [
+		'if [ -d "$worktree_root" ]; then',
+		'for worktree_path in "$worktree_root"/*; do',
+		'[ -d "$worktree_path" ] && [ ! -L "$worktree_path" ] || continue;',
+		'name=${worktree_path##*/};',
+		'case "$name" in remote-*) ;; *) continue ;; esac;',
+		'case "$name" in *[!a-z0-9._-]*|*..*|*.|*.lock) continue ;; esac;',
+		'branch=$(git -C "$worktree_path" symbolic-ref --quiet --short HEAD 2>/dev/null || :);',
+		'if [ "$branch" != "task/$name" ]; then continue; fi;',
+		'if status=$(git -C "$worktree_path" status --porcelain --untracked-files=normal 2>/dev/null); then',
+		'if [ -n "$status" ]; then dirty=1; else dirty=0; fi;',
+		'else dirty=?; fi;',
+		`printf '${SSH_WORKTREE_METADATA_PREFIX}\\t%s\\t%s\\t%s\\n' "$name" "$dirty" "$branch";`,
+		"done;",
+		"fi",
+	].join(" ");
+	const remoteCommand = [
+		"export LANG=C LC_ALL=C GIT_OPTIONAL_LOCKS=0 GIT_TERMINAL_PROMPT=0",
+		'worktree_root="$HOME/.pi/studio/worktrees"',
+		scanCommand,
+	].join(" && ");
+	return {
+		command: "ssh",
+		args: [...sshArgs(connection, true), remoteCommand],
+		cwd: homedir(),
+	};
+}
+
+/** @param {unknown} value */
+export function parseSshWorktreeList(value) {
+	const output = Buffer.isBuffer(value) ? value.toString("utf8") : String(value ?? "");
+	const entries = [];
+	const seen = new Set();
+	for (const line of output.split(/\r?\n/u)) {
+		if (!line.startsWith(`${SSH_WORKTREE_METADATA_PREFIX}\t`)) continue;
+		const fields = line.split("\t");
+		if (fields.length !== 4) throw new Error("Remote worktree metadata is invalid");
+		const rawName = fields[1];
+		const name = normalizeSshWorktreeName(rawName);
+		const branch = text(fields[3], "Remote worktree branch", { max: 240 });
+		if (rawName !== name || !name.startsWith("remote-") || branch !== `task/${name}` || seen.has(name)) {
+			throw new Error("Remote worktree metadata is invalid");
+		}
+		const dirty = fields[2] === "1" ? true : fields[2] === "0" ? false : fields[2] === "?" ? null : undefined;
+		if (dirty === undefined) throw new Error("Remote worktree metadata is invalid");
+		seen.add(name);
+		entries.push({ worktreePath: `~/.pi/studio/worktrees/${name}`, branch, dirty });
+		if (entries.length >= 100) break;
+	}
+	return entries;
+}
+
+/** @param {unknown} connectionValue @param {unknown} worktreePathValue */
+export function createSshWorktreeDeleteSpec(connectionValue, worktreePathValue) {
+	const connection = normalizeConnection(connectionValue, false);
+	const { name, worktreePath } = normalizeManagedSshWorktreePath(worktreePathValue);
+	const remoteCommand = [
+		"umask 077",
+		"export LANG=C LC_ALL=C GIT_OPTIONAL_LOCKS=0 GIT_TERMINAL_PROMPT=0",
+		`worktree_path=${remotePathExpression(worktreePath)}`,
+		'if [ ! -e "$worktree_path" ]; then exit 0; fi',
+		'if [ ! -d "$worktree_path" ] || [ -L "$worktree_path" ]; then echo "Remote worktree is not a managed directory" >&2; exit 66; fi',
+		'branch=$(git -C "$worktree_path" symbolic-ref --quiet --short HEAD 2>/dev/null || :)',
+		`if [ "$branch" != ${quotePosixShell(`task/${name}`)} ]; then echo "Remote worktree branch is not managed by Pi Studio" >&2; exit 66; fi`,
+		'source_path=$(git -C "$worktree_path" worktree list --porcelain | sed -n "1s/^worktree //p")',
+		'if [ -z "$source_path" ] || [ ! -d "$source_path" ]; then echo "Remote worktree source repository was not found" >&2; exit 66; fi',
+		'cd "$source_path"',
+		'exec git worktree remove --force "$worktree_path"',
 	].join(" && ");
 	return {
 		command: "ssh",

@@ -50,11 +50,14 @@ import {
 	createSshLaunchSpec,
 	createSshTestSpec,
 	createSshTrashSpec,
+	createSshWorktreeDeleteSpec,
+	createSshWorktreeListSpec,
 	createSshWorktreeRemoveSpec,
 	createSshWorktreeSpec,
 	createSshWorkspaceUri,
 	loadSshConnections,
 	normalizeSshConnection,
+	parseSshWorktreeList,
 	resolveSshWorkspace,
 	saveSshConnections,
 	upsertSshConnection,
@@ -673,7 +676,7 @@ function testSshConnection(connection) {
 /**
  * @param {{ command: string, args: string[], cwd: string }} spec
  * @param {string} label
- * @returns {Promise<void>}
+ * @returns {Promise<string>}
  */
 function runSshSpec(spec, label) {
 	return new Promise((resolvePromise, reject) => {
@@ -690,7 +693,7 @@ function runSshSpec(spec, label) {
 			},
 			(error, stdout, stderr) => {
 				if (!error) {
-					resolvePromise();
+					resolvePromise(stdout);
 					return;
 				}
 				const detail = (stderr.trim() || stdout.trim() || error.message).slice(0, 500);
@@ -698,6 +701,28 @@ function runSshSpec(spec, label) {
 			},
 		);
 	});
+}
+
+/**
+ * @param {NonNullable<ReturnType<typeof resolveSshCwd>>} remote
+ * @param {string[]} activeCwds
+ */
+async function listRemoteWorktreeLeftovers(remote, activeCwds) {
+	const output = await runSshSpec(
+		createSshWorktreeListSpec(remote.connection),
+		"Could not list remote task worktrees",
+	);
+	const active = new Set(activeCwds);
+	return parseSshWorktreeList(output)
+		.map((entry) => ({
+			path: createSshWorkspaceUri(remote.connection.id, entry.worktreePath),
+			sourceRepo: null,
+			dirty: entry.dirty,
+			remote: true,
+			connectionName: remote.connection.name,
+			branch: entry.branch,
+		}))
+		.filter((entry) => !active.has(entry.path));
 }
 
 /** @param {NonNullable<ReturnType<typeof resolveSshCwd>>} remote */
@@ -1655,13 +1680,37 @@ ipcMain.handle("automation:open-run", async (_event, automationId, runId) => {
 
 ipcMain.handle("worktrees:list-leftovers", async () => {
 	const activeCwds = [...taskRegistry.list().map((entry) => entry.cwd), ...automationWorktreePaths()];
-	return { leftovers: await listWorktreeLeftovers(getWorktreesRoot(), activeCwds) };
+	const local = await listWorktreeLeftovers(getWorktreesRoot(), activeCwds);
+	const remote = getActiveSshWorkspace();
+	if (!remote) return { leftovers: local };
+	try {
+		return { leftovers: [...local, ...(await listRemoteWorktreeLeftovers(remote, activeCwds))] };
+	} catch (error) {
+		const remoteError = error instanceof Error ? error.message : String(error);
+		getFileLog().append("warn", "tasks", remoteError);
+		return { leftovers: local, remoteError };
+	}
 });
 
 ipcMain.handle("worktrees:delete", async (_event, targetPath) => {
 	const activeCwds = [...taskRegistry.list().map((entry) => entry.cwd), ...automationWorktreePaths()];
-	const result = await deleteLeftoverWorktree(getWorktreesRoot(), String(targetPath ?? ""), activeCwds);
-	getFileLog().append("info", "tasks", `leftover worktree deleted: ${targetPath}`);
+	const target = String(targetPath ?? "");
+	const remote = resolveSshCwd(target);
+	if (remote) {
+		if (getActiveSshWorkspace()?.connection.id !== remote.connection.id) {
+			throw new Error("Open that SSH connection before deleting its retained worktree");
+		}
+		const canonicalTarget = createSshWorkspaceUri(remote.connection.id, remote.remotePath);
+		if (activeCwds.includes(canonicalTarget)) throw new Error("A task is still running in that remote worktree");
+		await runSshSpec(
+			createSshWorktreeDeleteSpec(remote.connection, remote.remotePath),
+			"Could not delete the remote task worktree",
+		);
+		getFileLog().append("info", "tasks", `remote leftover worktree deleted: ${target}`);
+		return { deleted: true };
+	}
+	const result = await deleteLeftoverWorktree(getWorktreesRoot(), target, activeCwds);
+	getFileLog().append("info", "tasks", `leftover worktree deleted: ${target}`);
 	return result;
 });
 

@@ -89,7 +89,7 @@ export interface PiDesktopApi {
   updateAutomationRun?: (automationId: string, runId: string, action: AutomationRunAction) => Promise<AutomationRecord>;
   openAutomationRun?: (automationId: string, runId: string) => Promise<{ cancelled: boolean; cwd: string; taskId?: string }>;
   onAutomationsChanged?: (listener: (payload: AutomationsChangedEvent) => void) => () => void;
-  listWorktreeLeftovers?: () => Promise<{ leftovers: WorktreeLeftover[] }>;
+  listWorktreeLeftovers?: () => Promise<WorktreeLeftoverList>;
   deleteWorktreeLeftover?: (targetPath: string) => Promise<{ deleted: boolean }>;
   restartBackend(): Promise<void>;
   listSshConnections?: () => Promise<SshConnectionList>;
@@ -331,13 +331,24 @@ export interface WorktreeLeftover {
   path: string;
   sourceRepo: string | null;
   dirty: boolean | null;
+  remote?: boolean;
+  connectionName?: string;
+  branch?: string;
 }
 
-export async function listWorktreeLeftovers(): Promise<WorktreeLeftover[]> {
+export interface WorktreeLeftoverList {
+  leftovers: WorktreeLeftover[];
+  remoteError?: string;
+}
+
+export async function listWorktreeLeftovers(): Promise<WorktreeLeftoverList> {
   const api = getApi();
-  if (!api?.listWorktreeLeftovers) return [];
+  if (!api?.listWorktreeLeftovers) return { leftovers: [] };
   const result = await api.listWorktreeLeftovers();
-  return result.leftovers ?? [];
+  return {
+    leftovers: result.leftovers ?? [],
+    ...(result.remoteError ? { remoteError: result.remoteError } : {}),
+  };
 }
 
 export async function deleteWorktreeLeftover(targetPath: string): Promise<void> {

@@ -10,12 +10,15 @@ import {
 	createSshLaunchSpec,
 	createSshTestSpec,
 	createSshTrashSpec,
+	createSshWorktreeDeleteSpec,
+	createSshWorktreeListSpec,
 	createSshWorktreeRemoveSpec,
 	createSshWorktreeSpec,
 	createSshWorkspaceUri,
 	loadSshConnections,
 	normalizeSshConnection,
 	parseSshFileMetadata,
+	parseSshWorktreeList,
 	parseSshWorkspaceUri,
 	quotePosixShell,
 	saveSshConnections,
@@ -111,6 +114,53 @@ test("builds managed remote worktree create and clean-remove specs", () => {
 		() => createSshWorktreeRemoveSpec(CONNECTION, "/srv/pi", "~/other/worktree"),
 		/managed folder/iu,
 	);
+});
+
+test("lists and explicitly deletes retained remote worktrees", () => {
+	const listed = createSshWorktreeListSpec(CONNECTION);
+	assert.ok(listed.args.includes("BatchMode=yes"));
+	assert.match(listed.args.at(-1), /worktree_root="\$HOME\/\.pi\/studio\/worktrees"/u);
+	assert.match(listed.args.at(-1), /\[ ! -L "\$worktree_path" \]/u);
+	assert.match(listed.args.at(-1), /PI_STUDIO_WORKTREE_V1/u);
+	assert.deepEqual(
+		parseSshWorktreeList([
+			"Login banner",
+			"PI_STUDIO_WORKTREE_V1\tremote-a1b2c3d4e5f6\t1\ttask/remote-a1b2c3d4e5f6",
+			"PI_STUDIO_WORKTREE_V1\tremote-001122334455\t0\ttask/remote-001122334455",
+			"PI_STUDIO_WORKTREE_V1\tremote-deadbeefcafe\t?\ttask/remote-deadbeefcafe",
+		].join("\n")),
+		[
+			{
+				worktreePath: "~/.pi/studio/worktrees/remote-a1b2c3d4e5f6",
+				branch: "task/remote-a1b2c3d4e5f6",
+				dirty: true,
+			},
+			{
+				worktreePath: "~/.pi/studio/worktrees/remote-001122334455",
+				branch: "task/remote-001122334455",
+				dirty: false,
+			},
+			{
+				worktreePath: "~/.pi/studio/worktrees/remote-deadbeefcafe",
+				branch: "task/remote-deadbeefcafe",
+				dirty: null,
+			},
+		],
+	);
+	assert.throws(
+		() => parseSshWorktreeList("PI_STUDIO_WORKTREE_V1\tremote-a\t1\ttask/other"),
+		/metadata/iu,
+	);
+
+	const deleted = createSshWorktreeDeleteSpec(
+		CONNECTION,
+		"~/.pi/studio/worktrees/remote-a1b2c3d4e5f6",
+	);
+	assert.match(deleted.args.at(-1), /symbolic-ref --quiet --short HEAD/u);
+	assert.match(deleted.args.at(-1), /"\$branch" != 'task\/remote-a1b2c3d4e5f6'/u);
+	assert.match(deleted.args.at(-1), /worktree list --porcelain/u);
+	assert.match(deleted.args.at(-1), /git worktree remove --force "\$worktree_path"/u);
+	assert.throws(() => createSshWorktreeDeleteSpec(CONNECTION, "~/work/pi"), /managed folder/iu);
 });
 
 test("builds remote gh and recoverable trash specs", () => {

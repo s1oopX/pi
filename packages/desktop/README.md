@@ -44,7 +44,7 @@ The flagship capability: several agent runs at once, each in its own workspace w
 - The **task registry** (main process) caps the pool (default 3), allocates stable ids, enforces one running task per folder, and lazily spawns `BackendHandle`s.
 - **Events are tagged** with their originating backend. The renderer routes them: the active task feeds the full conversation pipeline; background tasks only update summaries — a streaming indicator, an unread counter, a completion state with a toast and an OS notification.
 - **Switching is hydration, not restart.** Activating a task re-pulls its state over RPC (the same battle-tested path used for workspace switches); no process is stopped, and background runs continue uninterrupted. The backend session file remains the single source of truth, so nothing is lost mid-stream.
-- **Same-repository isolation:** picking a local folder that is already running provisions a `git worktree` on a fresh `task/<name>` branch under the app's data directory — several agents work one repository without touching each other's files. In an SSH workspace, the add-task action instead provisions a managed worktree on the remote host under `~/.pi/studio/worktrees` on a fresh `task/remote-*` branch. Git, artifacts, and backend RPC follow the active local or remote task; stopping removes only a clean worktree (changes are kept, never forced) while the branch stays for review and landing. Local trust follows the repository identity — a trusted repo's worktrees start trusted — and local kept worktrees are listed and deletable under Settings → Agent. Non-git folders refuse a second concurrent task.
+- **Same-repository isolation:** picking a local folder that is already running provisions a `git worktree` on a fresh `task/<name>` branch under the app's data directory — several agents work one repository without touching each other's files. In an SSH workspace, the add-task action instead provisions a managed worktree on the remote host under `~/.pi/studio/worktrees` on a fresh `task/remote-*` branch. Git, artifacts, and backend RPC follow the active local or remote task; stopping removes only a clean worktree (changes are kept, never forced) while the branch stays for review and landing. Local trust follows the repository identity — a trusted repo's worktrees start trusted — and kept local worktrees plus retained worktrees on the active SSH connection are listed and explicitly deletable under Settings → Agent. Non-git folders refuse a second concurrent task.
 - **Lifecycle:** the pool cap (1–5) and the idle window are settings; a task whose backend has been silent past the window stops itself — never the task being viewed, never the primary — and its session reopens instantly from the on-disk session file.
 
 ### Security model
@@ -117,7 +117,7 @@ The fork root is an upstream commit, so upstream releases merge as plain three-w
 
 ## Roadmap
 
-Near-term: complete SSH trust-aware project extensions, Pi installation, remote leftover-worktree management, and WSL-specific UX; then close the remaining Automations product-parity gaps.
+Near-term: complete SSH trust-aware project extensions, Pi installation, and WSL-specific UX; then close the remaining Automations product-parity gaps.
 
 Deliberately deferred: code signing and auto-update, installer distribution, backend size reduction (~100 MB Bun runtime), macOS/Linux, additional locales.
 

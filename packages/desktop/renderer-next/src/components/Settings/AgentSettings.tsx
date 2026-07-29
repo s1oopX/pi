@@ -32,6 +32,7 @@ export function AgentSettings() {
   const [imageSettingsSaving, setImageSettingsSaving] = useState(false);
   const refreshTasks = useStore((state) => state.refreshTasks);
   const [leftovers, setLeftovers] = useState<api.WorktreeLeftover[]>([]);
+  const [leftoverError, setLeftoverError] = useState<string | null>(null);
   const [armedLeftover, setArmedLeftover] = useState<string | null>(null);
   const [deletingLeftover, setDeletingLeftover] = useState<string | null>(null);
   const thinkingLevel = (session?.thinkingLevel ?? "medium") as ThinkingLevel;
@@ -107,13 +108,21 @@ export function AgentSettings() {
     void api.getTaskSettings().then((settings) => {
       if (!cancelled && settings) setPoolSettings(settings);
     }).catch(() => {});
-    void api.listWorktreeLeftovers().then((entries) => {
-      if (!cancelled) setLeftovers(entries);
+    void api.listWorktreeLeftovers().then((result) => {
+      if (cancelled) return;
+      setLeftovers(result.leftovers);
+      setLeftoverError(result.remoteError ?? null);
     }).catch(() => {});
     return () => {
       cancelled = true;
     };
   }, []);
+
+  async function refreshLeftovers(): Promise<void> {
+    const result = await api.listWorktreeLeftovers();
+    setLeftovers(result.leftovers);
+    setLeftoverError(result.remoteError ?? null);
+  }
 
   async function handleDeleteLeftover(path: string) {
     if (armedLeftover !== path) {
@@ -124,7 +133,7 @@ export function AgentSettings() {
     setDeletingLeftover(path);
     try {
       await api.deleteWorktreeLeftover(path);
-      setLeftovers(await api.listWorktreeLeftovers());
+      await refreshLeftovers();
       showToast(t("Worktree deleted", "工作树已删除"), "success");
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
@@ -502,22 +511,30 @@ export function AgentSettings() {
             </select>
           </label>
         </div>
-        {leftovers.length > 0 && (
+        {(leftovers.length > 0 || leftoverError) && (
           <div className="worktree-leftovers">
             <span className="worktree-leftovers-title">
               {t("Leftover worktrees", "遗留的工作树")}
             </span>
             <p className="settings-group-desc">
               {t(
-                "Worktrees kept from stopped tasks. Deleting one discards any uncommitted changes in it; the task branch stays.",
-                "已停止任务保留下来的工作树。删除会丢弃其中未提交的改动；任务分支会保留。",
+                "Worktrees kept from stopped tasks. The active SSH connection is scanned too. Deleting one discards any uncommitted changes in it; the task branch stays.",
+                "已停止任务保留下来的工作树，也会扫描当前活动的 SSH 连接。删除会丢弃其中未提交的改动；任务分支会保留。",
               )}
             </p>
+            {leftoverError && <p className="settings-error" role="status">{leftoverError}</p>}
             {leftovers.map((leftover) => (
               <div className="worktree-leftover-row" key={leftover.path}>
-                <span className="worktree-leftover-path" title={leftover.path}>{leftover.path}</span>
+                <span className="worktree-leftover-path" title={leftover.path}>
+                  {leftover.remote
+                    ? `${leftover.connectionName ?? "SSH"} · ${leftover.branch ?? leftover.path}`
+                    : leftover.path}
+                </span>
                 {leftover.dirty === true && (
                   <span className="worktree-leftover-dirty">{t("has changes", "有改动")}</span>
+                )}
+                {leftover.dirty === null && (
+                  <span className="worktree-leftover-dirty">{t("status unknown", "状态未知")}</span>
                 )}
                 <button
                   className="settings-btn-sm worktree-leftover-delete"
