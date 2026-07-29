@@ -15,6 +15,10 @@ export interface ExecOptions {
 	timeout?: number;
 	/** Working directory */
 	cwd?: string;
+	/** Text written to stdin before the stream is closed. */
+	input?: string;
+	/** Environment variables merged over the current process environment. */
+	env?: NodeJS.ProcessEnv;
 }
 
 /**
@@ -40,9 +44,13 @@ export async function execCommand(
 	return new Promise((resolve) => {
 		const proc = spawn(command, args, {
 			cwd,
+			env: options?.env ? { ...process.env, ...options.env } : undefined,
 			shell: false,
-			stdio: ["ignore", "pipe", "pipe"],
+			stdio: ["pipe", "pipe", "pipe"],
+			windowsHide: true,
 		});
+		proc.stdin?.on("error", () => {});
+		proc.stdin?.end(options?.input ?? "");
 
 		let stdout = "";
 		let stderr = "";

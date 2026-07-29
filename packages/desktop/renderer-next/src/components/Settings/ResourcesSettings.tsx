@@ -253,8 +253,8 @@ export function ResourcesSettings() {
                   />
                   <span className="resource-description">
                     {t(
-                      "Packages bundle extensions, skills, prompts, and themes. They run with full system access.",
-                      "包可捆绑扩展、技能、提示词和主题，并以完整系统权限运行。",
+                      "Pi packages load extensions, skills, prompts, and themes. Codex plugin manifests also load supported skills, commands, and lifecycle hooks. Package code runs with full system access.",
+                      "Pi 包可加载扩展、技能、提示词和主题；Codex 插件清单还可加载受支持的技能、命令和生命周期钩子。包代码以完整系统权限运行。",
                     )}
                   </span>
                 </div>

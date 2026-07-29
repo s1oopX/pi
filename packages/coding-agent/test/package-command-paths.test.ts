@@ -44,6 +44,7 @@ describe("package commands", () => {
 				enabled: true,
 				metadata: { source, scope, origin: "package", baseDir: packageRoot },
 			})),
+			hooks: [],
 			skills: [],
 			prompts: [],
 			themes: [],

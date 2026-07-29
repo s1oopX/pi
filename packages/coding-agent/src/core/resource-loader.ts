@@ -8,6 +8,7 @@ import type { ResourceDiagnostic } from "./diagnostics.ts";
 export type { ResourceCollision, ResourceDiagnostic } from "./diagnostics.ts";
 
 import { canonicalizePath, isLocalPath, resolvePath } from "../utils/paths.ts";
+import { createCodexPluginHookFactory } from "./codex-plugin-hooks.ts";
 import { createEventBus, type EventBus } from "./event-bus.ts";
 import {
 	clearExtensionCache,
@@ -377,6 +378,7 @@ export class DefaultResourceLoader implements ResourceLoader {
 		const getEnabledPaths = (resources: ResolvedResource[]): string[] =>
 			getEnabledResources(resources).map((r) => r.path);
 		const enabledExtensions = getEnabledPaths(resolvedPaths.extensions);
+		const enabledHooks = getEnabledResources(resolvedPaths.hooks);
 		const enabledSkillResources = getEnabledResources(resolvedPaths.skills);
 		const enabledPrompts = getEnabledPaths(resolvedPaths.prompts);
 		const enabledThemes = getEnabledPaths(resolvedPaths.themes);
@@ -394,8 +396,14 @@ export class DefaultResourceLoader implements ResourceLoader {
 				metadataByPath.set(r.path, { source: "cli", scope: "temporary", origin: "top-level" });
 			}
 		}
+		for (const r of cliExtensionPaths.hooks) {
+			if (!metadataByPath.has(r.path)) {
+				metadataByPath.set(r.path, { source: "cli", scope: "temporary", origin: "top-level" });
+			}
+		}
 
 		const cliEnabledExtensions = getEnabledPaths(cliExtensionPaths.extensions);
+		const cliEnabledHooks = getEnabledResources(cliExtensionPaths.hooks);
 		const cliEnabledSkills = getEnabledPaths(cliExtensionPaths.skills);
 		const cliEnabledPrompts = getEnabledPaths(cliExtensionPaths.prompts);
 		const cliEnabledThemes = getEnabledPaths(cliExtensionPaths.themes);
@@ -403,8 +411,11 @@ export class DefaultResourceLoader implements ResourceLoader {
 		const extensionPaths = this.noExtensions
 			? cliEnabledExtensions
 			: this.mergePaths(cliEnabledExtensions, enabledExtensions);
+		const hookResources = this.noExtensions
+			? cliEnabledHooks
+			: this.mergeResolvedResources(cliEnabledHooks, enabledHooks);
 
-		const extensionsResult = await this.loadFinalExtensionSet(extensionPaths, preTrustExtensions);
+		const extensionsResult = await this.loadFinalExtensionSet(extensionPaths, hookResources, preTrustExtensions);
 		for (const p of this.additionalExtensionPaths) {
 			if (isLocalPath(p)) {
 				const resolved = this.resolveResourcePath(p);
@@ -498,11 +509,19 @@ export class DefaultResourceLoader implements ResourceLoader {
 			temporary: true,
 		});
 		const enabledExtensions = resolvedPaths.extensions.filter((r) => r.enabled).map((r) => r.path);
+		const enabledHooks = resolvedPaths.hooks.filter((r) => r.enabled);
 		const cliEnabledExtensions = cliExtensionPaths.extensions.filter((r) => r.enabled).map((r) => r.path);
+		const cliEnabledHooks = cliExtensionPaths.hooks.filter((r) => r.enabled);
 		const extensionPaths = this.noExtensions
 			? cliEnabledExtensions
 			: this.mergePaths(cliEnabledExtensions, enabledExtensions);
+		const hookResources = this.noExtensions
+			? cliEnabledHooks
+			: this.mergeResolvedResources(cliEnabledHooks, enabledHooks);
 		const extensionsResult = await loadExtensionsCached(extensionPaths, this.cwd, this.eventBus);
+		const hookExtensions = await this.loadCodexHookExtensions(hookResources, extensionsResult.runtime);
+		extensionsResult.extensions.push(...hookExtensions.extensions);
+		extensionsResult.errors.push(...hookExtensions.errors);
 		if (!options.includeInlineFactories) {
 			return extensionsResult;
 		}
@@ -519,10 +538,14 @@ export class DefaultResourceLoader implements ResourceLoader {
 
 	private async loadFinalExtensionSet(
 		extensionPaths: string[],
+		hookResources: ResolvedResource[],
 		preTrustExtensions: LoadExtensionsResult | undefined,
 	): Promise<LoadExtensionsResult> {
 		if (!preTrustExtensions) {
 			const extensionsResult = await loadExtensionsCached(extensionPaths, this.cwd, this.eventBus);
+			const hookExtensions = await this.loadCodexHookExtensions(hookResources, extensionsResult.runtime);
+			extensionsResult.extensions.push(...hookExtensions.extensions);
+			extensionsResult.errors.push(...hookExtensions.errors);
 			const inlineExtensions = await this.loadExtensionFactories(extensionsResult.runtime);
 			extensionsResult.extensions.push(...inlineExtensions.extensions);
 			extensionsResult.errors.push(...inlineExtensions.errors);
@@ -538,32 +561,38 @@ export class DefaultResourceLoader implements ResourceLoader {
 		const failedPreloadPaths = new Set(
 			preTrustExtensions.errors.map((error) => this.resolveExtensionLoadPath(error.path)),
 		);
-		const remainingPaths = extensionPaths.filter((path) => {
+		const isPendingPath = (path: string): boolean => {
 			const resolvedPath = this.resolveExtensionLoadPath(path);
 			return !preloadedByPath.has(resolvedPath) && !failedPreloadPaths.has(resolvedPath);
-		});
+		};
+		const remainingPaths = extensionPaths.filter(isPendingPath);
+		const remainingHookResources = hookResources.filter((resource) => isPendingPath(resource.path));
 		const remainingExtensions = await loadExtensionsCached(
 			remainingPaths,
 			this.cwd,
 			this.eventBus,
 			preTrustExtensions.runtime,
 		);
+		const remainingHookExtensions = await this.loadCodexHookExtensions(
+			remainingHookResources,
+			preTrustExtensions.runtime,
+		);
 		const loadedByPath = new Map(preloadedByPath);
-		for (const extension of remainingExtensions.extensions) {
+		for (const extension of [...remainingExtensions.extensions, ...remainingHookExtensions.extensions]) {
 			loadedByPath.set(extension.resolvedPath, extension);
 		}
 
 		const inlineExtensions = preTrustExtensions.extensions.filter((extension) =>
 			extension.path.startsWith("<inline:"),
 		);
-		const orderedExtensions = extensionPaths
+		const orderedExtensions = [...extensionPaths, ...hookResources.map((resource) => resource.path)]
 			.map((path) => loadedByPath.get(this.resolveExtensionLoadPath(path)))
 			.filter((extension): extension is Extension => extension !== undefined);
 		orderedExtensions.push(...inlineExtensions);
 
 		const extensionsResult: LoadExtensionsResult = {
 			extensions: orderedExtensions,
-			errors: [...preTrustExtensions.errors, ...remainingExtensions.errors],
+			errors: [...preTrustExtensions.errors, ...remainingExtensions.errors, ...remainingHookExtensions.errors],
 			runtime: preTrustExtensions.runtime,
 		};
 		this.addExtensionConflictDiagnostics(extensionsResult);
@@ -804,6 +833,21 @@ export class DefaultResourceLoader implements ResourceLoader {
 		return merged;
 	}
 
+	private mergeResolvedResources(primary: ResolvedResource[], additional: ResolvedResource[]): ResolvedResource[] {
+		const merged: ResolvedResource[] = [];
+		const seen = new Set<string>();
+
+		for (const resource of [...primary, ...additional]) {
+			const path = this.resolveResourcePath(resource.path);
+			const canonicalPath = canonicalizePath(path);
+			if (seen.has(canonicalPath)) continue;
+			seen.add(canonicalPath);
+			merged.push({ ...resource, path });
+		}
+
+		return merged;
+	}
+
 	private resolveResourcePath(p: string): string {
 		return resolvePath(p, this.cwd, { trim: true });
 	}
@@ -907,6 +951,36 @@ export class DefaultResourceLoader implements ResourceLoader {
 			} catch (error) {
 				const message = error instanceof Error ? error.message : "failed to load extension";
 				errors.push({ path: extensionPath, error: message });
+			}
+		}
+
+		return { extensions, errors };
+	}
+
+	private async loadCodexHookExtensions(
+		resources: ResolvedResource[],
+		runtime: ExtensionRuntime,
+	): Promise<{ extensions: Extension[]; errors: Array<{ path: string; error: string }> }> {
+		const extensions: Extension[] = [];
+		const errors: Array<{ path: string; error: string }> = [];
+
+		for (const resource of resources) {
+			try {
+				const extension = await loadExtensionFromFactory(
+					createCodexPluginHookFactory({
+						configPath: resource.path,
+						pluginRoot: resource.metadata.baseDir ?? dirname(resource.path),
+						agentDir: this.agentDir,
+					}),
+					this.cwd,
+					this.eventBus,
+					runtime,
+					resource.path,
+				);
+				extensions.push(extension);
+			} catch (error) {
+				const message = error instanceof Error ? error.message : "failed to load Codex hooks";
+				errors.push({ path: resource.path, error: message });
 			}
 		}
 

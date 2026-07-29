@@ -1619,6 +1619,8 @@ const result = await pi.exec("git", ["status"], { signal, timeout: 5000 });
 // result.stdout, result.stderr, result.code, result.killed
 ```
 
+Options also support `cwd`, `input`, and `env`. `input` is written to stdin before it is closed, and `env` is merged over the current process environment.
+
 ### pi.getActiveTools() / pi.getAllTools() / pi.setActiveTools(names)
 
 Manage active tools. This works for both built-in tools and dynamically registered tools. `pi.getActiveTools()` returns the active tool names as `string[]`; `pi.getAllTools()` returns metadata for all configured tools.

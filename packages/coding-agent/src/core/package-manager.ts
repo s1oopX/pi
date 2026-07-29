@@ -68,6 +68,7 @@ export interface ResolvedResource {
 
 export interface ResolvedPaths {
 	extensions: ResolvedResource[];
+	hooks: ResolvedResource[];
 	skills: ResolvedResource[];
 	prompts: ResolvedResource[];
 	themes: ResolvedResource[];
@@ -162,8 +163,15 @@ interface PiManifest {
 	themes?: string[];
 }
 
+interface CodexPluginManifest {
+	skills?: unknown;
+	commands?: unknown;
+	hooks?: unknown;
+}
+
 interface ResourceAccumulator {
 	extensions: Map<string, { metadata: PathMetadata; enabled: boolean }>;
+	hooks: Map<string, { metadata: PathMetadata; enabled: boolean }>;
 	skills: Map<string, { metadata: PathMetadata; enabled: boolean }>;
 	prompts: Map<string, { metadata: PathMetadata; enabled: boolean }>;
 	themes: Map<string, { metadata: PathMetadata; enabled: boolean }>;
@@ -541,6 +549,50 @@ function readPiManifestFile(packageJsonPath: string): PiManifest | null {
 	} catch {
 		return null;
 	}
+}
+
+function normalizeCodexManifestEntries(value: unknown): string[] | undefined {
+	if (typeof value === "string") {
+		const entry = value.trim();
+		return entry ? [entry] : undefined;
+	}
+	if (!Array.isArray(value) || !value.every((entry) => typeof entry === "string")) {
+		return undefined;
+	}
+	const entries = value.map((entry) => entry.trim()).filter(Boolean);
+	return entries.length > 0 ? entries : undefined;
+}
+
+function readCodexPluginFile(pluginJsonPath: string): CodexPluginManifest | null {
+	try {
+		const content = readFileSync(pluginJsonPath, "utf-8");
+		return JSON.parse(content) as CodexPluginManifest;
+	} catch {
+		return null;
+	}
+}
+
+function readCodexPluginManifestFile(pluginJsonPath: string): PiManifest | null {
+	const plugin = readCodexPluginFile(pluginJsonPath);
+	if (!plugin) return null;
+	const skills = normalizeCodexManifestEntries(plugin.skills);
+	const prompts = normalizeCodexManifestEntries(plugin.commands);
+	return skills || prompts ? { skills, prompts } : null;
+}
+
+function collectCodexHookEntries(packageRoot: string): string[] {
+	const plugin = readCodexPluginFile(join(packageRoot, ".codex-plugin", "plugin.json"));
+	if (!plugin) return [];
+	const conventionalPath = join(packageRoot, "hooks.json");
+	const entries = normalizeCodexManifestEntries(plugin.hooks) ?? (existsSync(conventionalPath) ? ["hooks.json"] : []);
+	const paths: string[] = [];
+	for (const entry of entries) {
+		const path = resolve(packageRoot, entry);
+		try {
+			if (statSync(path).isFile()) paths.push(path);
+		} catch {}
+	}
+	return paths;
 }
 
 function resolveExtensionEntries(dir: string): string[] | null {
@@ -2087,6 +2139,11 @@ export class DefaultPackageManager implements PackageManager {
 		filter: PackageFilter | undefined,
 		metadata: PathMetadata,
 	): boolean {
+		const hookPaths = filter?.autoload === false ? [] : collectCodexHookEntries(packageRoot);
+		for (const path of hookPaths) {
+			this.addResource(accumulator.hooks, path, metadata, true);
+		}
+
 		if (filter) {
 			for (const resourceType of RESOURCE_TYPES) {
 				const patterns = filter[resourceType];
@@ -2102,7 +2159,7 @@ export class DefaultPackageManager implements PackageManager {
 			return true;
 		}
 
-		const manifest = this.readPiManifest(packageRoot);
+		const manifest = this.readPackageManifest(packageRoot);
 		if (manifest) {
 			for (const resourceType of RESOURCE_TYPES) {
 				const entries = manifest[resourceType as keyof PiManifest];
@@ -2129,7 +2186,7 @@ export class DefaultPackageManager implements PackageManager {
 				hasAnyDir = true;
 			}
 		}
-		return hasAnyDir;
+		return hasAnyDir || hookPaths.length > 0;
 	}
 
 	private collectDefaultResources(
@@ -2138,7 +2195,7 @@ export class DefaultPackageManager implements PackageManager {
 		target: Map<string, { metadata: PathMetadata; enabled: boolean }>,
 		metadata: PathMetadata,
 	): void {
-		const manifest = this.readPiManifest(packageRoot);
+		const manifest = this.readPackageManifest(packageRoot);
 		const entries = manifest?.[resourceType as keyof PiManifest];
 		if (entries) {
 			this.addManifestEntries(entries, packageRoot, resourceType, target, metadata);
@@ -2207,7 +2264,7 @@ export class DefaultPackageManager implements PackageManager {
 		packageRoot: string,
 		resourceType: ResourceType,
 	): { allFiles: string[]; enabledByManifest: Set<string> } {
-		const manifest = this.readPiManifest(packageRoot);
+		const manifest = this.readPackageManifest(packageRoot);
 		const entries = manifest?.[resourceType as keyof PiManifest];
 		if (entries && entries.length > 0) {
 			const allFiles = this.collectFilesFromManifestEntries(entries, packageRoot, resourceType);
@@ -2225,19 +2282,11 @@ export class DefaultPackageManager implements PackageManager {
 		return { allFiles, enabledByManifest: new Set(allFiles) };
 	}
 
-	private readPiManifest(packageRoot: string): PiManifest | null {
-		const packageJsonPath = join(packageRoot, "package.json");
-		if (!existsSync(packageJsonPath)) {
-			return null;
-		}
-
-		try {
-			const content = readFileSync(packageJsonPath, "utf-8");
-			const pkg = JSON.parse(content) as { pi?: PiManifest };
-			return pkg.pi ?? null;
-		} catch {
-			return null;
-		}
+	private readPackageManifest(packageRoot: string): PiManifest | null {
+		return (
+			readPiManifestFile(join(packageRoot, "package.json")) ??
+			readCodexPluginManifestFile(join(packageRoot, ".codex-plugin", "plugin.json"))
+		);
 	}
 
 	private addManifestEntries(
@@ -2518,6 +2567,7 @@ export class DefaultPackageManager implements PackageManager {
 	private createAccumulator(): ResourceAccumulator {
 		return {
 			extensions: new Map(),
+			hooks: new Map(),
 			skills: new Map(),
 			prompts: new Map(),
 			themes: new Map(),
@@ -2546,6 +2596,7 @@ export class DefaultPackageManager implements PackageManager {
 
 		return {
 			extensions: mapToResolved(accumulator.extensions),
+			hooks: mapToResolved(accumulator.hooks),
 			skills: mapToResolved(accumulator.skills),
 			prompts: mapToResolved(accumulator.prompts),
 			themes: mapToResolved(accumulator.themes),

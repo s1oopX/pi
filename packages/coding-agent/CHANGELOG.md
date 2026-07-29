@@ -1,5 +1,12 @@
 # Changelog
 
+## [Unreleased]
+
+### Added
+
+- Added `.codex-plugin/plugin.json` compatibility: declared Codex skills load as Pi skills, commands load as prompt templates, and command hooks run for `SessionStart`, `UserPromptSubmit`, and successful `PostToolUse` events.
+- Added `input` and `env` options to `pi.exec()` for stdin payloads and per-command environment variables.
+
 ## [0.82.1] - 2026-07-25
 
 ### New Features

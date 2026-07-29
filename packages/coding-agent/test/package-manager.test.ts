@@ -212,22 +212,31 @@ Content`,
 
 				mkdirSync(join(agentDir), { recursive: true });
 				mkdirSync(join(tempDir, ".pi"), { recursive: true });
-				symlinkSync(sharedExtensionsDir, join(agentDir, "extensions"), "dir");
-				symlinkSync(sharedSkillsDir, join(agentDir, "skills"), "dir");
-				symlinkSync(sharedPromptsDir, join(agentDir, "prompts"), "dir");
-				symlinkSync(sharedThemesDir, join(agentDir, "themes"), "dir");
-				symlinkSync(sharedExtensionsDir, join(tempDir, ".pi", "extensions"), "dir");
-				symlinkSync(sharedSkillsDir, join(tempDir, ".pi", "skills"), "dir");
-				symlinkSync(sharedPromptsDir, join(tempDir, ".pi", "prompts"), "dir");
-				symlinkSync(sharedThemesDir, join(tempDir, ".pi", "themes"), "dir");
+				const directoryLinkType = process.platform === "win32" ? "junction" : "dir";
+				symlinkSync(sharedExtensionsDir, join(agentDir, "extensions"), directoryLinkType);
+				symlinkSync(sharedSkillsDir, join(agentDir, "skills"), directoryLinkType);
+				symlinkSync(sharedPromptsDir, join(agentDir, "prompts"), directoryLinkType);
+				symlinkSync(sharedThemesDir, join(agentDir, "themes"), directoryLinkType);
+				symlinkSync(sharedExtensionsDir, join(tempDir, ".pi", "extensions"), directoryLinkType);
+				symlinkSync(sharedSkillsDir, join(tempDir, ".pi", "skills"), directoryLinkType);
+				symlinkSync(sharedPromptsDir, join(tempDir, ".pi", "prompts"), directoryLinkType);
+				symlinkSync(sharedThemesDir, join(tempDir, ".pi", "themes"), directoryLinkType);
 
 				const result = await packageManager.resolve();
+				const sharedExtensions = result.extensions.filter((resource) =>
+					pathEndsWith(resource.path, "extensions/shared.ts"),
+				);
+				const sharedSkills = result.skills.filter((resource) =>
+					pathEndsWith(resource.path, "shared-skill/SKILL.md"),
+				);
+				const sharedPrompts = result.prompts.filter((resource) => pathEndsWith(resource.path, "prompts/shared.md"));
+				const sharedThemes = result.themes.filter((resource) => pathEndsWith(resource.path, "themes/shared.json"));
 
 				expect({
-					extensions: result.extensions.length,
-					skills: result.skills.length,
-					prompts: result.prompts.length,
-					themes: result.themes.length,
+					extensions: sharedExtensions.length,
+					skills: sharedSkills.length,
+					prompts: sharedPrompts.length,
+					themes: sharedThemes.length,
 				}).toEqual({
 					extensions: 1,
 					skills: 1,
@@ -237,10 +246,10 @@ Content`,
 
 				// Project auto-discovered has higher precedence than user auto-discovered,
 				// so the surviving entry should be scoped to project.
-				expect(result.extensions[0].metadata.scope).toBe("project");
-				expect(result.skills[0].metadata.scope).toBe("project");
-				expect(result.prompts[0].metadata.scope).toBe("project");
-				expect(result.themes[0].metadata.scope).toBe("project");
+				expect(sharedExtensions[0]?.metadata.scope).toBe("project");
+				expect(sharedSkills[0]?.metadata.scope).toBe("project");
+				expect(sharedPrompts[0]?.metadata.scope).toBe("project");
+				expect(sharedThemes[0]?.metadata.scope).toBe("project");
 			} finally {
 				if (previousHome === undefined) {
 					delete process.env.HOME;
@@ -596,6 +605,61 @@ Content`,
 			expect(result.skills.some((r) => r.path === join(pkgDir, "skills", "my-skill", "SKILL.md") && r.enabled)).toBe(
 				true,
 			);
+		});
+
+		it("should load Codex plugin skills, commands, and hooks from manifest paths", async () => {
+			const pkgDir = join(tempDir, "codex-plugin");
+			const skillPath = join(pkgDir, "workflows", "review", "SKILL.md");
+			const commandPath = join(pkgDir, "commands", "review.md");
+			const hooksPath = join(pkgDir, "lifecycle", "hooks.json");
+			const undeclaredSkillPath = join(pkgDir, "skills", "undeclared", "SKILL.md");
+			mkdirSync(join(pkgDir, ".codex-plugin"), { recursive: true });
+			mkdirSync(join(pkgDir, "workflows", "review"), { recursive: true });
+			mkdirSync(join(pkgDir, "commands"), { recursive: true });
+			mkdirSync(join(pkgDir, "lifecycle"), { recursive: true });
+			mkdirSync(join(pkgDir, "skills", "undeclared"), { recursive: true });
+			writeFileSync(
+				join(pkgDir, ".codex-plugin", "plugin.json"),
+				JSON.stringify({
+					name: "codex-plugin",
+					version: "1.0.0",
+					skills: "./workflows/",
+					commands: ["./commands/"],
+					hooks: "./lifecycle/hooks.json",
+				}),
+			);
+			writeFileSync(skillPath, "---\nname: review\ndescription: Review code\n---\nContent");
+			writeFileSync(commandPath, "Review the current changes.");
+			writeFileSync(hooksPath, JSON.stringify({ hooks: {} }));
+			writeFileSync(undeclaredSkillPath, "---\nname: undeclared\ndescription: Not declared\n---\nContent");
+
+			const result = await packageManager.resolveExtensionSources([pkgDir]);
+
+			expect(result.skills.some((resource) => resource.path === skillPath && resource.enabled)).toBe(true);
+			expect(result.prompts.some((resource) => resource.path === commandPath && resource.enabled)).toBe(true);
+			expect(result.hooks.some((resource) => resource.path === hooksPath && resource.enabled)).toBe(true);
+			expect(result.skills.some((resource) => resource.path === undeclaredSkillPath)).toBe(false);
+		});
+
+		it("should load a conventional root hooks.json for Codex plugins", async () => {
+			const pkgDir = join(tempDir, "codex-plugin-root-hooks");
+			const hooksPath = join(pkgDir, "hooks.json");
+			mkdirSync(join(pkgDir, ".codex-plugin"), { recursive: true });
+			writeFileSync(
+				join(pkgDir, ".codex-plugin", "plugin.json"),
+				JSON.stringify({ name: "codex-plugin-root-hooks", version: "1.0.0" }),
+			);
+			writeFileSync(hooksPath, JSON.stringify({ hooks: {} }));
+
+			const result = await packageManager.resolveExtensionSources([pkgDir]);
+
+			expect(result.hooks).toEqual([
+				{
+					path: hooksPath,
+					enabled: true,
+					metadata: { source: pkgDir, scope: "user", origin: "package", baseDir: pkgDir },
+				},
+			]);
 		});
 
 		it("should keep pi manifest entries with leading tilde package-relative", async () => {
@@ -1728,7 +1792,7 @@ Content`,
 			const result = await packageManager.resolve();
 
 			expect(result.extensions.map((resource) => resource.path)).toEqual([join(pkgDir, "extensions", "foo.ts")]);
-			expect(result.skills).toEqual([]);
+			expect(result.skills.filter((resource) => resource.metadata.origin === "package")).toEqual([]);
 		});
 	});
 

@@ -155,6 +155,14 @@ If both are set, video takes precedence.
 
 ## Package Structure
 
+### Codex Plugin Manifests
+
+Pi also reads `.codex-plugin/plugin.json` when a package has no `package.json#pi` manifest. Codex `skills` entries load as Pi skills, and Codex `commands` entries load as Pi prompt templates. Both fields accept a path or an array of paths relative to the plugin root.
+
+Codex command hooks load from the manifest's `hooks` path, or from a root `hooks.json` when no path is declared. Pi supports `SessionStart`, `UserPromptSubmit`, and successful `PostToolUse` hooks. Commands receive the event as JSON on stdin plus plugin root and data-directory environment variables; `commandWindows` runs through PowerShell when provided.
+
+Codex `apps`, `mcpServers`, and other hook events require Codex-specific runtimes and are not executed by Pi.
+
 ### Convention Directories
 
 If no `pi` manifest is present, pi auto-discovers resources from these directories:
