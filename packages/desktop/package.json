@@ -45,6 +45,7 @@
 				"to": "pi-backend",
 				"filter": [
 					"pi-studio-backend.exe",
+					"pi-studio-remote.mjs",
 					"photon_rs_bg.wasm",
 					"package.json",
 					"README.md",

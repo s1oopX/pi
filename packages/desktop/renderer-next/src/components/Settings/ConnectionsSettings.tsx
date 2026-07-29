@@ -204,8 +204,8 @@ export function ConnectionsSettings() {
         </span>
         <p className="settings-group-desc">
           {t(
-            "Password prompts are not supported. Use SSH config, an agent, or an identity file. Install / Repair Pi can bootstrap a private runtime on Linux x64 or arm64 without sudo. Remote extension discovery stays disabled for safety.",
-            "不支持密码提示。请使用 SSH config、密钥代理或身份文件。“安装 / 修复 Pi”可在 Linux x64 或 arm64 上无 sudo 引导私有运行时。为保证安全，远程扩展发现保持禁用。",
+            "Password prompts are not supported. Use SSH config, an agent, or an identity file. Install / Repair Pi provisions the managed Linux x64 or arm64 runtime required by Studio's remote backend, without sudo. Remote project resources stay disabled until you trust the folder.",
+            "不支持密码提示。请使用 SSH config、密钥代理或身份文件。“安装 / 修复 Pi”可在 Linux x64 或 arm64 上无 sudo 配置 Studio 远程后端所需的托管运行时。远程项目资源会保持禁用，直到你信任该文件夹。",
           )}
         </p>
         <div className="form-row">

@@ -84,7 +84,7 @@ const createRuntime: CreateAgentSessionRuntimeFactory = async ({
 				{ name: "tool-approval", factory: toolApprovalExtension },
 				{ name: "task-goal", factory: taskGoalExtension },
 				{ name: "task-plan", factory: taskPlanExtension },
-				{ name: "computer-use", factory: computerUseExtension },
+				...(process.platform === "win32" ? [{ name: "computer-use", factory: computerUseExtension }] : []),
 				{
 					name: "image-generation",
 					factory: (pi) => imageGenerationExtension(pi, settingsManager, authStorage),

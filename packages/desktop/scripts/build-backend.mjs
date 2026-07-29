@@ -23,17 +23,24 @@ function run(command, args) {
 
 const outputPath = join(repoRoot, "packages/coding-agent/dist/pi-studio-backend.exe");
 const metafilePath = join(repoRoot, "packages/coding-agent/dist/pi-studio-backend.meta.json");
+const remoteOutputPath = join(repoRoot, "packages/coding-agent/dist/pi-studio-remote.mjs");
+const remoteMetafilePath = join(repoRoot, "packages/coding-agent/dist/pi-studio-remote.meta.json");
 run(bunCommand, [join(repoRoot, "packages/desktop/scripts/compile-backend.ts")]);
 
-const metafile = JSON.parse(readFileSync(metafilePath, "utf8"));
-const inputs = Object.keys(metafile.inputs || {});
-if (!inputs.some((input) => /custom-compat\.[cm]?[jt]s$/i.test(input))) {
-	throw new Error("Pi Studio backend did not resolve the catalog-free compatibility entrypoint");
+function verifyMetafile(path, label) {
+	const metafile = JSON.parse(readFileSync(path, "utf8"));
+	const inputs = Object.keys(metafile.inputs || {});
+	if (!inputs.some((input) => /custom-compat\.[cm]?[jt]s$/i.test(input))) {
+		throw new Error(`${label} did not resolve the catalog-free compatibility entrypoint`);
+	}
+	if (!inputs.some((input) => /custom-oauth\.[cm]?[jt]s$/i.test(input))) {
+		throw new Error(`${label} did not resolve the catalog-free OAuth entrypoint`);
+	}
+	assertCatalogFreeBackendInputs(inputs);
 }
-if (!inputs.some((input) => /custom-oauth\.[cm]?[jt]s$/i.test(input))) {
-	throw new Error("Pi Studio backend did not resolve the catalog-free OAuth entrypoint");
-}
-assertCatalogFreeBackendInputs(inputs);
+
+verifyMetafile(metafilePath, "Pi Studio backend");
+verifyMetafile(remoteMetafilePath, "Pi Studio remote backend");
 
 run(process.execPath, [npmCliPath, "--prefix", "packages/coding-agent", "run", "copy-binary-assets"]);
-console.log(`Built catalog-free Pi Studio backend: ${outputPath}`);
+console.log(`Built catalog-free Pi Studio backends: ${outputPath}, ${remoteOutputPath}`);

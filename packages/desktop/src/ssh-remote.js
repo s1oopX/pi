@@ -276,21 +276,26 @@ function sshArgs(connection, batchMode) {
 /**
  * @param {unknown} connectionValue
  * @param {string} remotePath
- * @param {Buffer | string} bridgeSource
+ * @param {Buffer | string} backendSource
  */
-export function createSshLaunchSpec(connectionValue, remotePath, bridgeSource) {
+export function createSshLaunchSpec(connectionValue, remotePath, backendSource) {
 	const connection = normalizeConnection(connectionValue, false);
-	const prefix = Buffer.isBuffer(bridgeSource) ? bridgeSource : Buffer.from(String(bridgeSource), "utf8");
-	if (prefix.length === 0) throw new Error("Remote bridge is empty");
-	const bridgePath = '"$HOME/.pi/studio/remote-bridge.js"';
+	const prefix = Buffer.isBuffer(backendSource) ? backendSource : Buffer.from(String(backendSource), "utf8");
+	if (prefix.length === 0) throw new Error("Remote backend is empty");
+	const backendPath = '"$remote_root/pi-studio-remote.mjs"';
 	const remoteCommand = [
 		"umask 077",
-		'mkdir -p "$HOME/.pi/studio"',
-		'bridge_tmp="$HOME/.pi/studio/remote-bridge.$$.tmp"',
-		`dd of="$bridge_tmp" bs=1 count=${prefix.length} 2>/dev/null`,
-		`mv -f -- "$bridge_tmp" ${bridgePath}`,
+		'remote_root="$HOME/.pi/studio/remote"',
+		'mkdir -p "$remote_root"',
+		'backend_tmp="$remote_root/pi-studio-remote.$$.tmp"',
+		`dd of="$backend_tmp" bs=1 count=${prefix.length} 2>/dev/null`,
+		`mv -f -- "$backend_tmp" ${backendPath}`,
+		'[ -x "$HOME/.pi/studio/bin/node" ] || { echo "Install or repair Pi from Pi Studio before connecting" >&2; exit 69; }',
+		'[ -d "$HOME/.pi/studio/package-root/node_modules" ] || { echo "Pi Studio remote package metadata is missing; run Install / Repair Pi" >&2; exit 69; }',
+		'if [ -e "$remote_root/node_modules" ] && [ ! -L "$remote_root/node_modules" ]; then echo "Pi Studio remote node_modules path is not managed" >&2; exit 69; fi',
+		'ln -sfn "$HOME/.pi/studio/package-root/node_modules" "$remote_root/node_modules"',
 		`cd ${remotePathExpression(remotePath)}`,
-		`exec ${executableExpression(connection.piCommand)} --mode rpc --no-extensions -e ${bridgePath}`,
+		`PI_PACKAGE_DIR="$HOME/.pi/studio/package-root" exec "$HOME/.pi/studio/bin/node" ${backendPath}`,
 	].join(" && ");
 	return {
 		command: "ssh",
@@ -341,7 +346,9 @@ export function createSshPiInstallSpec(connectionValue, piVersionValue) {
 		'bin_root="$HOME/.pi/studio/bin"',
 		'node_root="$runtime_root/node-v$node_version-linux-$node_arch"',
 		'package_root="$package_parent/pi-$pi_version"',
+		'package_link="$HOME/.pi/studio/package-root"',
 		'wrapper="$bin_root/pi"',
+		'node_link="$bin_root/node"',
 		'mkdir -p "$runtime_root" "$package_parent" "$bin_root"',
 		'for tool in tar sha256sum; do command -v "$tool" >/dev/null 2>&1 || { echo "Automatic Pi installation needs $tool" >&2; exit 69; }; done',
 		'if command -v xz >/dev/null 2>&1; then node_archive_ext=tar.xz; node_sha="$node_sha_xz"; else command -v gzip >/dev/null 2>&1 || { echo "Automatic Pi installation needs xz or gzip" >&2; exit 69; }; node_archive_ext=tar.gz; node_sha="$node_sha_gzip"; fi',
@@ -369,6 +376,16 @@ export function createSshPiInstallSpec(connectionValue, piVersionValue) {
 		`  npm install --global --ignore-scripts --no-audit --no-fund --loglevel=error --prefix "$package_root" ${quotePosixShell(packageSpec)}`,
 		"fi",
 		'"$package_root/bin/pi" --version >/dev/null',
+		'package_target="$package_root/lib/node_modules/@earendil-works/pi-coding-agent"',
+		'[ -f "$package_target/package.json" ] || { echo "Installed Pi package root was not found" >&2; exit 69; }',
+		'node_link_tmp="$node_link.$$"',
+		'rm -f -- "$node_link_tmp"',
+		'ln -s "$node_root/bin/node" "$node_link_tmp"',
+		'mv -Tf -- "$node_link_tmp" "$node_link"',
+		'package_link_tmp="$package_link.$$"',
+		'rm -f -- "$package_link_tmp"',
+		'ln -s "$package_target" "$package_link_tmp"',
+		'mv -Tf -- "$package_link_tmp" "$package_link"',
 		'wrapper_tmp="$wrapper.$$"',
 		`cat > "$wrapper_tmp" <<EOF
 #!/bin/sh

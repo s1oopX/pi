@@ -24,6 +24,7 @@ test("desktop package builds and ships only its catalog-free backend", () => {
 	const resources = packageJson.build.extraResources.find((entry) => entry.to === "pi-backend");
 	assert.deepEqual(resources.filter, [
 		"pi-studio-backend.exe",
+		"pi-studio-remote.mjs",
 		"photon_rs_bg.wasm",
 		"package.json",
 		"README.md",
@@ -34,11 +35,13 @@ test("desktop package builds and ships only its catalog-free backend", () => {
 	]);
 });
 
-test("compiled Studio backend metafile contains no provider catalogs", { skip: !existsSync(join(import.meta.dirname, "../../coding-agent/dist/pi-studio-backend.meta.json")) }, () => {
-	const path = join(import.meta.dirname, "../../coding-agent/dist/pi-studio-backend.meta.json");
-	const metafile = JSON.parse(readFileSync(path, "utf8"));
-	const inputs = Object.keys(metafile.inputs || {});
-	assert.deepEqual(findForbiddenBackendInputs(inputs), []);
-	assert.equal(inputs.some((input) => /custom-compat\.[cm]?[jt]s$/i.test(input)), true);
-	assert.equal(inputs.some((input) => /custom-oauth\.[cm]?[jt]s$/i.test(input)), true);
-});
+for (const name of ["pi-studio-backend", "pi-studio-remote"]) {
+	const path = join(import.meta.dirname, `../../coding-agent/dist/${name}.meta.json`);
+	test(`compiled ${name} metafile contains no provider catalogs`, { skip: !existsSync(path) }, () => {
+		const metafile = JSON.parse(readFileSync(path, "utf8"));
+		const inputs = Object.keys(metafile.inputs || {});
+		assert.deepEqual(findForbiddenBackendInputs(inputs), []);
+		assert.equal(inputs.some((input) => /custom-compat\.[cm]?[jt]s$/i.test(input)), true);
+		assert.equal(inputs.some((input) => /custom-oauth\.[cm]?[jt]s$/i.test(input)), true);
+	});
+}

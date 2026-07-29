@@ -96,7 +96,7 @@ let backendCwd = process.env.PI_DESKTOP_CWD || process.cwd();
 let isQuitting = false;
 let workspaceStateInitialized = false;
 /** @type {Buffer | undefined} */
-let remoteBridgeSource;
+let remoteBackendSource;
 /** @type {ReturnType<typeof createAutomationService> | undefined} */
 let automationService;
 /** @type {Set<BackendHandle>} */
@@ -162,9 +162,15 @@ function getRemoteArtifactCachePath() {
 	return join(app.getPath("userData"), REMOTE_ARTIFACT_CACHE_DIRECTORY);
 }
 
-function getRemoteBridgeSource() {
-	remoteBridgeSource ??= readFileSync(join(__dirname, "..", "assets", "remote-bridge.js"));
-	return remoteBridgeSource;
+function getBackendDirectory() {
+	return app.isPackaged
+		? join(process.resourcesPath, "pi-backend")
+		: join(__dirname, "..", "..", "coding-agent", "dist");
+}
+
+function getRemoteBackendSource() {
+	remoteBackendSource ??= readFileSync(join(getBackendDirectory(), "pi-studio-remote.mjs"));
+	return remoteBackendSource;
 }
 
 /** @param {string} cwd */
@@ -191,7 +197,7 @@ function getBackendDisplayPath(cwd) {
 function getBackendLaunchSpec(cwd) {
 	const remote = resolveSshCwd(cwd);
 	return remote
-		? createSshLaunchSpec(remote.connection, remote.remotePath, getRemoteBridgeSource())
+		? createSshLaunchSpec(remote.connection, remote.remotePath, getRemoteBackendSource())
 		: undefined;
 }
 
@@ -322,9 +328,7 @@ const skippedWorkspaceNames = new Set([
 ]);
 
 function getBackendPath() {
-	const backendDir = app.isPackaged
-		? join(process.resourcesPath, "pi-backend")
-		: join(__dirname, "..", "..", "coding-agent", "dist");
+	const backendDir = getBackendDirectory();
 	const preferredNames =
 		process.platform === "win32"
 			? ["pi-studio-backend.exe"]

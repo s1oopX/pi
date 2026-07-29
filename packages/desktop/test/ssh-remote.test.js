@@ -64,19 +64,21 @@ test("round-trips remote workspace URIs and POSIX shell quoting", () => {
 	assert.equal(quotePosixShell("a'b"), `'a'"'"'b'`);
 });
 
-test("builds non-interactive SSH test and stdin-prefixed RPC launch specs", () => {
-	const bridge = Buffer.from("export default () => {};\n");
-	const launch = createSshLaunchSpec(CONNECTION, "/srv/pi project", bridge);
+test("builds non-interactive SSH test and stdin-prefixed Studio RPC launch specs", () => {
+	const backend = Buffer.from("console.log('studio');\n");
+	const launch = createSshLaunchSpec(CONNECTION, "/srv/pi project", backend);
 	assert.equal(launch.command, "ssh");
 	assert.equal(launch.checkExists, false);
-	assert.equal(launch.stdinPrefix, bridge);
+	assert.equal(launch.stdinPrefix, backend);
 	assert.deepEqual(launch.args.slice(0, 3), ["-T", "-o", "StrictHostKeyChecking=accept-new"]);
 	assert.ok(launch.args.includes("devbox"));
-	assert.match(launch.args.at(-1), /dd .*count=25/u);
-	assert.match(launch.args.at(-1), /remote-bridge\.\$\$\.tmp/u);
-	assert.match(launch.args.at(-1), /mv -f -- "\$bridge_tmp" "\$HOME\/\.pi\/studio\/remote-bridge\.js"/u);
+	assert.match(launch.args.at(-1), /dd .*count=23/u);
+	assert.match(launch.args.at(-1), /pi-studio-remote\.\$\$\.tmp/u);
+	assert.match(launch.args.at(-1), /mv -f -- "\$backend_tmp" "\$remote_root\/pi-studio-remote\.mjs"/u);
+	assert.match(launch.args.at(-1), /ln -sfn "\$HOME\/\.pi\/studio\/package-root\/node_modules"/u);
 	assert.match(launch.args.at(-1), /cd '\/srv\/pi project'/u);
-	assert.match(launch.args.at(-1), /--mode rpc --no-extensions -e/u);
+	assert.match(launch.args.at(-1), /PI_PACKAGE_DIR="\$HOME\/\.pi\/studio\/package-root" exec "\$HOME\/\.pi\/studio\/bin\/node"/u);
+	assert.doesNotMatch(launch.args.at(-1), /--mode rpc/u);
 
 	const probe = createSshTestSpec(CONNECTION);
 	assert.ok(probe.args.includes("BatchMode=yes"));
@@ -96,6 +98,10 @@ test("builds a pinned user-local remote Pi installer", () => {
 	assert.match(command, /@earendil-works\/pi-coding-agent@0\.82\.1/u);
 	assert.match(command, /npm install --global --ignore-scripts/u);
 	assert.match(command, /bin_root="\$HOME\/\.pi\/studio\/bin"/u);
+	assert.match(command, /node_link="\$bin_root\/node"/u);
+	assert.match(command, /package_link="\$HOME\/\.pi\/studio\/package-root"/u);
+	assert.match(command, /ln -s "\$node_root\/bin\/node" "\$node_link_tmp"/u);
+	assert.match(command, /ln -s "\$package_target" "\$package_link_tmp"/u);
 	assert.doesNotMatch(command, /sudo/u);
 	assert.throws(() => createSshPiInstallSpec(CONNECTION, "latest"), /version is invalid/iu);
 });

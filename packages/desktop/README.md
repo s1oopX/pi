@@ -49,7 +49,7 @@ The flagship capability: several agent runs at once, each in its own workspace w
 
 ### SSH workspaces
 
-Settings → Connections can install or repair the Pi CLI on Linux x64/arm64 hosts that do not already have Node.js. The explicit confirmation downloads the checksum-pinned Node.js 22.19.0 archive, installs the exact Pi version matching the Studio build with npm lifecycle scripts disabled, and writes a stable wrapper under `~/.pi/studio`; it never uses sudo or changes the host's system runtime. SSH config, agent, or identity-file authentication remains non-interactive.
+Settings → Connections can install or repair the managed runtime on Linux x64/arm64 hosts that do not already have Node.js. The explicit confirmation downloads the checksum-pinned Node.js 22.19.0 archive, installs the exact Pi version matching the Studio build with npm lifecycle scripts disabled, and writes stable runtime/package links under `~/.pi/studio`; it never uses sudo or changes the host's system runtime. On connect, Pi Studio streams its catalog-free Node RPC bundle and runs it against those installed dependencies and assets. Remote project extensions, settings, skills, prompts, themes, and context files use the same untrusted-by-default banner as local workspaces; decisions persist in the remote Pi agent directory and hot-reload resources in place. SSH config, agent, or identity-file authentication remains non-interactive.
 
 ### Security model
 
@@ -121,7 +121,7 @@ The fork root is an upstream commit, so upstream releases merge as plain three-w
 
 ## Roadmap
 
-Near-term: complete SSH trust-aware project extensions and WSL-specific UX; then close the remaining Automations product-parity gaps.
+Near-term: complete WSL-specific UX; then close the remaining Automations product-parity gaps.
 
 Deliberately deferred: code signing and auto-update, installer distribution, backend size reduction (~100 MB Bun runtime), macOS/Linux, additional locales.
 
