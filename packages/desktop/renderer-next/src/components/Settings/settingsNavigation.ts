@@ -67,6 +67,11 @@ const SETTINGS_NAVIGATION: SettingsNavigationDefinition[] = [
     keywords: { en: "keys hotkey command reset restore defaults", zhCN: "按键 热键 命令 重置 恢复 默认 恢复默认" },
   },
   {
+    route: "connections",
+    label: { en: "Connections", zhCN: "连接" },
+    keywords: { en: "ssh remote host devbox identity port", zhCN: "SSH 远程 主机 开发机 密钥 端口" },
+  },
+  {
     route: "mirror-sources",
     label: { en: "Mirror Sources", zhCN: "镜像源" },
     keywords: {

@@ -7,6 +7,7 @@ import { AccountSettings } from "./AccountSettings";
 import { AgentSettings } from "./AgentSettings";
 import { AppearanceSettings } from "./AppearanceSettings";
 import { CustomProviderSettings } from "./CustomProviderSettings";
+import { ConnectionsSettings } from "./ConnectionsSettings";
 import { MirrorSourcesSettings } from "./MirrorSourcesSettings";
 import { MemorySettings } from "./MemorySettings";
 import { ModelSettings } from "./ModelSettings";
@@ -193,6 +194,7 @@ export function Settings() {
               {settingsRoute === "memory" && <MemorySettings />}
               {settingsRoute === "appearance" && <AppearanceSettings />}
               {settingsRoute === "shortcuts" && <ShortcutsSettings />}
+              {settingsRoute === "connections" && <ConnectionsSettings />}
               {settingsRoute === "mirror-sources" && <MirrorSourcesSettings />}
               {settingsRoute === "resources" && <ResourcesSettings />}
               {settingsRoute === "about" && <AboutSettings />}

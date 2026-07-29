@@ -29,6 +29,7 @@ export class BackendHandle {
 	 * @param {() => string} options.getCwd spawn cwd provider (the primary
 	 *   follows workspace switches between restarts)
 	 * @param {() => string} options.getBackendPath
+	 * @param {() => ({ command: string, args?: string[], cwd?: string, env?: Record<string, string | undefined>, checkExists?: boolean, stdinPrefix?: Buffer | string } | undefined)} [options.getLaunchSpec]
 	 * @param {(channel: string, payload: object) => void} options.sendToRenderer
 	 * @param {(cwd: string) => void} [options.onSessionChanged]
 	 * @param {(payload: object) => void} [options.notify]
@@ -41,6 +42,7 @@ export class BackendHandle {
 		id,
 		getCwd,
 		getBackendPath,
+		getLaunchSpec,
 		sendToRenderer,
 		onSessionChanged = () => {},
 		notify = () => {},
@@ -52,6 +54,7 @@ export class BackendHandle {
 		this.id = id;
 		this.getCwd = getCwd;
 		this.getBackendPath = getBackendPath;
+		this.getLaunchSpec = getLaunchSpec;
 		this.emitToRenderer = sendToRenderer;
 		this.onSessionChanged = onSessionChanged;
 		this.notify = notify;
@@ -241,11 +244,23 @@ export class BackendHandle {
 		this.extensionFlagValues.clear();
 
 		const backendPath = this.getBackendPath();
-		if (!this.existsSyncImpl(backendPath)) {
+		let launchSpec;
+		try {
+			launchSpec = this.getLaunchSpec?.();
+		} catch (error) {
 			this.ready = false;
 			this.send_("backend:status", {
 				ready: false,
-				error: `Pi backend not found: ${backendPath}`,
+				error: error instanceof Error ? error.message : String(error),
+			});
+			return;
+		}
+		const command = launchSpec?.command ?? backendPath;
+		if (launchSpec?.checkExists !== false && !this.existsSyncImpl(command)) {
+			this.ready = false;
+			this.send_("backend:status", {
+				ready: false,
+				error: `Pi backend not found: ${command}`,
 			});
 			return;
 		}
@@ -254,11 +269,12 @@ export class BackendHandle {
 		this.bufferBytes = 0;
 		this.retryAt = 0;
 		const cwd = this.getCwd();
-		const child = this.spawnImpl(backendPath, [], {
-			cwd,
+		const child = this.spawnImpl(command, launchSpec?.args ?? [], {
+			cwd: launchSpec?.cwd ?? cwd,
 			env: {
 				...process.env,
 				PI_DESKTOP: "1",
+				...launchSpec?.env,
 			},
 			stdio: ["pipe", "pipe", "pipe"],
 			windowsHide: true,
@@ -269,6 +285,7 @@ export class BackendHandle {
 		this.starting = true;
 		this.stderrTail = "";
 		this.send_("backend:status", { ready: false, starting: true, backendPath, cwd });
+		if (launchSpec?.stdinPrefix) child.stdin.write(launchSpec.stdinPrefix);
 
 		child.stdout.on("data", (chunk) => {
 			if (this.child !== child) return;

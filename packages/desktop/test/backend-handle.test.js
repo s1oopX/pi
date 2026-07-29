@@ -32,6 +32,7 @@ function createHandle(overrides = {}) {
 		id: "test",
 		getCwd: () => "C:\\work",
 		getBackendPath: () => "C:\\backend.exe",
+		...(overrides.getLaunchSpec ? { getLaunchSpec: overrides.getLaunchSpec } : {}),
 		sendToRenderer: (channel, payload) => events.push({ channel, payload }),
 		onSessionChanged: (cwd) => sessionCwds.push(cwd),
 		notify: (payload) => notified.push(payload),
@@ -77,6 +78,33 @@ test("start spawns in the cwd, pings get_state, and reports ready with tagged st
 	]);
 	assert.equal(context.handle.statusSnapshot().ready, true);
 	assert.equal(context.handle.statusSnapshot().backendId, "test");
+});
+
+test("start accepts a custom launch spec and writes its stdin prefix before RPC", async (t) => {
+	const prefix = Buffer.from("remote bridge\n");
+	const context = createHandle({
+		getLaunchSpec: () => ({
+			command: "ssh",
+			args: ["host", "remote command"],
+			cwd: "C:\\Users\\test",
+			env: { REMOTE_TEST: "1" },
+			checkExists: false,
+			stdinPrefix: prefix,
+		}),
+	});
+	t.after(() => context.handle.stop());
+
+	context.handle.start();
+	const child = context.children.at(-1);
+	assert.equal(child.spawnArgs[0], "ssh");
+	assert.deepEqual(child.spawnArgs[1], ["host", "remote command"]);
+	assert.equal(child.spawnArgs[2].cwd, "C:\\Users\\test");
+	assert.equal(child.spawnArgs[2].env.REMOTE_TEST, "1");
+	assert.equal(child.written[0], prefix);
+	assert.equal(JSON.parse(child.written[1]).type, "get_state");
+	replyTo(child, child.written[1]);
+	await Promise.resolve();
+	assert.equal(context.handle.ready, true);
 });
 
 test("request writes JSONL, honors caller-supplied ids, and resolves on the response line", async (t) => {

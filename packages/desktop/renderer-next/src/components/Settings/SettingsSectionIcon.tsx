@@ -61,6 +61,12 @@ const ICON_PATHS: Record<IconRoute, ReactNode> = {
       <path d="M7 10h0M11 10h0M15 10h0M8 14h8" />
     </>
   ),
+  connections: (
+    <>
+      <rect x="3" y="5" width="18" height="14" rx="2" />
+      <path d="m7 10 3 2-3 2M12 15h5M8 19v2M16 19v2" />
+    </>
+  ),
   resources: (
     <>
       <path d="M12 3 3 8l9 5 9-5-9-5Z" />

@@ -1,4 +1,5 @@
 import { app, BrowserWindow, clipboard, dialog, ipcMain, nativeTheme, Notification, screen, shell } from "electron";
+import { spawn } from "node:child_process";
 import { existsSync, mkdirSync, readFileSync, readdirSync, statSync, writeFileSync } from "node:fs";
 import { copyFile, readFile, writeFile } from "node:fs/promises";
 import { basename, dirname, join, relative, resolve } from "node:path";
@@ -42,6 +43,16 @@ import { createProject } from "./project-templates.js";
 import { createRollingLog } from "./rolling-log.js";
 import { prepareSessionImport, resolveKnownSessionFile } from "./session-files.js";
 import { createTaskRegistry } from "./task-registry.js";
+import {
+	createSshLaunchSpec,
+	createSshTestSpec,
+	createSshWorkspaceUri,
+	loadSshConnections,
+	normalizeSshConnection,
+	resolveSshWorkspace,
+	saveSshConnections,
+	upsertSshConnection,
+} from "./ssh-remote.js";
 import { checkDesktopUpdate } from "./update.js";
 import { readWorkspaceFilePreview, resolveWorkspaceFilePath } from "./workspace-file-preview.js";
 import { loadStoredWorkspace, saveStoredWorkspace } from "./workspace-state.js";
@@ -60,6 +71,7 @@ const WORKSPACE_STATE_FILE = "workspace-state.json";
 const TASK_WORKSPACE_DIRECTORY = "tasks";
 const TASK_SETTINGS_FILE = "task-settings.json";
 const AUTOMATIONS_FILE = "automations.json";
+const SSH_CONNECTIONS_FILE = "ssh-connections.json";
 const MAX_IDLE_MINUTES = 240;
 const DEFAULT_TASK_SETTINGS = { maxTasks: 3, idleMinutes: 30 };
 const AUTOMATION_START_TIMEOUT_MS = 30_000;
@@ -72,6 +84,8 @@ let windowCreationPromise;
 let backendCwd = process.env.PI_DESKTOP_CWD || process.cwd();
 let isQuitting = false;
 let workspaceStateInitialized = false;
+/** @type {Buffer | undefined} */
+let remoteBridgeSource;
 /** @type {ReturnType<typeof createAutomationService> | undefined} */
 let automationService;
 /** @type {Set<BackendHandle>} */
@@ -88,7 +102,8 @@ const automationSessionLocks = new Set();
 const primaryBackend = new BackendHandle({
 	id: "main",
 	getCwd: () => backendCwd,
-	getBackendPath,
+	getBackendPath: getPrimaryBackendPath,
+	getLaunchSpec: getPrimaryLaunchSpec,
 	sendToRenderer,
 	onSessionChanged: syncBackendCwd,
 	notify: maybeNotify,
@@ -127,6 +142,36 @@ function getAutomationsPath() {
 	return join(app.getPath("userData"), AUTOMATIONS_FILE);
 }
 
+function getSshConnectionsPath() {
+	return join(app.getPath("userData"), SSH_CONNECTIONS_FILE);
+}
+
+function getRemoteBridgeSource() {
+	remoteBridgeSource ??= readFileSync(join(__dirname, "..", "assets", "remote-bridge.js"));
+	return remoteBridgeSource;
+}
+
+function getActiveSshWorkspace() {
+	if (!backendCwd.startsWith("ssh://")) return null;
+	return resolveSshWorkspace(backendCwd, loadSshConnections(getSshConnectionsPath()));
+}
+
+function getPrimaryBackendPath() {
+	try {
+		const remote = getActiveSshWorkspace();
+		return remote ? `ssh:${remote.connection.name}` : getBackendPath();
+	} catch {
+		return "ssh";
+	}
+}
+
+function getPrimaryLaunchSpec() {
+	const remote = getActiveSshWorkspace();
+	return remote
+		? createSshLaunchSpec(remote.connection, remote.remotePath, getRemoteBridgeSource())
+		: undefined;
+}
+
 /** @param {string} path */
 function sessionPathKey(path) {
 	const normalized = resolve(String(path ?? ""));
@@ -142,6 +187,18 @@ function initializeBackendCwd() {
 	if (workspaceStateInitialized) return;
 	workspaceStateInitialized = true;
 	if (process.env.PI_DESKTOP_CWD) return;
+	try {
+		const autoConnection = loadSshConnections(getSshConnectionsPath()).find(({ autoConnect }) => autoConnect);
+		if (autoConnection) {
+			backendCwd = createSshWorkspaceUri(autoConnection.id, autoConnection.remotePath);
+			return;
+		}
+	} catch (error) {
+		sendToRenderer("backend:log", {
+			level: "warn",
+			message: `Could not load SSH connections: ${error instanceof Error ? error.message : String(error)}`,
+		});
+	}
 	backendCwd = loadStoredWorkspace(getWorkspaceStatePath()) ?? backendCwd;
 }
 
@@ -158,8 +215,20 @@ function persistBackendCwd() {
 
 /** @param {string} cwd */
 function syncBackendCwd(cwd) {
-	if (typeof cwd !== "string" || !cwd.trim() || backendCwd === cwd) return;
-	backendCwd = cwd;
+	if (typeof cwd !== "string" || !cwd.trim()) return;
+	let nextCwd = cwd;
+	try {
+		const remote = getActiveSshWorkspace();
+		if (remote) nextCwd = createSshWorkspaceUri(remote.connection.id, cwd);
+	} catch (error) {
+		sendToRenderer("backend:log", {
+			level: "warn",
+			message: `Could not map the remote workspace: ${error instanceof Error ? error.message : String(error)}`,
+		});
+		return;
+	}
+	if (backendCwd === nextCwd) return;
+	backendCwd = nextCwd;
 	persistBackendCwd();
 	sendToRenderer("backend:status", primaryBackend.statusSnapshot());
 }
@@ -531,6 +600,46 @@ function waitWithTimeout(promise, timeoutMs, message) {
 				reject(error);
 			},
 		);
+	});
+}
+
+/** @param {ReturnType<typeof normalizeSshConnection>} connection */
+function testSshConnection(connection) {
+	const spec = createSshTestSpec(connection);
+	return new Promise((resolve, reject) => {
+		const child = spawn(spec.command, spec.args, {
+			cwd: spec.cwd,
+			stdio: ["ignore", "pipe", "pipe"],
+			windowsHide: true,
+		});
+		let settled = false;
+		let output = "";
+		/** @type {NodeJS.Timeout | undefined} */
+		let timer;
+		/** @param {Error | undefined} error */
+		const finish = (error) => {
+			if (settled) return;
+			settled = true;
+			clearTimeout(timer);
+			if (error) reject(error);
+			else resolve({ ok: true, message: output.trim() || "SSH connection succeeded" });
+		};
+		/** @param {Buffer} chunk */
+		const append = (chunk) => {
+			output = `${output}${chunk.toString("utf8")}`.slice(-32 * 1024);
+		};
+		child.stdout.on("data", append);
+		child.stderr.on("data", append);
+		child.on("error", (error) => finish(error));
+		child.on("close", (code, signal) => {
+			finish(code === 0
+				? undefined
+				: new Error(output.trim() || `SSH probe exited code=${code} signal=${signal}`));
+		});
+		timer = setTimeout(() => {
+			child.kill();
+			finish(new Error("SSH connection test timed out after 15 seconds"));
+		}, 15_000);
 	});
 }
 
@@ -1615,13 +1724,59 @@ ipcMain.handle("backend:restart", async () => {
 	primaryBackend.start();
 });
 
+ipcMain.handle("ssh:list", () => {
+	const connections = loadSshConnections(getSshConnectionsPath());
+	let activeConnectionId;
+	try {
+		activeConnectionId = getActiveSshWorkspace()?.connection.id;
+	} catch {
+		activeConnectionId = undefined;
+	}
+	return { connections, activeConnectionId };
+});
+
+ipcMain.handle("ssh:save", (_event, input) => {
+	const current = loadSshConnections(getSshConnectionsPath());
+	const result = upsertSshConnection(current, input);
+	saveSshConnections(getSshConnectionsPath(), result.connections);
+	return result;
+});
+
+ipcMain.handle("ssh:delete", (_event, connectionId) => {
+	const id = String(connectionId ?? "").trim().toLowerCase();
+	const current = loadSshConnections(getSshConnectionsPath());
+	if (!current.some((connection) => connection.id === id)) throw new Error(`SSH connection not found: ${id}`);
+	if (getActiveSshWorkspace()?.connection.id === id) {
+		throw new Error("Open a local workspace before deleting the active SSH connection");
+	}
+	const connections = current.filter((connection) => connection.id !== id);
+	saveSshConnections(getSshConnectionsPath(), connections);
+	return { connections };
+});
+
+ipcMain.handle("ssh:test", async (_event, input) => testSshConnection(normalizeSshConnection(input)));
+
+ipcMain.handle("ssh:connect", async (_event, connectionId) => {
+	if (automationBusyHandles.has(primaryBackend)) throw new Error("Wait for the automation to finish before changing workspace");
+	const id = String(connectionId ?? "").trim().toLowerCase();
+	const connection = loadSshConnections(getSshConnectionsPath()).find((candidate) => candidate.id === id);
+	if (!connection) throw new Error(`SSH connection not found: ${id}`);
+	const cwd = createSshWorkspaceUri(connection.id, connection.remotePath);
+	const changed = cwd !== backendCwd;
+	backendCwd = cwd;
+	persistBackendCwd();
+	primaryBackend.stop();
+	primaryBackend.start();
+	return { cwd, changed, connectionId: connection.id };
+});
+
 // Folder picker with an unambiguous cancel signal; workspace:choose overloads
 // "changed:false" for both cancel and picking the current folder, which the
 // same-repo task flow must distinguish.
 ipcMain.handle("dialog:pick-folder", async () => {
 	const result = await dialog.showOpenDialog(dialogParent(), {
 		title: "Choose Task Folder",
-		defaultPath: backendCwd,
+		...(backendCwd.startsWith("ssh://") ? {} : { defaultPath: backendCwd }),
 		properties: ["openDirectory"],
 	});
 	if (result.canceled || result.filePaths.length === 0) {
@@ -1633,7 +1788,7 @@ ipcMain.handle("dialog:pick-folder", async () => {
 ipcMain.handle("workspace:choose", async () => {
 	const result = await dialog.showOpenDialog(dialogParent(), {
 		title: "Open Workspace",
-		defaultPath: backendCwd,
+		...(backendCwd.startsWith("ssh://") ? {} : { defaultPath: backendCwd }),
 		properties: ["openDirectory"],
 	});
 	if (result.canceled || result.filePaths.length === 0) {
@@ -1775,6 +1930,9 @@ ipcMain.handle("workspace:list-files", async (_event, query, taskId) => ({
 
 ipcMain.handle("workspace:reveal", async (_event, cwd) => {
 	const targetCwd = typeof cwd === "string" && cwd.length > 0 ? cwd : backendCwd;
+	if (targetCwd.startsWith("ssh://")) {
+		throw new Error("Remote workspace reveal is not available yet");
+	}
 	if (!targetCwd || !existsSync(targetCwd) || !statSync(targetCwd).isDirectory()) {
 		throw new Error(`Workspace not found: ${targetCwd}`);
 	}

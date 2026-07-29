@@ -22,6 +22,7 @@ describe("settings navigation search", () => {
       "custom-providers",
       "account",
     ]);
+    expect(filterSettingsNavigation(chinese, "SSH 远程", "zh-CN").map((item) => item.route)).toEqual(["connections"]);
   });
 
   it("returns all pages for a blank query", () => {

@@ -45,6 +45,28 @@ import type {
   WorkspaceGitStatus,
 } from "./types";
 
+export type SshAuth = "none" | "identity";
+
+export interface SshConnection {
+  id: string;
+  name: string;
+  alias: string;
+  hostname: string;
+  port?: number;
+  auth: SshAuth;
+  identityFile: string;
+  remotePath: string;
+  piCommand: string;
+  autoConnect: boolean;
+}
+
+export type SshConnectionInput = Omit<SshConnection, "id"> & { id?: string };
+
+export interface SshConnectionList {
+  connections: SshConnection[];
+  activeConnectionId?: string;
+}
+
 export interface PiDesktopApi {
   request(command: BackendCommand, taskId?: string): Promise<unknown>;
   send(command: BackendSendCommand, taskId?: string): Promise<void>;
@@ -70,6 +92,11 @@ export interface PiDesktopApi {
   listWorktreeLeftovers?: () => Promise<{ leftovers: WorktreeLeftover[] }>;
   deleteWorktreeLeftover?: (targetPath: string) => Promise<{ deleted: boolean }>;
   restartBackend(): Promise<void>;
+  listSshConnections?: () => Promise<SshConnectionList>;
+  saveSshConnection?: (input: SshConnectionInput) => Promise<{ connections: SshConnection[]; connection: SshConnection }>;
+  deleteSshConnection?: (connectionId: string) => Promise<{ connections: SshConnection[] }>;
+  testSshConnection?: (input: SshConnectionInput) => Promise<{ ok: boolean; message: string }>;
+  connectSshConnection?: (connectionId: string) => Promise<{ cwd: string; changed: boolean; connectionId: string }>;
   chooseWorkspace(): Promise<{ cwd: string; changed: boolean }>;
   openWorkspace(cwd: string): Promise<{ cwd: string; changed: boolean }>;
   createProject?(args: { template: string; parentDir: string; projectName: string }): Promise<{ created: boolean; path: string }>;
@@ -719,6 +746,40 @@ export async function getPendingExtensionUIRequests(): Promise<ExtensionUIReques
 
 export async function restartBackend(): Promise<void> {
   await requireApi().restartBackend();
+}
+
+export async function listSshConnections(): Promise<SshConnectionList> {
+  const api = requireApi();
+  if (!api.listSshConnections) throw new Error("SSH connections need a newer Pi Studio build");
+  return api.listSshConnections();
+}
+
+export async function saveSshConnection(
+  input: SshConnectionInput,
+): Promise<{ connections: SshConnection[]; connection: SshConnection }> {
+  const api = requireApi();
+  if (!api.saveSshConnection) throw new Error("SSH connections need a newer Pi Studio build");
+  return api.saveSshConnection(input);
+}
+
+export async function deleteSshConnection(connectionId: string): Promise<{ connections: SshConnection[] }> {
+  const api = requireApi();
+  if (!api.deleteSshConnection) throw new Error("SSH connections need a newer Pi Studio build");
+  return api.deleteSshConnection(connectionId);
+}
+
+export async function testSshConnection(input: SshConnectionInput): Promise<{ ok: boolean; message: string }> {
+  const api = requireApi();
+  if (!api.testSshConnection) throw new Error("SSH connections need a newer Pi Studio build");
+  return api.testSshConnection(input);
+}
+
+export async function connectSshConnection(
+  connectionId: string,
+): Promise<{ cwd: string; changed: boolean; connectionId: string }> {
+  const api = requireApi();
+  if (!api.connectSshConnection) throw new Error("SSH connections need a newer Pi Studio build");
+  return api.connectSshConnection(connectionId);
 }
 
 export async function chooseWorkspace(): Promise<{ cwd: string; changed: boolean }> {

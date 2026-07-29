@@ -70,6 +70,7 @@ export type SettingsRoute =
   | "memory"
   | "appearance"
   | "shortcuts"
+  | "connections"
   | "mirror-sources"
   | "resources"
   | "about";

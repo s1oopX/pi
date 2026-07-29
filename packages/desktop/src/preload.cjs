@@ -86,6 +86,21 @@ contextBridge.exposeInMainWorld("piDesktop", {
 	restartBackend() {
 		return ipcRenderer.invoke("backend:restart");
 	},
+	listSshConnections() {
+		return ipcRenderer.invoke("ssh:list");
+	},
+	saveSshConnection(/** @type {unknown} */ input) {
+		return ipcRenderer.invoke("ssh:save", input);
+	},
+	deleteSshConnection(/** @type {unknown} */ connectionId) {
+		return ipcRenderer.invoke("ssh:delete", connectionId);
+	},
+	testSshConnection(/** @type {unknown} */ input) {
+		return ipcRenderer.invoke("ssh:test", input);
+	},
+	connectSshConnection(/** @type {unknown} */ connectionId) {
+		return ipcRenderer.invoke("ssh:connect", connectionId);
+	},
 	chooseWorkspace() {
 		return ipcRenderer.invoke("workspace:choose");
 	},
