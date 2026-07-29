@@ -173,6 +173,9 @@ export function Sidebar({ collapsed, onToggle, automationsOpen, onOpenAutomation
 
   const activeSessionId = session?.sessionId;
   const switchingWorkspace = switchingWorkspaceCwd !== null;
+  const backendBusy = switchingWorkspace || backendStatus.starting || backendStatus.restarting || backendStatus.retryInMs > 0;
+  const showBackendStatus = backendBusy || !backendStatus.ready;
+  const backendStatusTone = backendBusy ? "busy" : "offline";
   const normalizedSessionQuery = sessionQuery.trim();
   const sessionSearchPending = normalizedSessionQuery !== sessionsQuery;
   const isTaskContext = Boolean(taskCwd && isSameWorkspace(workspaceCwd, taskCwd));
@@ -978,7 +981,7 @@ export function Sidebar({ collapsed, onToggle, automationsOpen, onOpenAutomation
             onClick={openWorkspaceMenu}
           >
             <Icon name="folder" size={18} strokeWidth={1.5} />
-            <span className={`sidebar-rail-status-dot ${backendStatus.ready ? "ready" : ""}`} />
+            {showBackendStatus && <span className={`sidebar-rail-status-dot ${backendStatusTone}`} aria-hidden="true" />}
           </button>
           <button
             className="icon-button sidebar-rail-action"
@@ -1159,8 +1162,8 @@ export function Sidebar({ collapsed, onToggle, automationsOpen, onOpenAutomation
                                 <span>{workspaceDisplay.name}</span>
                                 {workspaceDisplay.detail && <span>{workspaceDisplay.detail}</span>}
                               </span>
-                              {isCurrent && (
-                                <span className={`workspace-navigation-status ${backendStatus.ready && !switchingWorkspace ? "ready" : ""}`} role="status" aria-label={workspaceStatusText ?? undefined} />
+                              {isCurrent && showBackendStatus && (
+                                <span className={`workspace-navigation-status ${backendStatusTone}`} role="status" aria-label={workspaceStatusText ?? undefined} />
                               )}
                             </button>
                             <button
@@ -1252,7 +1255,7 @@ export function Sidebar({ collapsed, onToggle, automationsOpen, onOpenAutomation
               onClick={onOpenAutomations}
               title={t("Open scheduled tasks", "打开定时任务")}
             >
-              <Icon name="calendar" size={14} strokeWidth={1.5} />
+              <Icon name="calendar" size={16} strokeWidth={1.5} />
               <span>{t("Automations", "自动任务")}</span>
             </button>
             <button
@@ -1261,21 +1264,25 @@ export function Sidebar({ collapsed, onToggle, automationsOpen, onOpenAutomation
               onClick={() => openSettings("models-providers")}
               title={t("Open settings", "打开设置")}
             >
-              <Icon name="settings" size={14} strokeWidth={1.5} />
+              <Icon name="settings" size={16} strokeWidth={1.5} />
               <span>{t("Settings", "设置")}</span>
             </button>
-            <div className="status-row" title={backendStatus.error}>
-              <span
-                className={`backend-dot ${backendStatus.ready && !switchingWorkspace ? "ready" : ""}`}
-                aria-hidden="true"
-              />
-              <span className="status-text">{workspaceStatusText ?? ""}</span>
-              {!backendStatus.ready && !backendStatus.starting && !backendStatus.restarting && (
-                <button className="status-row-retry" type="button" onClick={handleRestartBackend}>
-                  {t("Retry", "重试")}
-                </button>
-              )}
-            </div>
+            {showBackendStatus && (
+              <div
+                className={`status-row ${backendStatusTone}`}
+                title={backendStatus.error}
+                role="status"
+                aria-live="polite"
+              >
+                <span className="backend-dot" aria-hidden="true" />
+                <span className="status-text">{workspaceStatusText ?? ""}</span>
+                {!backendStatus.ready && !backendBusy && (
+                  <button className="status-row-retry" type="button" onClick={handleRestartBackend}>
+                    {t("Retry", "重试")}
+                  </button>
+                )}
+              </div>
+            )}
           </div>
         </>
       )}
@@ -1420,7 +1427,7 @@ export function Sidebar({ collapsed, onToggle, automationsOpen, onOpenAutomation
           <div className="workspace-menu-current">
             <span className="workspace-menu-eyebrow">{t("Current context", "当前上下文")}</span>
             <span className="workspace-menu-current-row">
-              <span className={`backend-dot ${backendStatus.ready ? "ready" : ""}`} aria-hidden="true" />
+              {showBackendStatus && <span className={`backend-dot ${backendStatusTone}`} aria-hidden="true" />}
               <strong>{workspaceName}</strong>
             </span>
             <span className="workspace-menu-path" title={workspaceCwd}>
