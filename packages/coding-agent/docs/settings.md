@@ -229,13 +229,13 @@ When multiple sources specify a session directory, precedence is `--session-dir`
 
 ### Resources
 
-These settings define where to load extensions, skills, prompts, and themes from.
+These settings define where to load extensions, skills, prompts, and themes from. Packages may also contribute supported Codex hooks and HTTP MCP configs; those follow the package's extension/autoload state rather than a separate setting.
 
 Paths in `~/.pi/agent/settings.json` resolve relative to `~/.pi/agent`. Paths in `.pi/settings.json` resolve relative to `.pi`. Absolute paths and `~` are supported.
 
 | Setting | Type | Default | Description |
 |---------|------|---------|-------------|
-| `packages` | array | `[]` | npm/git packages to load resources from |
+| `packages` | array | `[]` | npm/git packages to load resources, supported Codex hooks, and HTTP MCP configs from |
 | `extensions` | string[] | `[]` | Local extension file paths or directories |
 | `skills` | string[] | `[]` | Local skill file paths or directories |
 | `prompts` | string[] | `[]` | Local prompt template paths or directories |

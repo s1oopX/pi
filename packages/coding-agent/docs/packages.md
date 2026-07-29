@@ -161,7 +161,9 @@ Pi also reads `.codex-plugin/plugin.json` when a package has no `package.json#pi
 
 Codex command hooks load from the manifest's `hooks` path, or from a root `hooks.json` when no path is declared. Pi supports `SessionStart`, `UserPromptSubmit`, and successful `PostToolUse` hooks. Commands receive the event as JSON on stdin plus plugin root and data-directory environment variables; `commandWindows` runs through PowerShell when provided.
 
-Codex `apps`, `mcpServers`, and other hook events require Codex-specific runtimes and are not executed by Pi.
+Codex HTTP MCP servers load from the manifest's `mcpServers` path, or from a root `.mcp.json` when no path is declared. Each entry must use `type: "http"` with an HTTP(S) `url`; optional `headers`, `oauth_resource`, and `note` fields are supported. Pi initially exposes `mcp__<server>__connect`. Connecting loads remote tools as `mcp__<server>__<tool>`, opens the browser when OAuth is required, and restores tools automatically when saved tokens remain valid. OAuth client, token, discovery, and PKCE state is stored with mode `0600` under `~/.pi/agent/plugin-data/`.
+
+MCP text and image results map directly to Pi tool output. Other MCP content types are preserved as JSON text. Codex apps, stdio MCP servers, and other hook events still require separate runtimes and are not executed by Pi.
 
 ### Convention Directories
 
@@ -240,7 +242,7 @@ Filter what a package loads using the object form in settings:
 
 ## Enable and Disable Resources
 
-Use `pi config` to enable or disable extensions, skills, prompt templates, and themes from installed packages and local directories. `pi config` starts in global settings (`~/.pi/agent/settings.json`); press Tab to switch between global and project-local modes. Use `pi config -l` to start in project overrides (`.pi/settings.json`) with inherited global resources dimmed.
+Use `pi config` to enable or disable extensions, skills, prompt templates, and themes from installed packages and local directories. Codex hooks and HTTP MCP configs follow the package's extension/autoload state. `pi config` starts in global settings (`~/.pi/agent/settings.json`); press Tab to switch between global and project-local modes. Use `pi config -l` to start in project overrides (`.pi/settings.json`) with inherited global resources dimmed.
 
 ## Scope and Deduplication
 

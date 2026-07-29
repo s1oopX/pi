@@ -2307,9 +2307,11 @@ If a slot renderer is not defined or throws:
 
 Extensions can register many tools while keeping only a small initial set active. A tool can then add more tools with `pi.setActiveTools()` during execution. Pi detects purely additive changes, records the newly available tool names on that tool result, and applies the updated active set before the next model request.
 
+An extension may also discover tools during loader execution and register them with `pi.registerTool()`. Post-start registrations become active immediately, and Pi records tools added during that execution on the result. This fits remote catalogs such as MCP servers whose schemas are unknown until connection time. When the catalog is known at startup, pre-registering tools and activating matches keeps discovery separate from registration.
+
 This works with every model. Models with native deferred-loading support preserve the stable prompt prefix and load the new definitions at the tool-result position. Other models use the fallback described below.
 
-The lifecycle is:
+For a catalog known at startup, the lifecycle is:
 
 1. Register every tool with `pi.registerTool()` so it appears in `pi.getAllTools()`.
 2. Keep loader tools, such as `search_tools`, active and leave searchable tools inactive.

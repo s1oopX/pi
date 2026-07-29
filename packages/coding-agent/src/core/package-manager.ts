@@ -69,6 +69,7 @@ export interface ResolvedResource {
 export interface ResolvedPaths {
 	extensions: ResolvedResource[];
 	hooks: ResolvedResource[];
+	mcpServers: ResolvedResource[];
 	skills: ResolvedResource[];
 	prompts: ResolvedResource[];
 	themes: ResolvedResource[];
@@ -167,11 +168,13 @@ interface CodexPluginManifest {
 	skills?: unknown;
 	commands?: unknown;
 	hooks?: unknown;
+	mcpServers?: unknown;
 }
 
 interface ResourceAccumulator {
 	extensions: Map<string, { metadata: PathMetadata; enabled: boolean }>;
 	hooks: Map<string, { metadata: PathMetadata; enabled: boolean }>;
+	mcpServers: Map<string, { metadata: PathMetadata; enabled: boolean }>;
 	skills: Map<string, { metadata: PathMetadata; enabled: boolean }>;
 	prompts: Map<string, { metadata: PathMetadata; enabled: boolean }>;
 	themes: Map<string, { metadata: PathMetadata; enabled: boolean }>;
@@ -580,11 +583,16 @@ function readCodexPluginManifestFile(pluginJsonPath: string): PiManifest | null 
 	return skills || prompts ? { skills, prompts } : null;
 }
 
-function collectCodexHookEntries(packageRoot: string): string[] {
+function collectCodexPluginConfigEntries(
+	packageRoot: string,
+	field: "hooks" | "mcpServers",
+	conventionalFile: string,
+): string[] {
 	const plugin = readCodexPluginFile(join(packageRoot, ".codex-plugin", "plugin.json"));
 	if (!plugin) return [];
-	const conventionalPath = join(packageRoot, "hooks.json");
-	const entries = normalizeCodexManifestEntries(plugin.hooks) ?? (existsSync(conventionalPath) ? ["hooks.json"] : []);
+	const conventionalPath = join(packageRoot, conventionalFile);
+	const entries =
+		normalizeCodexManifestEntries(plugin[field]) ?? (existsSync(conventionalPath) ? [conventionalFile] : []);
 	const paths: string[] = [];
 	for (const entry of entries) {
 		const path = resolve(packageRoot, entry);
@@ -2139,9 +2147,15 @@ export class DefaultPackageManager implements PackageManager {
 		filter: PackageFilter | undefined,
 		metadata: PathMetadata,
 	): boolean {
-		const hookPaths = filter?.autoload === false ? [] : collectCodexHookEntries(packageRoot);
+		const hookPaths =
+			filter?.autoload === false ? [] : collectCodexPluginConfigEntries(packageRoot, "hooks", "hooks.json");
 		for (const path of hookPaths) {
 			this.addResource(accumulator.hooks, path, metadata, true);
+		}
+		const mcpServerPaths =
+			filter?.autoload === false ? [] : collectCodexPluginConfigEntries(packageRoot, "mcpServers", ".mcp.json");
+		for (const path of mcpServerPaths) {
+			this.addResource(accumulator.mcpServers, path, metadata, true);
 		}
 
 		if (filter) {
@@ -2186,7 +2200,7 @@ export class DefaultPackageManager implements PackageManager {
 				hasAnyDir = true;
 			}
 		}
-		return hasAnyDir || hookPaths.length > 0;
+		return hasAnyDir || hookPaths.length > 0 || mcpServerPaths.length > 0;
 	}
 
 	private collectDefaultResources(
@@ -2568,6 +2582,7 @@ export class DefaultPackageManager implements PackageManager {
 		return {
 			extensions: new Map(),
 			hooks: new Map(),
+			mcpServers: new Map(),
 			skills: new Map(),
 			prompts: new Map(),
 			themes: new Map(),
@@ -2597,6 +2612,7 @@ export class DefaultPackageManager implements PackageManager {
 		return {
 			extensions: mapToResolved(accumulator.extensions),
 			hooks: mapToResolved(accumulator.hooks),
+			mcpServers: mapToResolved(accumulator.mcpServers),
 			skills: mapToResolved(accumulator.skills),
 			prompts: mapToResolved(accumulator.prompts),
 			themes: mapToResolved(accumulator.themes),

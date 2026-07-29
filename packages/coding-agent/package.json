@@ -42,6 +42,7 @@
 		"@earendil-works/pi-agent-core": "0.82.1-dev.1",
 		"@earendil-works/pi-ai": "0.82.1-dev.1",
 		"@earendil-works/pi-tui": "0.82.1-dev.1",
+		"@modelcontextprotocol/sdk": "1.29.0",
 		"@silvia-odwyer/photon-node": "0.3.4",
 		"chalk": "5.6.2",
 		"cross-spawn": "7.0.6",
@@ -59,6 +60,9 @@
 		"yaml": "2.9.0"
 	},
 	"overrides": {
+		"@modelcontextprotocol/sdk@1.29.0": {
+			"@hono/node-server": "2.0.12"
+		},
 		"protobufjs": "7.6.5",
 		"rimraf": "6.1.2",
 		"gaxios": {

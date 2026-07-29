@@ -93,7 +93,7 @@ function readHookGroups(configPath: string): CodexHookGroups {
 	};
 }
 
-function getPluginDataDir(agentDir: string, pluginRoot: string): string {
+export function getCodexPluginDataDir(agentDir: string, pluginRoot: string): string {
 	const id = createHash("sha256").update(resolve(pluginRoot)).digest("hex").slice(0, 16);
 	const dataDir = join(agentDir, "plugin-data", id);
 	mkdirSync(dataDir, { recursive: true, mode: 0o700 });
@@ -123,7 +123,7 @@ function getSessionStartSource(reason: SessionStartEvent["reason"]): string {
 export function createCodexPluginHookFactory(options: CodexPluginHookFactoryOptions): ExtensionFactory {
 	return (pi: ExtensionAPI) => {
 		const groups = readHookGroups(options.configPath);
-		const pluginDataDir = getPluginDataDir(options.agentDir, options.pluginRoot);
+		const pluginDataDir = getCodexPluginDataDir(options.agentDir, options.pluginRoot);
 		let sessionContexts: string[] = [];
 		const pendingPromptContexts: string[][] = [];
 

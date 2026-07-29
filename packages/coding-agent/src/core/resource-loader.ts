@@ -9,6 +9,7 @@ export type { ResourceCollision, ResourceDiagnostic } from "./diagnostics.ts";
 
 import { canonicalizePath, isLocalPath, resolvePath } from "../utils/paths.ts";
 import { createCodexPluginHookFactory } from "./codex-plugin-hooks.ts";
+import { createCodexPluginMcpFactory } from "./codex-plugin-mcp.ts";
 import { createEventBus, type EventBus } from "./event-bus.ts";
 import {
 	clearExtensionCache,
@@ -379,6 +380,7 @@ export class DefaultResourceLoader implements ResourceLoader {
 			getEnabledResources(resources).map((r) => r.path);
 		const enabledExtensions = getEnabledPaths(resolvedPaths.extensions);
 		const enabledHooks = getEnabledResources(resolvedPaths.hooks);
+		const enabledMcpServers = getEnabledResources(resolvedPaths.mcpServers);
 		const enabledSkillResources = getEnabledResources(resolvedPaths.skills);
 		const enabledPrompts = getEnabledPaths(resolvedPaths.prompts);
 		const enabledThemes = getEnabledPaths(resolvedPaths.themes);
@@ -401,9 +403,15 @@ export class DefaultResourceLoader implements ResourceLoader {
 				metadataByPath.set(r.path, { source: "cli", scope: "temporary", origin: "top-level" });
 			}
 		}
+		for (const r of cliExtensionPaths.mcpServers) {
+			if (!metadataByPath.has(r.path)) {
+				metadataByPath.set(r.path, { source: "cli", scope: "temporary", origin: "top-level" });
+			}
+		}
 
 		const cliEnabledExtensions = getEnabledPaths(cliExtensionPaths.extensions);
 		const cliEnabledHooks = getEnabledResources(cliExtensionPaths.hooks);
+		const cliEnabledMcpServers = getEnabledResources(cliExtensionPaths.mcpServers);
 		const cliEnabledSkills = getEnabledPaths(cliExtensionPaths.skills);
 		const cliEnabledPrompts = getEnabledPaths(cliExtensionPaths.prompts);
 		const cliEnabledThemes = getEnabledPaths(cliExtensionPaths.themes);
@@ -414,8 +422,16 @@ export class DefaultResourceLoader implements ResourceLoader {
 		const hookResources = this.noExtensions
 			? cliEnabledHooks
 			: this.mergeResolvedResources(cliEnabledHooks, enabledHooks);
+		const mcpServerResources = this.noExtensions
+			? cliEnabledMcpServers
+			: this.mergeResolvedResources(cliEnabledMcpServers, enabledMcpServers);
 
-		const extensionsResult = await this.loadFinalExtensionSet(extensionPaths, hookResources, preTrustExtensions);
+		const extensionsResult = await this.loadFinalExtensionSet(
+			extensionPaths,
+			hookResources,
+			mcpServerResources,
+			preTrustExtensions,
+		);
 		for (const p of this.additionalExtensionPaths) {
 			if (isLocalPath(p)) {
 				const resolved = this.resolveResourcePath(p);
@@ -510,18 +526,26 @@ export class DefaultResourceLoader implements ResourceLoader {
 		});
 		const enabledExtensions = resolvedPaths.extensions.filter((r) => r.enabled).map((r) => r.path);
 		const enabledHooks = resolvedPaths.hooks.filter((r) => r.enabled);
+		const enabledMcpServers = resolvedPaths.mcpServers.filter((r) => r.enabled);
 		const cliEnabledExtensions = cliExtensionPaths.extensions.filter((r) => r.enabled).map((r) => r.path);
 		const cliEnabledHooks = cliExtensionPaths.hooks.filter((r) => r.enabled);
+		const cliEnabledMcpServers = cliExtensionPaths.mcpServers.filter((r) => r.enabled);
 		const extensionPaths = this.noExtensions
 			? cliEnabledExtensions
 			: this.mergePaths(cliEnabledExtensions, enabledExtensions);
 		const hookResources = this.noExtensions
 			? cliEnabledHooks
 			: this.mergeResolvedResources(cliEnabledHooks, enabledHooks);
+		const mcpServerResources = this.noExtensions
+			? cliEnabledMcpServers
+			: this.mergeResolvedResources(cliEnabledMcpServers, enabledMcpServers);
 		const extensionsResult = await loadExtensionsCached(extensionPaths, this.cwd, this.eventBus);
 		const hookExtensions = await this.loadCodexHookExtensions(hookResources, extensionsResult.runtime);
 		extensionsResult.extensions.push(...hookExtensions.extensions);
 		extensionsResult.errors.push(...hookExtensions.errors);
+		const mcpExtensions = await this.loadCodexMcpExtensions(mcpServerResources, extensionsResult.runtime);
+		extensionsResult.extensions.push(...mcpExtensions.extensions);
+		extensionsResult.errors.push(...mcpExtensions.errors);
 		if (!options.includeInlineFactories) {
 			return extensionsResult;
 		}
@@ -539,6 +563,7 @@ export class DefaultResourceLoader implements ResourceLoader {
 	private async loadFinalExtensionSet(
 		extensionPaths: string[],
 		hookResources: ResolvedResource[],
+		mcpServerResources: ResolvedResource[],
 		preTrustExtensions: LoadExtensionsResult | undefined,
 	): Promise<LoadExtensionsResult> {
 		if (!preTrustExtensions) {
@@ -546,6 +571,9 @@ export class DefaultResourceLoader implements ResourceLoader {
 			const hookExtensions = await this.loadCodexHookExtensions(hookResources, extensionsResult.runtime);
 			extensionsResult.extensions.push(...hookExtensions.extensions);
 			extensionsResult.errors.push(...hookExtensions.errors);
+			const mcpExtensions = await this.loadCodexMcpExtensions(mcpServerResources, extensionsResult.runtime);
+			extensionsResult.extensions.push(...mcpExtensions.extensions);
+			extensionsResult.errors.push(...mcpExtensions.errors);
 			const inlineExtensions = await this.loadExtensionFactories(extensionsResult.runtime);
 			extensionsResult.extensions.push(...inlineExtensions.extensions);
 			extensionsResult.errors.push(...inlineExtensions.errors);
@@ -567,6 +595,7 @@ export class DefaultResourceLoader implements ResourceLoader {
 		};
 		const remainingPaths = extensionPaths.filter(isPendingPath);
 		const remainingHookResources = hookResources.filter((resource) => isPendingPath(resource.path));
+		const remainingMcpServerResources = mcpServerResources.filter((resource) => isPendingPath(resource.path));
 		const remainingExtensions = await loadExtensionsCached(
 			remainingPaths,
 			this.cwd,
@@ -577,22 +606,39 @@ export class DefaultResourceLoader implements ResourceLoader {
 			remainingHookResources,
 			preTrustExtensions.runtime,
 		);
+		const remainingMcpExtensions = await this.loadCodexMcpExtensions(
+			remainingMcpServerResources,
+			preTrustExtensions.runtime,
+		);
 		const loadedByPath = new Map(preloadedByPath);
-		for (const extension of [...remainingExtensions.extensions, ...remainingHookExtensions.extensions]) {
+		for (const extension of [
+			...remainingExtensions.extensions,
+			...remainingHookExtensions.extensions,
+			...remainingMcpExtensions.extensions,
+		]) {
 			loadedByPath.set(extension.resolvedPath, extension);
 		}
 
 		const inlineExtensions = preTrustExtensions.extensions.filter((extension) =>
 			extension.path.startsWith("<inline:"),
 		);
-		const orderedExtensions = [...extensionPaths, ...hookResources.map((resource) => resource.path)]
+		const orderedExtensions = [
+			...extensionPaths,
+			...hookResources.map((resource) => resource.path),
+			...mcpServerResources.map((resource) => resource.path),
+		]
 			.map((path) => loadedByPath.get(this.resolveExtensionLoadPath(path)))
 			.filter((extension): extension is Extension => extension !== undefined);
 		orderedExtensions.push(...inlineExtensions);
 
 		const extensionsResult: LoadExtensionsResult = {
 			extensions: orderedExtensions,
-			errors: [...preTrustExtensions.errors, ...remainingExtensions.errors, ...remainingHookExtensions.errors],
+			errors: [
+				...preTrustExtensions.errors,
+				...remainingExtensions.errors,
+				...remainingHookExtensions.errors,
+				...remainingMcpExtensions.errors,
+			],
 			runtime: preTrustExtensions.runtime,
 		};
 		this.addExtensionConflictDiagnostics(extensionsResult);
@@ -980,6 +1026,36 @@ export class DefaultResourceLoader implements ResourceLoader {
 				extensions.push(extension);
 			} catch (error) {
 				const message = error instanceof Error ? error.message : "failed to load Codex hooks";
+				errors.push({ path: resource.path, error: message });
+			}
+		}
+
+		return { extensions, errors };
+	}
+
+	private async loadCodexMcpExtensions(
+		resources: ResolvedResource[],
+		runtime: ExtensionRuntime,
+	): Promise<{ extensions: Extension[]; errors: Array<{ path: string; error: string }> }> {
+		const extensions: Extension[] = [];
+		const errors: Array<{ path: string; error: string }> = [];
+
+		for (const resource of resources) {
+			try {
+				const extension = await loadExtensionFromFactory(
+					createCodexPluginMcpFactory({
+						configPath: resource.path,
+						pluginRoot: resource.metadata.baseDir ?? dirname(resource.path),
+						agentDir: this.agentDir,
+					}),
+					this.cwd,
+					this.eventBus,
+					runtime,
+					resource.path,
+				);
+				extensions.push(extension);
+			} catch (error) {
+				const message = error instanceof Error ? error.message : "failed to load Codex MCP servers";
 				errors.push({ path: resource.path, error: message });
 			}
 		}

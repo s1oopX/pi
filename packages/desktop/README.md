@@ -76,6 +76,10 @@ The workbench previews text, Markdown, sandboxed HTML, images, PDF, CSV, TSV, an
 
 Scheduled tasks run independent prompts in the selected workspace or a retained git worktree, while heartbeats continue a main-process-verified conversation. The editor exposes native interval, weekday, and time controls for hourly, daily, weekday, and weekly schedules, with advanced RRULE entry for unsupported patterns. Pi package prompts can publish task name, prompt, and RRULE defaults under **From Pi packages**; created tasks retain the package link and can restore current package defaults without changing their model, destination, workspace, notifications, status, or history. Runs retain sessions, model/reasoning choices, notification policy, unread/archive state, and safe worktree cleanup. Create with Pi starts a fresh guided scheduling conversation; history can mark all unread runs as read or archive all current completed runs after confirmation.
 
+### Plugin resources
+
+Settings → Resources installs npm, Git, and local packages at user or project scope and hot-reloads their resources. When no Pi manifest is present, Codex plugin manifests can provide skills, commands, supported command hooks, and HTTP MCP servers. MCP packages expose a connect tool, register remote tools after connection, open the browser for OAuth when required, and persist credentials in mode-`0600` profile files. Codex apps, stdio MCP servers, unsupported hook events, and marketplace discovery remain outside the bridge.
+
 ### Sessions
 
 Sessions are append-only JSONL files owned by the backend. The client adds import (validated, size-capped, collision-free copy into the sessions directory, then an in-place switch) and export (save-dialog copy of any backend-listed session), plus reveal, trash, clone, fork navigation, and cross-workspace listing.

@@ -450,6 +450,8 @@ Create a package by adding a `pi` key to `package.json`:
 
 Without a `pi` manifest, pi auto-discovers from conventional directories (`extensions/`, `skills/`, `prompts/`, `themes/`).
 
+Codex plugin packages can also load declared skills, commands, supported command hooks, and HTTP MCP servers. See the compatibility details in [docs/packages.md](docs/packages.md#codex-plugin-manifests).
+
 See [docs/packages.md](docs/packages.md).
 
 ---
@@ -492,7 +494,7 @@ See [docs/rpc.md](docs/rpc.md) for the protocol.
 
 Pi is aggressively extensible so it doesn't have to dictate your workflow. Features that other tools bake in can be built with [extensions](#extensions), [skills](#skills), or installed from third-party [pi packages](#pi-packages). This keeps the core minimal while letting you shape pi to fit how you work.
 
-**No MCP.** Build CLI tools with READMEs (see [Skills](#skills)), or build an extension that adds MCP support. [Why?](https://mariozechner.at/posts/2025-11-02-what-if-you-dont-need-mcp/)
+**No general MCP configuration surface.** Codex-compatible plugin packages can expose HTTP MCP servers; for other MCP transports or standalone setups, build an extension or prefer CLI tools with READMEs (see [Skills](#skills)). [Why?](https://mariozechner.at/posts/2025-11-02-what-if-you-dont-need-mcp/)
 
 **No sub-agents.** There's many ways to do this. Spawn pi instances via tmux, or build your own with [extensions](#extensions), or install a package that does it your way.
 
