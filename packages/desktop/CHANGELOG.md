@@ -8,6 +8,7 @@ client (Electron main process and the `renderer-next` React renderer).
 
 ### Added
 
+- Persistent thread goals: bundled `create_goal`, `get_goal`, and `update_goal` tools store goal state in append-only session entries, restore it on resume/fork, inject the active objective into every turn, report elapsed/token-budget usage, require evidence before completion, and automatically resume a blocked goal on the next direct user message.
 - Built-in Windows Computer Use: agents can capture the virtual desktop, click, move, type through the clipboard, press supported key chords, scroll, and wait. Every action returns a fresh screenshot; passive observation follows the selected permission mode while control actions require approval outside full-access mode.
 - BYO image generation in Settings → Agent → Capabilities: configure an OpenRouter-compatible image endpoint, model, provider credential, and opt-in toggle. The `generate_image` tool accepts up to five workspace reference images, enforces lexical and real-path containment, never overwrites files, saves generated images as first-class Artifacts, and requires approval outside full-access mode.
 - Plugin-package management in Settings → Resources: install or update npm, Git, and local Pi packages at user or project scope, remove configured packages, hot-reload their extensions/skills/prompts/themes, and surface installed paths alongside existing resource diagnostics. Every install/update requires an explicit warning because package code runs with full system access.

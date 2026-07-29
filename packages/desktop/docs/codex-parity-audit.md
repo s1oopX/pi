@@ -19,6 +19,7 @@ continuous alignment loop; one row lands per iteration.
 | GitHub PR review comments in-app (PR Chat) | The Git panel loads current-branch PR comments, review summaries, and inline threads through authenticated `gh`; it posts general comments, replies to threads, shows resolved/outdated state, resolves or reopens threads, opens source items on GitHub, and drafts file/line-scoped agent handoffs | ✅ |
 | Multiple terminal tabs | Concurrent workbench tabs with preserved output/drafts/history and per-command Stop | ✅ |
 | Task sidebar: live plan/sources/artifacts | Workbench Plan reads the latest real `update_plan` tool call; Sources de-duplicates cited HTTP(S) links; Artifacts tracks written, edited, and linked workspace files | ✅ |
+| Persistent thread goals | Bundled create/get/update tools persist goal state in the session branch, inject active objectives across turns, account for elapsed/token-budget usage, and resume blocked work on the next direct user message | ✅ core parity |
 | Summary pane | Turn summary | ✅ |
 | Session naming/rename, thread search, pinning, archiving | Inline rename (double-click), server-backed search, persistent pin ordering, and a searchable archived/restore view | ✅ |
 | Copy last reply, per-message copy | Command palette + Mod+Shift+C; hover copy | ✅ |

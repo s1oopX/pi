@@ -63,6 +63,12 @@ describe("describeToolCall", () => {
       subject: "A blue circle on white",
       meta: "generated/circle.png",
     });
+    expect(describeToolCall(call("create_goal", { objective: "Ship parity", token_budget: 1000 }), "done"))
+      .toMatchObject({ action: "Created goal", subject: "Ship parity", meta: "budget 1000 tokens" });
+    expect(describeToolCall(call("get_goal", {}), "running"))
+      .toMatchObject({ action: "Reading goal" });
+    expect(describeToolCall(call("update_goal", { status: "complete" }), "done"))
+      .toMatchObject({ action: "Updated goal", subject: "Complete" });
     expect(describeToolCall(call("read", {
       path: "packages/desktop/renderer-next/src/components/Message/MessageBubble.tsx",
     }), "done").subject).toMatch(/MessageBubble\.tsx$/);
@@ -98,6 +104,10 @@ describe("describeToolCall", () => {
       .toMatchObject({ action: "已截取屏幕" });
     expect(describeToolCall(call("generate_image", { prompt: "蓝色圆形" }), "done", "zh-CN"))
       .toMatchObject({ action: "已生成图片", subject: "蓝色圆形" });
+    expect(describeToolCall(call("create_goal", { objective: "完成对标", token_budget: 1000 }), "done", "zh-CN"))
+      .toMatchObject({ action: "已创建目标", subject: "完成对标", meta: "预算 1000 个令牌" });
+    expect(describeToolCall(call("update_goal", { status: "blocked" }), "done", "zh-CN"))
+      .toMatchObject({ action: "已更新目标", subject: "阻塞" });
     expect(toolPhaseLabel("queued", "zh-CN")).toBe("已排队");
   });
 });

@@ -408,6 +408,48 @@ export function describeToolCall(
           : undefined;
       break;
     }
+    case "create_goal": {
+      action = phaseAction(phase, {
+        queued: localize(language, "Waiting to create goal", "等待创建目标"),
+        running: localize(language, "Creating goal", "正在创建目标"),
+        done: localize(language, "Created goal", "已创建目标"),
+        error: localize(language, "Goal creation failed", "创建目标失败"),
+        unknown: localize(language, "Create goal", "创建目标"),
+      });
+      const objective = stringArg(args, "objective");
+      subject = objective ? compactSingleLine(objective) : undefined;
+      const tokenBudget = numberArg(args, "token_budget");
+      meta = tokenBudget === undefined
+        ? undefined
+        : localize(language, "budget {count} tokens", "预算 {count} 个令牌", { count: tokenBudget });
+      break;
+    }
+    case "get_goal": {
+      action = phaseAction(phase, {
+        queued: localize(language, "Waiting to read goal", "等待读取目标"),
+        running: localize(language, "Reading goal", "正在读取目标"),
+        done: localize(language, "Read goal", "已读取目标"),
+        error: localize(language, "Goal read failed", "读取目标失败"),
+        unknown: localize(language, "Read goal", "读取目标"),
+      });
+      break;
+    }
+    case "update_goal": {
+      action = phaseAction(phase, {
+        queued: localize(language, "Waiting to update goal", "等待更新目标"),
+        running: localize(language, "Updating goal", "正在更新目标"),
+        done: localize(language, "Updated goal", "已更新目标"),
+        error: localize(language, "Goal update failed", "更新目标失败"),
+        unknown: localize(language, "Update goal", "更新目标"),
+      });
+      const status = stringArg(args, "status");
+      subject = status === "complete"
+        ? localize(language, "Complete", "完成")
+        : status === "blocked"
+          ? localize(language, "Blocked", "阻塞")
+          : status;
+      break;
+    }
     default: {
       const label = humanizeToolName(call.name);
       action = phase === "running"

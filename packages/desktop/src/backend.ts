@@ -19,6 +19,7 @@ import { hasTrustRequiringProjectResources, ProjectTrustStore } from "../../codi
 import { runRpcMode } from "../../coding-agent/src/modes/rpc/rpc-mode.ts";
 import { computerUseExtension } from "./computer-use.ts";
 import { imageGenerationExtension } from "./image-generation.ts";
+import { taskGoalExtension } from "./task-goal.ts";
 import { taskPlanExtension } from "./task-plan.ts";
 import { toolApprovalExtension } from "./tool-approval.ts";
 import { directoriesShareIdentity, resolveWorktreeSourceRoot } from "./worktree-trust.js";
@@ -81,6 +82,7 @@ const createRuntime: CreateAgentSessionRuntimeFactory = async ({
 		resourceLoaderOptions: {
 			extensionFactories: [
 				{ name: "tool-approval", factory: toolApprovalExtension },
+				{ name: "task-goal", factory: taskGoalExtension },
 				{ name: "task-plan", factory: taskPlanExtension },
 				{ name: "computer-use", factory: computerUseExtension },
 				{
