@@ -226,7 +226,8 @@ export function EmptyState() {
           : t("Pick a starting point, or type a message below.", "选择一个起点，或在下方输入消息。")}
       </p>
       <p className="empty-state-badge">
-        {t("\u{1F6E0}\u{FE0F} Optimized for indie developers", "\u{1F6E0}\u{FE0F} 为个人开发者优化")}
+        <Icon name="terminal" size={13} />
+        {t("Optimized for indie developers", "为个人开发者优化")}
       </p>
       <div className="empty-state-cards">
         {ACTION_CARDS.map((card) => (

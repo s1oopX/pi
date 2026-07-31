@@ -128,7 +128,9 @@ export async function launchStudio({ reply, script, setupWorkspace, extraWorkspa
 		async waitUntilReady() {
 			// Wait for the app to fully settle (backend ready, models loaded) before
 			// typing: workspace draft restoration clears the composer during startup.
-			await page.waitForSelector(".backend-dot.ready", { timeout: LAUNCH_TIMEOUT_MS });
+			await page.waitForFunction(async () => (await window.piDesktop?.getBackendStatus())?.ready === true, null, {
+				timeout: LAUNCH_TIMEOUT_MS,
+			});
 			await page.getByText("Faux 1").first().waitFor({ state: "visible", timeout: LAUNCH_TIMEOUT_MS });
 		},
 

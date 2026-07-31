@@ -598,7 +598,9 @@ function FileChangeRow({ change, defaultOpen = false }: { change: FileChange; de
             </span>
           )}
           {canExpand && (
-            <span className="file-changes-item-chevron" aria-hidden="true">{open ? "▾" : "▸"}</span>
+            <span className="file-changes-item-chevron" aria-hidden="true">
+              <Icon name={open ? "chevron-down" : "chevron-right"} size={12} />
+            </span>
           )}
         </button>
         <PathActions path={change.path} />
@@ -687,7 +689,9 @@ function FileChangesCard({ changes }: { changes: FileChange[] }) {
             {t("{count} failed", "{count} 个失败", { count: failed })}
           </span>
         )}
-        <span className="file-changes-chevron" aria-hidden="true">{expanded ? "▾" : "▸"}</span>
+        <span className="file-changes-chevron" aria-hidden="true">
+          <Icon name={expanded ? "chevron-down" : "chevron-right"} size={12} />
+        </span>
       </button>
       {expanded && (
         <ul className="file-changes-list">

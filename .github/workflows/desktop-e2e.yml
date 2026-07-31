@@ -44,7 +44,7 @@ jobs:
         run: node node_modules/electron/install.js
 
       - name: Package offline build
-        run: npm run pack:offline -w @s1oopx/pi-studio
+        run: npm run pack:offline -w @s1oopx/pi-studio-dev
 
       - name: Verify packaged artifact
         shell: pwsh
@@ -55,7 +55,7 @@ jobs:
           if (-not (Test-Path $backend)) { throw "Missing packaged backend: $backend" }
 
       - name: Run E2E smoke test
-        run: npm run test:e2e -w @s1oopx/pi-studio
+        run: npm run test:e2e -w @s1oopx/pi-studio-dev
         env:
           PI_STUDIO_E2E_ARTIFACTS: ${{ github.workspace }}/e2e-artifacts
 

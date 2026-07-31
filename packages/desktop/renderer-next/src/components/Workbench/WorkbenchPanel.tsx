@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState, type FormEvent, type KeyboardEvent } from "react";
 import Markdown from "react-markdown";
 import { BranchNavigatorContent } from "../BranchNavigator";
+import { GitPanel } from "../GitPanel";
 import { Icon } from "../Icon";
 import { appendFileReference } from "../Composer/workspaceDrafts";
 import { PathActions } from "../Message/PathActions";
@@ -15,7 +16,7 @@ import { createCommandHistoryState, pushCommand, recallNext, recallPrevious } fr
 import { findLatestTaskPlan } from "./planState";
 import { collectTaskArtifacts, collectTaskSources } from "./taskResources";
 
-export type WorkbenchView = "launcher" | "plan" | "sources" | "artifacts" | "review" | "terminal" | "browser" | "files" | "side-task";
+export type WorkbenchView = "launcher" | "plan" | "sources" | "artifacts" | "review" | "git" | "terminal" | "browser" | "files" | "side-task";
 
 export type WorkbenchKeybindingLabels = Partial<Record<WorkbenchView | "toggle", string>>;
 
@@ -30,7 +31,7 @@ interface WorkbenchEntry {
   view: WorkbenchView;
   label: string;
   shortcut?: string;
-  icon: "plan" | "sources" | "artifacts" | "review" | "terminal" | "browser" | "files" | "task";
+  icon: "plan" | "sources" | "artifacts" | "review" | "git" | "terminal" | "browser" | "files" | "task";
 }
 
 interface BashResult {
@@ -72,6 +73,11 @@ export function WorkbenchPanel({ activeView, keybindingLabels, onClose, onSelect
       label: t("Review", "审阅"),
       shortcut: keybindingLabels.review,
       icon: "review",
+    },
+    {
+      view: "git",
+      label: t("Git", "Git"),
+      icon: "git",
     },
     {
       view: "terminal",
@@ -144,7 +150,7 @@ export function WorkbenchPanel({ activeView, keybindingLabels, onClose, onSelect
         </button>
       </div>
 
-      <div className="workbench-body">
+      <div className={`workbench-body workbench-${activeView}-view`}>
         {activeView === "launcher" ? (
           <WorkbenchLauncher entries={entries} onSelectView={onSelectView} />
         ) : activeView === "plan" ? (
@@ -155,6 +161,8 @@ export function WorkbenchPanel({ activeView, keybindingLabels, onClose, onSelect
           <WorkbenchArtifacts />
         ) : activeView === "review" ? (
           <WorkbenchReview />
+        ) : activeView === "git" ? (
+          <GitPanel onClose={onClose} />
         ) : activeView === "terminal" ? (
           <WorkbenchTerminal />
         ) : activeView === "browser" ? (
@@ -1007,6 +1015,7 @@ function WorkbenchSideTask() {
 }
 
 function WorkbenchIcon({ icon }: { icon: WorkbenchEntry["icon"] }) {
+  if (icon === "git") return <Icon name="git-branch" size={18} strokeWidth={1.55} />;
   const path = icon === "plan"
     ? "M9 6h11M9 12h11M9 18h11M4 6l1 1 2-2M4 12l1 1 2-2M4 18l1 1 2-2"
     : icon === "sources"
@@ -1030,6 +1039,7 @@ function getWorkbenchTitle(view: WorkbenchView, t: (en: string, zhCN: string, va
   if (view === "sources") return t("Sources", "来源");
   if (view === "artifacts") return t("Artifacts", "产物");
   if (view === "review") return t("Review", "审阅");
+  if (view === "git") return t("Git", "Git");
   if (view === "terminal") return t("Terminals", "终端");
   if (view === "browser") return t("Browser", "浏览器");
   if (view === "files") return t("Files", "文件");

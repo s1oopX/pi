@@ -16,6 +16,10 @@
   border-radius: var(--radius);
 }
 
+.agent-row-menu-trigger {
+  z-index: 1;
+}
+
 .agent-row:hover,
 .agent-row-shell:hover .agent-row {
   background: color-mix(in srgb, var(--text) 4%, transparent);
@@ -27,7 +31,6 @@
 
 .agent-row-shell.active .agent-row-menu-trigger {
   opacity: 0;
-  pointer-events: none;
 }
 
 .agent-row-shell.active:hover .agent-row-menu-trigger,
@@ -337,7 +340,7 @@
   border: 1px solid var(--border);
   border-radius: var(--radius-3xl);
   background: var(--elevated);
-  box-shadow: var(--shadow-dialog);
+  box-shadow: var(--shadow-pop);
 }
 
 .workspace-menu-current {

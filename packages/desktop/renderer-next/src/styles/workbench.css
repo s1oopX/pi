@@ -65,6 +65,10 @@
   overflow: hidden;
 }
 
+.workbench-body.workbench-git-view {
+  padding: var(--space-5) 10px 0 var(--space-5);
+}
+
 .workbench-launcher {
   width: min(100%, 560px);
   margin: 0 auto auto;
@@ -520,6 +524,7 @@
 }
 
 .workbench-terminal {
+  min-width: 0;
   min-height: 0;
   flex: 1;
   display: flex;
@@ -586,6 +591,7 @@
 
 .workbench-terminal-panels,
 .workbench-terminal-session {
+  min-width: 0;
   min-height: 0;
   flex: 1;
   display: flex;

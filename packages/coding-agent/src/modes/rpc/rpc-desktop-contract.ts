@@ -106,7 +106,7 @@ export interface RpcUsageDTO {
 	};
 }
 
-export type RpcStopReasonDTO = "stop" | "length" | "toolUse" | "error" | "aborted";
+export type RpcStopReasonDTO = "pending" | "stop" | "length" | "toolUse" | "error" | "aborted";
 
 export interface RpcUserMessageDTO {
 	role: "user";

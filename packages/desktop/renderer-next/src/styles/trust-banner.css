@@ -2,11 +2,13 @@
 .trust-banner {
   display: flex;
   align-items: center;
-  gap: 12px;
-  margin: 12px 16px 0;
-  padding: 10px 14px;
-  border: 1px solid var(--warning);
-  border-radius: var(--radius-xl, 14px);
+  gap: 10px;
+  min-height: 44px;
+  margin: 0;
+  padding: 7px 14px;
+  border: 0;
+  border-bottom: 1px solid color-mix(in srgb, var(--warning) 32%, var(--border));
+  border-radius: 0;
   background: var(--warning-soft);
 }
 
@@ -19,33 +21,55 @@
 .trust-banner-copy {
   display: flex;
   flex-direction: column;
-  gap: 2px;
+  gap: 1px;
   min-width: 0;
 }
 
 .trust-banner-title {
-  font-size: 13px;
+  font-size: var(--font-size-ui);
   font-weight: 600;
+  line-height: var(--line-height-ui);
   color: var(--text);
 }
 
 .trust-banner-detail {
-  font-size: 12px;
   color: var(--text-soft);
+  font-size: var(--font-size-compact);
+  line-height: var(--line-height-compact);
 }
 
 .trust-banner-btn {
   flex: none;
   margin-left: auto;
-  padding: 7px 14px;
-  border-radius: var(--radius-xs);
+  min-height: var(--control-height-compact);
+  padding: 3px 10px;
+  border-radius: var(--radius-sm);
   background: var(--warning);
   color: var(--accent-contrast, #ffffff);
-  font-size: 12.5px;
+  font-size: var(--font-size-compact);
   font-weight: 600;
   white-space: nowrap;
 }
 
+.trust-banner-btn:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--warning) 88%, black);
+}
+
+.trust-banner-btn:active:not(:disabled) {
+  background: color-mix(in srgb, var(--warning) 80%, black);
+}
+
 .trust-banner-btn:disabled {
   opacity: 0.6;
+}
+
+@container main-panel (max-width: 520px) {
+  .trust-banner {
+    min-height: 40px;
+    padding: 6px 10px;
+  }
+
+  .trust-banner-detail {
+    display: none;
+  }
 }

@@ -480,7 +480,7 @@ export function GitPanel({ onClose }: GitPanelProps) {
     : [];
 
   return (
-    <div className="git-panel" role="dialog" aria-label={t("Git", "Git")}>
+    <div className="git-panel" role="region" aria-label={t("Git", "Git")}>
       <div className="git-panel-branchbar">
         <button
           className="git-panel-branch-toggle"
@@ -889,8 +889,12 @@ export function GitPanel({ onClose }: GitPanelProps) {
           <div className="git-panel-note">{t("Working tree clean", "工作树干净")}</div>
         )}
         {!changesLoading &&
-          changes?.files.map((file) => (
-            <div className="git-panel-file-block" role="listitem" key={`${file.status}:${file.path}`}>
+          changes?.files.map((file) => {
+            const separatorIndex = Math.max(file.path.lastIndexOf("/"), file.path.lastIndexOf("\\"));
+            const fileName = separatorIndex >= 0 ? file.path.slice(separatorIndex + 1) : file.path;
+            const directory = separatorIndex >= 0 ? file.path.slice(0, separatorIndex) : "";
+            return (
+              <div className="git-panel-file-block" role="listitem" key={`${file.status}:${file.path}`}>
               <button
                 className={`git-panel-file ${expandedFile === file.path ? "expanded" : ""}`}
                 type="button"
@@ -905,7 +909,10 @@ export function GitPanel({ onClose }: GitPanelProps) {
                 >
                   {file.status}
                 </span>
-                <span className="git-panel-file-path" title={file.path}>{file.path}</span>
+                <span className="git-panel-file-path" title={file.path}>
+                  <span className="git-panel-file-name">{fileName}</span>
+                  {directory && <span className="git-panel-file-directory">{directory}</span>}
+                </span>
               </button>
               {expandedFile === file.path && (
                 <div className="git-panel-file-diff">
@@ -1045,8 +1052,9 @@ export function GitPanel({ onClose }: GitPanelProps) {
                   )}
                 </div>
               )}
-            </div>
-          ))}
+              </div>
+            );
+          })}
         {!changesLoading && changes?.truncated && (
           <div className="git-panel-note">{t("Showing the first 200 files", "仅显示前 200 个文件")}</div>
         )}

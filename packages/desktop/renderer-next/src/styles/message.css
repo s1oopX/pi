@@ -540,7 +540,8 @@
   gap: 7px;
   padding: 2px 0;
   cursor: pointer;
-  font-size: calc(12px * var(--font-scale));
+  font-size: var(--font-size-ui);
+  line-height: var(--line-height-ui);
 }
 
 .thinking-icon {
@@ -549,7 +550,7 @@
 }
 
 .thinking-label {
-  font-weight: 550;
+  font-weight: 500;
 }
 
 .thinking-chevron {
@@ -563,9 +564,15 @@
   padding: 4px 0 4px 10px;
   border-left: 1px solid var(--border);
   background: transparent;
-  color: var(--muted);
-  font-size: calc(13px * var(--font-scale));
-  line-height: 1.62;
+  color: var(--text-soft);
+  font-family: var(--font-sans);
+  font-size: var(--font-size-body);
+  font-weight: 400;
+  line-height: var(--line-height-body);
+}
+
+.thinking-body p {
+  margin: 0 0 8px;
 }
 
 .thinking-body p:last-child {

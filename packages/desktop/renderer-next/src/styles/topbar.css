@@ -185,7 +185,7 @@
   border: 1px solid var(--border);
   border-radius: var(--radius-3xl);
   background: var(--elevated);
-  box-shadow: var(--shadow-dialog);
+  box-shadow: var(--shadow-pop);
 }
 
 .top-bar-open-location-menu button {
@@ -255,13 +255,6 @@
   .top-bar-title {
     max-width: min(70cqw, 320px);
   }
-}
-
-/* Git commit popover on the top-bar branch button. */
-.top-bar-git-wrap {
-  position: relative;
-  min-width: 0;
-  display: inline-flex;
 }
 
 /* Ahead/behind badge on the branch button. */

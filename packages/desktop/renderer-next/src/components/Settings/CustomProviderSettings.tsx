@@ -707,7 +707,7 @@ export function CustomProviderSettings({ onDirtyChange }: { onDirtyChange?: (dir
         <div className="custom-provider-editor-header">
           <div className="custom-provider-title-group">
             <span className="custom-provider-disclosure" aria-hidden="true">
-              ▾
+              <Icon name="chevron-down" size={13} />
             </span>
             <span className="custom-provider-editor-title">
               {editingProviderId
@@ -879,10 +879,12 @@ export function CustomProviderSettings({ onDirtyChange }: { onDirtyChange?: (dir
               <span className="form-label">{t("Models ({count})", "模型（{count}）", { count: filledModelCount })}</span>
               <div className="custom-provider-model-actions">
                 <button className="settings-btn-sm" type="button" onClick={handleFetchModels} disabled={fetching || saving}>
-                  {fetching ? t("Fetching…", "获取中…") : t("↧ Fetch", "↧ 获取")}
+                  {!fetching && <Icon name="download" size={13} />}
+                  {fetching ? t("Fetching…", "获取中…") : t("Fetch", "获取")}
                 </button>
                 <button className="settings-btn-sm" type="button" onClick={addModel} disabled={saving}>
-                  {t("+ Add Model", "+ 添加模型")}
+                  <Icon name="plus" size={13} />
+                  {t("Add Model", "添加模型")}
                 </button>
               </div>
             </div>

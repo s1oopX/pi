@@ -1,18 +1,16 @@
-/* Git panel: commit, push, and branch operations from the top-bar branch button. */
+/* Git workbench: commit, push, branch, PR, and diff operations. */
 .git-panel {
-  position: absolute;
-  top: calc(100% + 6px);
-  left: 0;
-  z-index: 180;
-  width: 340px;
-  padding: 10px;
+  width: 100%;
+  min-width: 0;
+  min-height: 0;
+  flex: 1;
+  padding: 0 4px 12px 0;
   display: flex;
   flex-direction: column;
-  gap: 8px;
-  border: 1px solid var(--border);
-  border-radius: var(--radius-3xl);
-  background: var(--elevated);
-  box-shadow: var(--shadow-dialog);
+  gap: 10px;
+  overflow-x: hidden;
+  overflow-y: auto;
+  overscroll-behavior: contain;
 }
 
 .git-panel-branchbar {
@@ -303,8 +301,6 @@
 }
 
 .git-panel-file-list {
-  max-height: 200px;
-  overflow-y: auto;
   display: flex;
   flex-direction: column;
   gap: 2px;
@@ -335,12 +331,31 @@
 }
 
 .git-panel-file-path {
+  min-width: 0;
+  display: flex;
+  align-items: baseline;
+  gap: 7px;
+  overflow: hidden;
   font-family: var(--font-mono);
   font-size: 11.5px;
-  color: var(--text-soft);
   white-space: nowrap;
+}
+
+.git-panel-file-name {
+  flex: 0 1 auto;
   overflow: hidden;
+  color: var(--text-soft);
+  font-weight: 500;
   text-overflow: ellipsis;
+}
+
+.git-panel-file-directory {
+  min-width: 0;
+  flex: 1;
+  overflow: hidden;
+  color: var(--muted);
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .git-panel-note {

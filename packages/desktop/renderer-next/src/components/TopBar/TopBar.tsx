@@ -3,7 +3,6 @@ import { useI18n } from "../../i18n";
 import { Icon } from "../Icon";
 import * as api from "../../ipc/api";
 import { useStore } from "../../store";
-import { GitPanel } from "../GitPanel";
 import { summarizeGitSync } from "../GitPanel/gitPanelState";
 import { isSameWorkspace } from "../Sidebar/sidebarState";
 import { showToast } from "../Toast";
@@ -13,7 +12,7 @@ interface TopBarProps {
   workbenchOpen: boolean;
   workbenchShortcut: string;
   onOpenCommandPalette: () => void;
-  onOpenWorkbench: (view: "files" | "terminal") => void;
+  onOpenWorkbench: (view: "git" | "files" | "terminal") => void;
   onToggleWorkbench: () => void;
 }
 
@@ -35,11 +34,9 @@ export function TopBar({
   const refreshWorkspaceGitStatus = useStore((s) => s.refreshWorkspaceGitStatus);
   const [openingLocation, setOpeningLocation] = useState(false);
   const [locationMenuOpen, setLocationMenuOpen] = useState(false);
-  const [gitMenuOpen, setGitMenuOpen] = useState(false);
   const locationMenuRef = useRef<HTMLDivElement>(null);
   const locationMenuTriggerRef = useRef<HTMLButtonElement>(null);
   const locationMenuInitialFocusRef = useRef<"first" | "last">("first");
-  const gitMenuRef = useRef<HTMLDivElement>(null);
 
   const gitSync = summarizeGitSync(workspaceGitStatus);
 
@@ -125,26 +122,6 @@ export function TopBar({
   }, [refreshWorkspaceGitStatus]);
 
   useEffect(() => {
-    if (!gitMenuOpen) return;
-    function handlePointerDown(event: PointerEvent) {
-      if (!(event.target instanceof Node)) return;
-      if (gitMenuRef.current?.contains(event.target)) return;
-      setGitMenuOpen(false);
-    }
-    function handleKeyDown(event: KeyboardEvent) {
-      if (event.key !== "Escape") return;
-      event.preventDefault();
-      setGitMenuOpen(false);
-    }
-    document.addEventListener("pointerdown", handlePointerDown);
-    document.addEventListener("keydown", handleKeyDown);
-    return () => {
-      document.removeEventListener("pointerdown", handlePointerDown);
-      document.removeEventListener("keydown", handleKeyDown);
-    };
-  }, [gitMenuOpen]);
-
-  useEffect(() => {
     if (!locationMenuOpen) return;
     const focusFrame = requestAnimationFrame(() => {
       const items = locationMenuRef.current?.querySelectorAll<HTMLButtonElement>("[role='menuitem']:not(:disabled)");
@@ -180,36 +157,31 @@ export function TopBar({
           {gitLabel && (
             <>
               <span className="top-bar-divider top-bar-git-divider" aria-hidden="true">·</span>
-              <div className="top-bar-git-wrap" ref={gitMenuRef}>
-                <button
-                  className="top-bar-git"
-                  type="button"
-                  disabled={workspaceGitStatusLoading}
-                  onClick={() => setGitMenuOpen((open) => !open)}
-                  aria-haspopup="dialog"
-                  aria-expanded={gitMenuOpen}
-                  title={t(
-                    "{branch} — {state}. Click to review, commit, push, and switch branches.",
-                    "{branch} — {state}。点击查看、提交、推送与切换分支。",
-                    { branch: gitLabel, state: gitState },
-                  )}
-                  aria-label={t("Git branch {branch}, {state}", "Git 分支 {branch}，{state}", {
-                    branch: gitLabel,
-                    state: gitState,
-                  })}
-                >
-                  <Icon name="git-branch" size={16} />
-                  <span>{gitLabel}</span>
-                  {gitSync.show && (
-                    <span className="top-bar-git-sync" aria-hidden="true">
-                      {gitSync.ahead > 0 && <span className="top-bar-git-ahead">↑{gitSync.ahead}</span>}
-                      {gitSync.behind > 0 && <span className="top-bar-git-behind">↓{gitSync.behind}</span>}
-                    </span>
-                  )}
-                  {workspaceGitStatus?.dirty && <span className="top-bar-git-dirty" aria-hidden="true" />}
-                </button>
-                {gitMenuOpen && <GitPanel onClose={() => setGitMenuOpen(false)} />}
-              </div>
+              <button
+                className="top-bar-git"
+                type="button"
+                disabled={workspaceGitStatusLoading}
+                onClick={() => onOpenWorkbench("git")}
+                title={t(
+                  "{branch} — {state}. Open Git tools in the workbench.",
+                  "{branch} — {state}。在工作台中打开 Git 工具。",
+                  { branch: gitLabel, state: gitState },
+                )}
+                aria-label={t("Git branch {branch}, {state}", "Git 分支 {branch}，{state}", {
+                  branch: gitLabel,
+                  state: gitState,
+                })}
+              >
+                <Icon name="git-branch" size={16} />
+                <span>{gitLabel}</span>
+                {gitSync.show && (
+                  <span className="top-bar-git-sync" aria-hidden="true">
+                    {gitSync.ahead > 0 && <span className="top-bar-git-ahead">↑{gitSync.ahead}</span>}
+                    {gitSync.behind > 0 && <span className="top-bar-git-behind">↓{gitSync.behind}</span>}
+                  </span>
+                )}
+                {workspaceGitStatus?.dirty && <span className="top-bar-git-dirty" aria-hidden="true" />}
+              </button>
             </>
           )}
         </div>

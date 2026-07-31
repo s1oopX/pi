@@ -2,6 +2,7 @@ import { useMemo, useState, type MouseEvent as ReactMouseEvent, type ReactNode }
 import { html, parse } from "diff2html";
 import type { DiffFile } from "diff2html/lib/types";
 import { useI18n } from "../../i18n";
+import { Icon } from "../Icon";
 import {
   diffFileDisplayPath,
   diffFileStat,
@@ -181,7 +182,9 @@ function DiffFileSection({
         aria-expanded={!collapsed}
         onClick={onToggle}
       >
-        <span className="diff-file-chevron" aria-hidden="true">{collapsed ? "▸" : "▾"}</span>
+        <span className="diff-file-chevron" aria-hidden="true">
+          <Icon name={collapsed ? "chevron-right" : "chevron-down"} size={13} />
+        </span>
         <span className="diff-file-path" title={stat.path}>{stat.path}</span>
         {kindLabel && <span className={`diff-file-kind kind-${stat.kind}`}>{kindLabel}</span>}
         <DiffStatBadge added={stat.addedLines} deleted={stat.deletedLines} />
