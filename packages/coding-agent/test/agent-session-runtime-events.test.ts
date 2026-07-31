@@ -235,6 +235,60 @@ describe("AgentSessionRuntime session lifecycle events", () => {
 		runtimeHost.setRebindSession(undefined);
 	});
 
+	it("waits for manual compaction before replacing the session", async () => {
+		let markCompactionStarted = () => {};
+		const compactionStarted = new Promise<void>((resolve) => {
+			markCompactionStarted = resolve;
+		});
+		let releaseCompaction = () => {};
+		const compactionRelease = new Promise<void>((resolve) => {
+			releaseCompaction = resolve;
+		});
+		const { runtimeHost } = await createRuntimeHost((pi) => {
+			pi.on("session_before_compact", async (event) => {
+				markCompactionStarted();
+				await compactionRelease;
+				return {
+					compaction: {
+						summary: "summary",
+						firstKeptEntryId: event.preparation.firstKeptEntryId,
+						tokensBefore: event.preparation.tokensBefore,
+					},
+				};
+			});
+		});
+		runtimeHost.services.settingsManager.applyOverrides({ compaction: { keepRecentTokens: 1 } });
+		await runtimeHost.session.prompt("one");
+		await runtimeHost.session.prompt("two");
+
+		const oldSession = runtimeHost.session;
+		let invalidated = false;
+		runtimeHost.setBeforeSessionInvalidate(() => {
+			invalidated = true;
+		});
+		const compactPromise = oldSession.compact();
+		const compactResult = expect(compactPromise).rejects.toThrow("Compaction cancelled");
+		await compactionStarted;
+
+		let replacementFinished = false;
+		const replacementPromise = runtimeHost.newSession().then((result) => {
+			replacementFinished = true;
+			return result;
+		});
+		await new Promise((resolve) => setTimeout(resolve, 0));
+
+		expect(oldSession.isCompacting).toBe(true);
+		expect(oldSession.isIdle).toBe(false);
+		expect(replacementFinished).toBe(false);
+		expect(invalidated).toBe(false);
+
+		releaseCompaction();
+		await compactResult;
+		await expect(replacementPromise).resolves.toEqual({ cancelled: false, cwd: runtimeHost.cwd });
+		expect(invalidated).toBe(true);
+		expect(runtimeHost.session).not.toBe(oldSession);
+	});
+
 	it("emits session_before_fork and session_start and honors cancellation", async () => {
 		const events: RecordedSessionEvent[] = [];
 		let cancelNextFork = false;

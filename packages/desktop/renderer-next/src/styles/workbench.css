@@ -415,7 +415,9 @@
   margin: 0;
   padding: var(--space-5);
   color: var(--text-soft);
-  font: 12px/1.55 var(--font-mono);
+  font-family: var(--font-mono);
+  font-size: calc(12px * var(--font-scale));
+  line-height: 1.55;
   tab-size: 2;
   white-space: pre-wrap;
   overflow-wrap: anywhere;
@@ -480,7 +482,9 @@
   min-width: 100%;
   border-spacing: 0;
   color: var(--text-soft);
-  font: 12px/1.4 var(--font-mono);
+  font-family: var(--font-mono);
+  font-size: calc(12px * var(--font-scale));
+  line-height: 1.4;
 }
 
 .workbench-spreadsheet-grid th,

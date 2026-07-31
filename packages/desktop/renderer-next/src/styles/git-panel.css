@@ -28,7 +28,7 @@
   padding: 3px 6px;
   border-radius: var(--radius-xs);
   color: var(--text-soft);
-  font-size: 12.5px;
+  font-size: calc(12.5px * var(--font-scale));
   font-weight: 600;
 }
 
@@ -56,7 +56,7 @@
 .git-panel-sync-counts {
   display: inline-flex;
   gap: 4px;
-  font-size: 11px;
+  font-size: calc(11px * var(--font-scale));
   font-variant-numeric: tabular-nums;
 }
 
@@ -76,7 +76,7 @@
   border-radius: var(--radius-xs);
   background: var(--control-hover);
   color: var(--text-soft);
-  font-size: 12px;
+  font-size: calc(12px * var(--font-scale));
   font-weight: 600;
 }
 
@@ -97,7 +97,7 @@
   border-radius: var(--radius-xs);
   background: var(--control-hover);
   color: var(--text-soft);
-  font-size: 12px;
+  font-size: calc(12px * var(--font-scale));
   font-weight: 600;
 }
 
@@ -130,7 +130,7 @@
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  font-size: 12px;
+  font-size: calc(12px * var(--font-scale));
   font-weight: 600;
   color: var(--text-soft);
 }
@@ -138,7 +138,7 @@
 .git-panel-pr-arrow {
   flex: none;
   color: var(--muted);
-  font-size: 12px;
+  font-size: calc(12px * var(--font-scale));
 }
 
 .git-panel-pr-base-input,
@@ -150,7 +150,7 @@
   border-radius: var(--radius-xs);
   background: var(--elevated);
   color: var(--text);
-  font-size: 12px;
+  font-size: calc(12px * var(--font-scale));
 }
 
 .git-panel-pr-body {
@@ -162,7 +162,7 @@
   border-radius: var(--radius-xs);
   background: var(--elevated);
   color: var(--text);
-  font-size: 12px;
+  font-size: calc(12px * var(--font-scale));
   font-family: inherit;
 }
 
@@ -181,7 +181,7 @@
   padding: 5px 8px;
   border-radius: var(--radius-xs);
   color: var(--text-soft);
-  font-size: 12px;
+  font-size: calc(12px * var(--font-scale));
 }
 
 .git-panel-pr-compare:hover {
@@ -194,7 +194,7 @@
   border-radius: var(--radius-xs);
   background: var(--accent);
   color: var(--accent-contrast);
-  font-size: 12px;
+  font-size: calc(12px * var(--font-scale));
   font-weight: 600;
 }
 
@@ -227,7 +227,7 @@
   padding: 4px 6px;
   border-radius: var(--radius-xs);
   color: var(--text-soft);
-  font-size: 12px;
+  font-size: calc(12px * var(--font-scale));
   text-align: left;
 }
 
@@ -258,7 +258,7 @@
   border-radius: var(--radius-xs);
   background: var(--elevated);
   color: var(--text);
-  font-size: 12px;
+  font-size: calc(12px * var(--font-scale));
 }
 
 .git-panel-new-branch-btn {
@@ -267,7 +267,7 @@
   border-radius: var(--radius-xs);
   background: var(--control-hover);
   color: var(--text-soft);
-  font-size: 12px;
+  font-size: calc(12px * var(--font-scale));
   font-weight: 600;
 }
 
@@ -282,7 +282,7 @@
 }
 
 .git-panel-title {
-  font-size: 12px;
+  font-size: calc(12px * var(--font-scale));
   font-weight: 600;
   color: var(--text-soft);
 }
@@ -317,7 +317,7 @@
   flex: none;
   width: 20px;
   font-family: var(--font-mono);
-  font-size: 11px;
+  font-size: calc(11px * var(--font-scale));
   color: var(--muted);
 }
 
@@ -337,7 +337,7 @@
   gap: 7px;
   overflow: hidden;
   font-family: var(--font-mono);
-  font-size: 11.5px;
+  font-size: calc(11.5px * var(--font-scale));
   white-space: nowrap;
 }
 
@@ -359,7 +359,7 @@
 }
 
 .git-panel-note {
-  font-size: 11.5px;
+  font-size: calc(11.5px * var(--font-scale));
   color: var(--muted);
   padding: 2px 0;
 }
@@ -373,7 +373,7 @@
   border-radius: var(--radius-xs);
   background: var(--surface, transparent);
   color: var(--text);
-  font-size: 12.5px;
+  font-size: calc(12.5px * var(--font-scale));
   font-family: inherit;
 }
 
@@ -387,7 +387,7 @@
   padding: 6px 12px;
   border-radius: var(--radius-xs);
   color: var(--text-soft);
-  font-size: 12.5px;
+  font-size: calc(12.5px * var(--font-scale));
 }
 
 .git-panel-cancel:hover {
@@ -400,7 +400,7 @@
   border-radius: var(--radius-xs);
   background: var(--accent);
   color: var(--accent-contrast);
-  font-size: 12.5px;
+  font-size: calc(12.5px * var(--font-scale));
   font-weight: 600;
 }
 
@@ -466,7 +466,7 @@ button.git-panel-file.expanded {
   gap: 8px;
   margin-bottom: 4px;
   color: var(--muted);
-  font-size: 11px;
+  font-size: calc(11px * var(--font-scale));
   font-weight: 600;
 }
 
@@ -480,7 +480,7 @@ button.git-panel-file.expanded {
   border-radius: var(--radius-xs);
   background: var(--control-hover);
   color: var(--text-soft);
-  font-size: 11px;
+  font-size: calc(11px * var(--font-scale));
   font-weight: 600;
 }
 
@@ -523,7 +523,7 @@ button.git-panel-file.expanded {
   justify-content: space-between;
   gap: 8px;
   color: var(--muted);
-  font-size: 11px;
+  font-size: calc(11px * var(--font-scale));
 }
 
 .git-panel-line-comment-meta span:first-child {
@@ -539,7 +539,7 @@ button.git-panel-file.expanded {
   background: var(--control-bg);
   color: var(--text-soft);
   font-family: var(--font-mono);
-  font-size: 11px;
+  font-size: calc(11px * var(--font-scale));
   text-overflow: ellipsis;
   white-space: nowrap;
 }
@@ -554,7 +554,7 @@ button.git-panel-file.expanded {
   background: var(--surface, transparent);
   color: var(--text);
   font: inherit;
-  font-size: 12px;
+  font-size: calc(12px * var(--font-scale));
 }
 
 .git-panel-line-comment textarea:focus {
@@ -580,7 +580,7 @@ button.git-panel-file.expanded {
   padding: 0 9px;
   border-radius: var(--radius-xs);
   color: var(--text-soft);
-  font-size: 11px;
+  font-size: calc(11px * var(--font-scale));
   font-weight: 600;
 }
 
@@ -602,7 +602,7 @@ button.git-panel-file.expanded {
   border-radius: var(--radius-xs);
   background: var(--control-hover);
   color: var(--danger);
-  font-size: 12px;
+  font-size: calc(12px * var(--font-scale));
   font-weight: 600;
 }
 
@@ -619,7 +619,7 @@ button.git-panel-file.expanded {
   border-radius: var(--radius-xs);
   background: var(--control-hover);
   color: var(--text-soft);
-  font-size: 12px;
+  font-size: calc(12px * var(--font-scale));
   font-weight: 600;
   margin-right: auto;
 }

@@ -823,28 +823,34 @@ Content`,
 		it("should install git package dependencies with --omit=dev", async () => {
 			const source = "git:github.com/user/repo";
 			const targetDir = join(agentDir, "git", "github.com", "user", "repo");
+			let stagingDir: string | undefined;
 			const runCommandSpy = vi
 				.spyOn(packageManager as any, "runCommand")
 				.mockImplementation(async (...callArgs: unknown[]) => {
 					const [command, args] = callArgs as [string, string[]];
 					if (command === "git" && args[0] === "clone") {
-						mkdirSync(targetDir, { recursive: true });
-						writeFileSync(join(targetDir, "package.json"), JSON.stringify({ name: "repo", version: "1.0.0" }));
+						stagingDir = args[2];
+						if (!stagingDir) throw new Error("Missing git clone destination");
+						mkdirSync(stagingDir, { recursive: true });
+						writeFileSync(join(stagingDir, "package.json"), JSON.stringify({ name: "repo", version: "1.0.0" }));
 					}
 				});
 
 			await packageManager.install(source);
 
-			expect(runCommandSpy).toHaveBeenCalledWith("npm", ["install", "--omit=dev"], { cwd: targetDir });
+			expect(runCommandSpy).toHaveBeenCalledWith("npm", ["install", "--omit=dev"], { cwd: stagingDir });
+			expect(existsSync(targetDir)).toBe(true);
 		});
 
 		it("should remove a newly created checkout when git clone fails", async () => {
 			const source = "git:github.com/user/repo";
 			const targetDir = join(agentDir, "git", "github.com", "user", "repo");
+			let stagingDir: string | undefined;
 			vi.spyOn(packageManager as any, "runCommand").mockImplementation(async (...callArgs: unknown[]) => {
 				const [command, args] = callArgs as [string, string[]];
 				if (command === "git" && args[0] === "clone") {
-					mkdirSync(targetDir, { recursive: true });
+					stagingDir = args[2];
+					if (!stagingDir) throw new Error("Missing git clone destination");
 					throw new Error("simulated git clone failure");
 				}
 			});
@@ -852,16 +858,20 @@ Content`,
 			await expect(packageManager.install(source)).rejects.toThrow("simulated git clone failure");
 
 			expect(existsSync(targetDir)).toBe(false);
+			expect(existsSync(stagingDir!)).toBe(false);
 		});
 
 		it("should remove a newly cloned checkout when dependency installation fails", async () => {
 			const source = "git:github.com/user/repo";
 			const targetDir = join(agentDir, "git", "github.com", "user", "repo");
+			let stagingDir: string | undefined;
 			vi.spyOn(packageManager as any, "runCommand").mockImplementation(async (...callArgs: unknown[]) => {
 				const [command, args] = callArgs as [string, string[]];
 				if (command === "git" && args[0] === "clone") {
-					mkdirSync(targetDir, { recursive: true });
-					writeFileSync(join(targetDir, "package.json"), JSON.stringify({ name: "repo", version: "1.0.0" }));
+					stagingDir = args[2];
+					if (!stagingDir) throw new Error("Missing git clone destination");
+					mkdirSync(stagingDir, { recursive: true });
+					writeFileSync(join(stagingDir, "package.json"), JSON.stringify({ name: "repo", version: "1.0.0" }));
 					return;
 				}
 				if (command === "npm") {
@@ -872,6 +882,57 @@ Content`,
 			await expect(packageManager.install(source)).rejects.toThrow("simulated dependency install failure");
 
 			expect(existsSync(targetDir)).toBe(false);
+			expect(existsSync(stagingDir!)).toBe(false);
+		});
+
+		it("should publish one complete checkout when git installs race", async () => {
+			const source = "git:github.com/user/repo";
+			const targetDir = join(agentDir, "git", "github.com", "user", "repo");
+			const concurrentPackageManager = new DefaultPackageManager({ cwd: tempDir, agentDir, settingsManager });
+			const cloneDirs: string[] = [];
+			let markClonesReady = () => {};
+			const clonesReady = new Promise<void>((resolve) => {
+				markClonesReady = resolve;
+			});
+			let releaseClones = () => {};
+			const cloneRelease = new Promise<void>((resolve) => {
+				releaseClones = resolve;
+			});
+			const runCommand = async (command: string, args: string[], options?: { cwd?: string }) => {
+				if (command === "git" && args[0] === "clone") {
+					const cloneDir = args[2];
+					if (!cloneDir) throw new Error("Missing git clone destination");
+					cloneDirs.push(cloneDir);
+					if (cloneDirs.length === 2) markClonesReady();
+					await cloneRelease;
+					if (existsSync(join(cloneDir, "package.json"))) {
+						throw new Error("git clone destination already contains a checkout");
+					}
+					writeFileSync(join(cloneDir, "package.json"), JSON.stringify({ name: "repo", version: "1.0.0" }));
+					return;
+				}
+				if (command === "npm") {
+					if (!options?.cwd) throw new Error("Missing dependency install directory");
+					writeFileSync(join(options.cwd, "dependencies-installed"), "yes");
+					return;
+				}
+				throw new Error(`Unexpected command: ${command} ${args.join(" ")}`);
+			};
+			vi.spyOn(packageManager as unknown as PackageManagerInternals, "runCommand").mockImplementation(runCommand);
+			vi.spyOn(concurrentPackageManager as unknown as PackageManagerInternals, "runCommand").mockImplementation(
+				runCommand,
+			);
+
+			const installs = [packageManager.install(source), concurrentPackageManager.install(source)];
+			await clonesReady;
+			releaseClones();
+			const results = await Promise.allSettled(installs);
+
+			expect(results.map((result) => result.status)).toEqual(["fulfilled", "fulfilled"]);
+			expect(new Set(cloneDirs).size).toBe(2);
+			expect(existsSync(join(targetDir, "package.json"))).toBe(true);
+			expect(existsSync(join(targetDir, "dependencies-installed"))).toBe(true);
+			expect(cloneDirs.every((cloneDir) => !existsSync(cloneDir))).toBe(true);
 		});
 
 		it("should reconcile an existing git checkout to a pinned ref during install", async () => {
@@ -946,19 +1007,23 @@ Content`,
 
 			const source = "git:github.com/user/repo";
 			const targetDir = join(agentDir, "git", "github.com", "user", "repo");
+			let stagingDir: string | undefined;
 			const runCommandSpy = vi
 				.spyOn(packageManager as any, "runCommand")
 				.mockImplementation(async (...callArgs: unknown[]) => {
 					const [command, args] = callArgs as [string, string[]];
 					if (command === "git" && args[0] === "clone") {
-						mkdirSync(targetDir, { recursive: true });
-						writeFileSync(join(targetDir, "package.json"), JSON.stringify({ name: "repo", version: "1.0.0" }));
+						stagingDir = args[2];
+						if (!stagingDir) throw new Error("Missing git clone destination");
+						mkdirSync(stagingDir, { recursive: true });
+						writeFileSync(join(stagingDir, "package.json"), JSON.stringify({ name: "repo", version: "1.0.0" }));
 					}
 				});
 
 			await packageManager.install(source);
 
-			expect(runCommandSpy).toHaveBeenCalledWith("pnpm", ["install"], { cwd: targetDir });
+			expect(runCommandSpy).toHaveBeenCalledWith("pnpm", ["install"], { cwd: stagingDir });
+			expect(existsSync(targetDir)).toBe(true);
 		});
 
 		it("should update git package dependencies with --omit=dev", async () => {

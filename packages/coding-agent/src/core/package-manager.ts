@@ -1,6 +1,17 @@
 import type { ChildProcess, ChildProcessByStdio } from "node:child_process";
 import { createHash } from "node:crypto";
-import { chmodSync, existsSync, mkdirSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
+import {
+	chmodSync,
+	existsSync,
+	mkdirSync,
+	mkdtempSync,
+	readdirSync,
+	readFileSync,
+	renameSync,
+	rmSync,
+	statSync,
+	writeFileSync,
+} from "node:fs";
 import { homedir } from "node:os";
 
 function getEnv(): NodeJS.ProcessEnv {
@@ -1893,20 +1904,27 @@ export class DefaultPackageManager implements PackageManager {
 			this.ensureGitIgnore(gitRoot);
 		}
 		mkdirSync(dirname(targetDir), { recursive: true });
+		const stagingDir = mkdtempSync(join(dirname(targetDir), `.${basename(targetDir)}-`));
 
 		try {
-			await this.runCommand("git", ["clone", source.repo, targetDir]);
+			await this.runCommand("git", ["clone", source.repo, stagingDir]);
 			if (source.ref) {
-				await this.runCommand("git", ["checkout", source.ref], { cwd: targetDir });
+				await this.runCommand("git", ["checkout", source.ref], { cwd: stagingDir });
 			}
-			const packageJsonPath = join(targetDir, "package.json");
+			const packageJsonPath = join(stagingDir, "package.json");
 			if (existsSync(packageJsonPath)) {
-				await this.runNpmCommand(this.getGitDependencyInstallArgs(), { cwd: targetDir });
+				await this.runNpmCommand(this.getGitDependencyInstallArgs(), { cwd: stagingDir });
 			}
-		} catch (error) {
-			rmSync(targetDir, { recursive: true, force: true });
-			this.pruneEmptyGitParents(targetDir, gitRoot);
-			throw error;
+			try {
+				renameSync(stagingDir, targetDir);
+			} catch (error) {
+				if (!existsSync(targetDir)) {
+					throw error;
+				}
+			}
+		} finally {
+			rmSync(stagingDir, { recursive: true, force: true });
+			this.pruneEmptyGitParents(stagingDir, gitRoot);
 		}
 	}
 

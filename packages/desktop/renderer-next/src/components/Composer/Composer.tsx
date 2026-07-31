@@ -580,6 +580,7 @@ export function Composer() {
               ref={fileInputRef}
               className="composer-file-input"
               type="file"
+              aria-label={t("Attach images", "附加图片")}
               accept="image/png,image/jpeg,image/gif,image/webp"
               multiple
               tabIndex={-1}

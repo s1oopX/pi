@@ -49,7 +49,7 @@ jobs:
       - name: Verify packaged artifact
         shell: pwsh
         run: |
-          $exe = "packages/desktop/release/win-unpacked/Pi Studio.exe"
+          $exe = "packages/desktop/release/win-unpacked/Pi Studio Dev.exe"
           if (-not (Test-Path $exe)) { throw "Missing packaged app: $exe" }
           $backend = "packages/desktop/release/win-unpacked/resources/pi-backend/pi-studio-backend.exe"
           if (-not (Test-Path $backend)) { throw "Missing packaged backend: $backend" }
