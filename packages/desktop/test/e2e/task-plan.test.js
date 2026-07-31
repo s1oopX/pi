@@ -59,7 +59,10 @@ test("task plan: update_plan calls render and replace the live workbench plan", 
 		assert.equal(await plan.locator(".workbench-plan-step.in_progress").count(), 1);
 		assert.equal(await plan.locator(".workbench-plan-step.pending").count(), 1);
 
+		await studio.page.locator(".workbench-header > .icon-button:last-child").click();
 		await studio.sendPrompt("Advance the plan");
+		await studio.page.locator(".top-bar-workbench-toggle").click();
+		await studio.page.locator('[data-workbench-view="plan"]').click();
 		await plan.getByText("Plan advanced", { exact: true }).waitFor({ state: "visible", timeout: REPLY_TIMEOUT_MS });
 		assert.equal(await plan.locator("progress").getAttribute("value"), "2");
 		assert.equal(await plan.locator(".workbench-plan-step.completed").count(), 2);
