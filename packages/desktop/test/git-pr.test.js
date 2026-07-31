@@ -28,10 +28,10 @@ function fakeExec(responses) {
 
 describe("parseGitRemoteUrl", () => {
 	it("parses https remotes with and without .git", () => {
-		assert.deepEqual(parseGitRemoteUrl("https://github.com/s1oopX/pi.git"), {
+		assert.deepEqual(parseGitRemoteUrl("https://github.com/s1oopX/pi-studio-dev.git"), {
 			host: "github.com",
 			owner: "s1oopX",
-			repo: "pi",
+			repo: "pi-studio-dev",
 		});
 		assert.deepEqual(parseGitRemoteUrl("https://github.com/owner/repo"), {
 			host: "github.com",

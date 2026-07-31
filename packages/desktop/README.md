@@ -1,8 +1,8 @@
 # Pi Studio
 
-A Windows desktop client for the [pi coding agent](https://github.com/earendil-works/pi-mono), built for engineers who bring their own model endpoints. Pi Studio wraps the pi agent runtime in an Electron shell with a React interface, adds a hardened security model on top of it, and runs multiple agent backends side by side — one conversation per workspace, several workspaces at once.
+A Windows desktop client for the [pi coding agent](https://github.com/earendil-works/pi), built for engineers who bring their own model endpoints. Pi Studio wraps the pi agent runtime in an Electron shell with a React interface, adds a hardened security model on top of it, and runs multiple agent backends side by side — one conversation per workspace, several workspaces at once.
 
-Pi Studio is a source fork of `earendil-works/pi-mono`. It is not published to npm; it ships as a portable Windows executable and tracks upstream through periodic snapshot merges (currently pi v0.82.1).
+Pi Studio is a source fork of `earendil-works/pi`. It is not published to npm; it ships as a portable Windows executable and tracks upstream through periodic snapshot merges.
 
 ---
 

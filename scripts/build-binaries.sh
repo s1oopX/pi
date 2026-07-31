@@ -83,7 +83,9 @@ fi
 if [[ -z "$OUTPUT_DIR" ]]; then
     OUTPUT_DIR="packages/coding-agent/binaries"
 fi
-if [[ "$OUTPUT_DIR" != /* ]]; then
+if [[ ${#OUTPUT_DIR} -ge 3 && ${OUTPUT_DIR:1:1} == ":" && ( ${OUTPUT_DIR:2:1} == "\\" || ${OUTPUT_DIR:2:1} == "/" ) ]]; then
+    OUTPUT_DIR="$(cygpath -u "$OUTPUT_DIR")"
+elif [[ "$OUTPUT_DIR" != /* ]]; then
     OUTPUT_DIR="$(pwd)/$OUTPUT_DIR"
 fi
 
@@ -222,7 +224,15 @@ for platform in "${PLATFORMS[@]}"; do
     if [[ "$platform" == windows-* ]]; then
         # Windows (zip)
         echo "Creating pi-$platform.zip..."
-        (cd "$platform" && zip -r ../pi-$platform.zip .)
+        if command -v zip >/dev/null 2>&1; then
+            (cd "$platform" && zip -r ../pi-$platform.zip .)
+        elif [[ -n "${WINDIR:-}" ]] && command -v cygpath >/dev/null 2>&1; then
+            windows_tar="$(cygpath -u "$WINDIR/System32/tar.exe")"
+            (cd "$platform" && "$windows_tar" -a -cf ../pi-$platform.zip .)
+        else
+            echo "zip is required to archive $platform"
+            exit 1
+        fi
     else
         # Unix platforms (tar.gz) - use wrapper directory for mise compatibility
         echo "Creating pi-$platform.tar.gz..."

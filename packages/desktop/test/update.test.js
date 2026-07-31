@@ -5,13 +5,13 @@ import { checkDesktopUpdate, isNewerDesktopVersion } from "../src/update.js";
 function latestRelease(overrides = {}) {
 	return {
 		tag_name: "v0.1.1",
-		html_url: "https://github.com/s1oopX/pi/releases/tag/v0.1.1",
+		html_url: "https://github.com/s1oopX/pi-studio-dev/releases/tag/v0.1.1",
 		draft: false,
 		prerelease: false,
 		assets: [
 			{
-				name: "PiStudio-0.1.1.exe",
-				browser_download_url: "https://github.com/s1oopX/pi/releases/download/v0.1.1/PiStudio-0.1.1.exe",
+				name: "PiStudio-Dev-0.1.1.exe",
+				browser_download_url: "https://github.com/s1oopX/pi-studio-dev/releases/download/v0.1.1/PiStudio-Dev-0.1.1.exe",
 			},
 		],
 		...overrides,
@@ -40,10 +40,10 @@ test("returns only the exact desktop release asset", async () => {
 	});
 	assert.equal(result.available, true);
 	assert.equal(result.latestVersion, "0.1.1");
-	assert.equal(result.releaseUrl, "https://github.com/s1oopX/pi/releases/tag/v0.1.1");
+	assert.equal(result.releaseUrl, "https://github.com/s1oopX/pi-studio-dev/releases/tag/v0.1.1");
 	assert.equal(
 		result.downloadUrl,
-		"https://github.com/s1oopX/pi/releases/download/v0.1.1/PiStudio-0.1.1.exe",
+		"https://github.com/s1oopX/pi-studio-dev/releases/download/v0.1.1/PiStudio-Dev-0.1.1.exe",
 	);
 
 	const missingAsset = await checkDesktopUpdate("0.1.0", {
@@ -57,7 +57,7 @@ test("rejects release and desktop asset URLs outside the configured repository",
 
 	for (const html_url of [
 		"https://example.com/v0.1.1",
-		"https://attacker@github.com/s1oopX/pi/releases/tag/v0.1.1",
+		"https://attacker@github.com/s1oopX/pi-studio-dev/releases/tag/v0.1.1",
 	]) {
 		await assert.rejects(
 			checkDesktopUpdate("0.1.0", {
@@ -68,17 +68,17 @@ test("rejects release and desktop asset URLs outside the configured repository",
 	}
 
 	for (const browser_download_url of [
-		"https://example.com/PiStudio-0.1.1.exe",
-		"https://attacker@github.com/s1oopX/pi/releases/download/v0.1.1/PiStudio-0.1.1.exe",
-		"https://github.com:444/s1oopX/pi/releases/download/v0.1.1/PiStudio-0.1.1.exe",
-		"https://github.com/s1oopX/pi/releases/download/v0.1.2/PiStudio-0.1.1.exe",
-		"https://github.com/s1oopX/pi/releases/download/v0.1.1/PiStudio-0.1.0.exe",
+		"https://example.com/PiStudio-Dev-0.1.1.exe",
+		"https://attacker@github.com/s1oopX/pi-studio-dev/releases/download/v0.1.1/PiStudio-Dev-0.1.1.exe",
+		"https://github.com:444/s1oopX/pi-studio-dev/releases/download/v0.1.1/PiStudio-Dev-0.1.1.exe",
+		"https://github.com/s1oopX/pi-studio-dev/releases/download/v0.1.2/PiStudio-Dev-0.1.1.exe",
+		"https://github.com/s1oopX/pi-studio-dev/releases/download/v0.1.1/PiStudio-Dev-0.1.0.exe",
 	]) {
 		await assert.rejects(
 			checkDesktopUpdate("0.1.0", {
 				fetchImpl: async () =>
 					Response.json(latestRelease({
-						assets: [{ name: "PiStudio-0.1.1.exe", browser_download_url }],
+						assets: [{ name: "PiStudio-Dev-0.1.1.exe", browser_download_url }],
 					})),
 			}),
 			/unexpected desktop download URL/,

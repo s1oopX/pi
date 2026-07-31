@@ -27,7 +27,7 @@ jobs:
   build:
     # Release automation targets the upstream repo; skip it on forks so a
     # stray v* tag here cannot attempt an npm publish.
-    if: github.repository == 's1oopX/pi'
+    if: github.repository == 'earendil-works/pi'
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -132,7 +132,7 @@ jobs:
           retention-days: 14
 
   build-desktop:
-    if: github.repository == 's1oopX/pi'
+    if: github.repository == 's1oopX/pi-studio-dev'
     runs-on: windows-latest
     permissions:
       contents: read

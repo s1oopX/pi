@@ -1,66 +1,50 @@
-# Pi Studio Dev v0.82.1-dev.1
+# Pi Studio Dev v0.83.0-dev.1
 
-首个面向个人开发者的社区 fork 发布。本版本在上游 Pi Studio 基础上，新增三项开箱即用的功能，并对 Windows 平台做了适配。
+本版本基于上游 Pi v0.83.0，继续以 Windows 便携版发布，并集中完成桌面工作台、远程工作区、自动化和 Codex 兼容能力。
 
-## 新功能
+## 重点更新
 
-### 项目快速启动
+### 多任务与远程工作区
 
-欢迎页一键创建项目骨架，无需手动 `npm init` 或查阅模板：
+- 支持多个并行智能体任务，并为同一 Git 仓库创建隔离 worktree。
+- 支持本地、SSH 和 WSL 工作区；远程 Agent、终端、Git、产物预览、信任与会话均在目标环境运行。
+- 支持安装或修复匹配版本的远程 Pi，并管理保留的 SSH worktree。
 
-- **Next.js 15**（App Router + TypeScript）
-- **Express API**（TypeScript + tsx）
-- **Node.js CLI**（Commander + TypeScript）
+### Git 与开发工作台
 
-点击模板卡片 → 选择父文件夹并输入项目名 → 自动复制模板、执行 `npm install` 与 `git init` → 完成后直接打开新项目。
+- Git 面板支持分支、提交、推送、逐文件和逐 hunk 审查、可恢复丢弃及 Pull Request 创建与反馈处理。
+- 新增任务计划、持久目标、并发终端标签、嵌入式浏览器和行级 diff 评论。
+- 产物面板支持文本、Markdown、HTML、图片、PDF、CSV、TSV 和 XLSX，并对本地及远程路径执行边界检查。
 
-### AI 服务商快速添加
+### 自动化、资源与能力
 
-自定义提供商页面预置三个国内常用服务商，免去手填 base URL：
+- 新增定时任务、心跳任务、自动化模板、运行历史与通知分流。
+- 新增本地记忆控制、线程置顶与归档、会话 JSONL 导入导出。
+- 支持 Pi 包管理、Codex 插件技能/命令/hooks，以及通过 `.mcp.json` 或插件清单配置 HTTP MCP 服务。
+- 新增可选的 Windows Computer Use 和自定义图片生成能力；高风险操作继续受工具审批模式约束。
 
-- **DeepSeek**（`https://api.deepseek.com`）
-- **通义千问 Qwen**（`https://dashscope.aliyuncs.com/compatible-mode/v1`）
-- **Moonshot Kimi**（`https://api.moonshot.cn/v1`）
+### 桌面体验
 
-选择预置后只需填入 API 密钥，点击「获取」会向服务商实时拉取真实模型列表——模型 ID 不写死，服务商增删模型时无需更新本应用。
+- 统一为更成熟的 Codex 风格桌面布局，重做侧边栏、输入区、设置、消息、重试提示、Git 面板和工作台视觉。
+- 支持中英文界面、字体缩放、实时 Agent 状态、流式工具输出、消息元数据、编辑后重发和更清晰的审批风险提示。
 
-### 镜像源切换
+## 重要修复
 
-设置中新增「镜像源」分区，覆盖三个包管理器：
+- 修复 Anthropic 兼容端点以 `/v1` 结尾时请求到 `/v1/v1/messages` 的问题。
+- 修复兼容服务商仅在 `name` 返回模型标识时无法保存已选模型的问题。
+- 修复压缩或分支摘要期间过早报告空闲、并发终端停止范围错误，以及 Git 包安装留下不完整目录的问题。
+- 加强远程命令转义、工作区路径约束、资源信任、Git 补丁哈希校验和未跟踪文件的可恢复处理。
+- 修复 Git 面板、侧边栏、顶栏和工作台未完整遵循字体缩放的问题。
 
-| 管理器 | 配置文件 | 预设源 |
-|---|---|---|
-| npm | `~/.npmrc` | 官方源、npmmirror（阿里） |
-| pip | `pip.conf` / `pip.ini` | 官方源（PyPI）、清华 TUNA、阿里云 |
-| cargo | `~/.cargo/config.toml` | 官方源（crates.io）、清华 TUNA |
+## 下载与运行
 
-切换会写入各工具自己的配置文件，保留原有注释、auth token 与无关配置；对默认源的选择不会为不存在的配置文件创建空文件。
+从 [Releases](https://github.com/s1oopX/pi-studio-dev/releases/latest) 下载：
 
-## 安全与正确性修复
+- `PiStudio-Dev-0.83.0-dev.1.exe`
+- `SHA256SUMS`
 
-本发布在审查中修复了若干缺陷：
+当前构建面向 64 位 Windows 10 和 Windows 11，是无需安装的便携式可执行文件。应用尚未代码签名，Windows SmartScreen 可能显示未知发布者；运行前请使用 `SHA256SUMS` 校验文件。
 
-- 项目模板的 `template` 与项目名参数现经白名单与路径校验，无法通过 `..` 进行路径穿越。
-- Windows 上 `npm install` 现通过 `cmd.exe` 调用，修复了此前必然报 `ENOENT` 的问题。
-- 镜像源切换不再丢失 `~/.cargo/config.toml` 中 `[source.crates-io]` 的用户自定义键。
-- 镜像源读取改用 npm 的 last-wins 语义，UI 显示与 npm 实际使用的源一致。
-- 修复了未定义 CSS token 导致的设置项 hover 边框失效。
+首次启动后，在设置中添加模型服务商或自定义接口，再打开本地目录、WSL 发行版或 SSH 主机。项目资源默认不受信任，确认来源后再授权加载。
 
-## Fork 基础设施
-
-- 上游专用的 npm 发布、模型目录发布、issue 分析等自动化作业已加上仓库守卫，在本 fork 上不再误触发。
-- Windows SmartScreen 首次运行提示的处理方式见[下载安装说明](README.zh-CN.md#下载安装)。
-
-## 系统要求
-
-- Windows 11 / Windows 10（64 位）
-- 至少 4 GB 内存（建议 8 GB）
-- 需要网络连接以调用 AI 模型 API
-
-## 下载
-
-见 [Releases 页面](https://github.com/s1oopX/pi/releases/latest)。
-
-## 致谢
-
-本项目 fork 自 [earendil-works/pi](https://github.com/earendil-works/pi)，感谢原作者的杰出工作。
+本项目是 [earendil-works/pi](https://github.com/earendil-works/pi) 的独立 fork，与上游不存在官方隶属或背书关系。

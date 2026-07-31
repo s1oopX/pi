@@ -2,12 +2,12 @@
 	"name": "@s1oopx/pi-studio-dev",
 	"version": "0.83.0-dev.1",
 	"private": true,
-	"description": "Pi Studio desktop client for third-party API service support",
+	"description": "Windows desktop workspace for the Pi coding agent",
 	"author": "s1oopX <s1oopp1337@gmail.com>",
-	"homepage": "https://github.com/s1oopX/pi",
+	"homepage": "https://github.com/s1oopX/pi-studio-dev",
 	"repository": {
 		"type": "git",
-		"url": "https://github.com/s1oopX/pi.git"
+		"url": "https://github.com/s1oopX/pi-studio-dev.git"
 	},
 	"type": "module",
 	"main": "src/main.js",

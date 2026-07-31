@@ -7,6 +7,16 @@
 - Added Codex plugin HTTP MCP support: manifest `mcpServers` and root `.mcp.json` configs expose connect and remote tools, complete browser OAuth, persist credentials, and restore authenticated connections.
 - Added `.codex-plugin/plugin.json` compatibility: declared Codex skills load as Pi skills, commands load as prompt templates, and command hooks run for `SessionStart`, `UserPromptSubmit`, and successful `PostToolUse` events.
 - Added `input` and `env` options to `pi.exec()` for stdin payloads and per-command environment variables.
+- Added desktop RPC package management for installing or removing configured Pi packages and returning their loaded resource diagnostics.
+- Added a bounded local memory store with desktop RPC controls for opt-in memory use, generation, and reset.
+- Added desktop RPC settings for user-configured image-generation providers and models.
+- Added package prompt-template metadata for preconfigured scheduled tasks.
+- Added execution-scoped `abort_bash` requests so concurrent RPC commands can be stopped independently.
+
+### Fixed
+
+- Fixed `waitForIdle()` reporting idle while manual compaction, auto-compaction, or branch summarization was still running.
+- Fixed Git package installation to clone into a staging directory and atomically promote completed installs, avoiding partial targets during failures or concurrent installs.
 
 ## [0.83.0] - 2026-07-29
 

@@ -1,5 +1,11 @@
 # Changelog
 
+## [Unreleased]
+
+### Fixed
+
+- Fixed Anthropic-compatible custom providers whose base URL ends in `/v1` sending requests to the duplicated `/v1/v1/messages` path.
+
 ## [0.83.0] - 2026-07-29
 
 ### Breaking Changes

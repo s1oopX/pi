@@ -86,7 +86,7 @@ function run(command, args, options = {}) {
 	const result = spawnSync(command, args, {
 		cwd: options.cwd,
 		encoding: "utf8",
-		shell: process.platform === "win32",
+		shell: options.shell ?? process.platform === "win32",
 		stdio: options.capture ? ["inherit", "pipe", "inherit"] : "inherit",
 	});
 
@@ -103,6 +103,14 @@ function readPackageJson(directory) {
 
 function commandExists(command) {
 	return spawnSync(command, ["--version"], { stdio: "ignore" }).status === 0;
+}
+
+function getBashCommand() {
+	if (process.platform !== "win32") return "bash";
+	const gitExecPath = run("git", ["--exec-path"], { capture: true }).trim();
+	const bash = join(resolve(gitExecPath, "..", "..", ".."), "bin", "bash.exe");
+	if (!existsSync(bash)) throw new Error(`Git Bash not found: ${bash}`);
+	return bash;
 }
 
 function isInsidePath(child, parent) {
@@ -150,15 +158,20 @@ function buildBunBinaryRelease(targetDirectory, archiveDirectory) {
 	}
 	const platform = currentBinaryPlatform();
 	const binaryBuildDirectory = join(archiveDirectory, "binary-build");
-	run("./scripts/build-binaries.sh", [
-		"--skip-install",
-		"--skip-deps",
-		"--skip-build",
-		"--platform",
-		platform,
-		"--out",
-		binaryBuildDirectory,
-	]);
+	run(
+		getBashCommand(),
+		[
+			"./scripts/build-binaries.sh",
+			"--skip-install",
+			"--skip-deps",
+			"--skip-build",
+			"--platform",
+			platform,
+			"--out",
+			binaryBuildDirectory,
+		],
+		{ shell: false },
+	);
 	rmSync(targetDirectory, { force: true, recursive: true });
 	cpSync(join(binaryBuildDirectory, platform), targetDirectory, { recursive: true });
 	const archiveName = platform.startsWith("windows-") ? `pi-${platform}.zip` : `pi-${platform}.tar.gz`;
@@ -224,7 +237,7 @@ for (const pkg of packages) {
 }
 
 if (!options.skipTest) {
-	run("./test.sh", [], { cwd: repoRoot });
+	run(getBashCommand(), ["./test.sh"], { cwd: repoRoot, shell: false });
 }
 
 const tarballs = new Map();

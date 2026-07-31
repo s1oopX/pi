@@ -1,5 +1,5 @@
-const RELEASE_API_URL = "https://api.github.com/repos/s1oopX/pi/releases/latest";
-const RELEASE_PAGE_PREFIX = "/s1oopX/pi/releases/";
+const RELEASE_API_URL = "https://api.github.com/repos/s1oopX/pi-studio-dev/releases/latest";
+const RELEASE_PAGE_PREFIX = "/s1oopX/pi-studio-dev/releases/";
 const RELEASE_DOWNLOAD_PREFIX = `${RELEASE_PAGE_PREFIX}download/`;
 const DEFAULT_TIMEOUT_MS = 10000;
 
@@ -51,7 +51,7 @@ function validateReleaseUrl(value) {
  * @param {string} version
  */
 function getDesktopDownloadUrl(release, tagName, version) {
-	const assetName = `PiStudio-${version}.exe`;
+	const assetName = `PiStudio-Dev-${version}.exe`;
 	const asset = Array.isArray(release.assets)
 		? release.assets.find(
 				(/** @type {{ name?: unknown, browser_download_url?: unknown }} */ candidate) =>
