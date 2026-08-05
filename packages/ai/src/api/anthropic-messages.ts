@@ -30,6 +30,7 @@ import type {
 	ToolResultMessage,
 } from "../types.ts";
 import { splitDeferredTools } from "../utils/deferred-tools.ts";
+import { MAX_PROVIDER_ERROR_BODY_CHARS, truncateErrorText } from "../utils/error-body.ts";
 import { AssistantMessageEventStream } from "../utils/event-stream.ts";
 import { headersToRecord } from "../utils/headers.ts";
 import { parseJsonWithRepair, parseStreamingJson } from "../utils/json-parse.ts";
@@ -314,7 +315,7 @@ const ANTHROPIC_MESSAGE_EVENTS: ReadonlySet<string> = new Set([
 ]);
 
 function flushSseEvent(state: SseDecoderState): ServerSentEvent | null {
-	if (!state.event && state.data.length === 0) {
+	if (!state.event && state.data.length === 0 && state.raw.length === 0) {
 		return null;
 	}
 
@@ -453,13 +454,29 @@ async function* iterateAnthropicEvents(
 
 	let sawMessageStart = false;
 	let sawMessageEnd = false;
+	let firstUnrecognizedSample = "";
 
 	for await (const sse of iterateSseMessages(response.body, signal)) {
 		if (sse.event === "error") {
-			throw new Error(sse.data);
+			// Anthropic/proxy mid-stream errors are JSON; surface the embedded message
+			// (e.g. {"error":{"message":"Overloaded"}}) instead of the raw blob.
+			let detail = sse.data;
+			try {
+				const parsed = JSON.parse(sse.data) as { error?: { message?: string }; message?: string };
+				detail = parsed?.error?.message ?? parsed?.message ?? sse.data;
+			} catch {
+				// Not JSON; use the raw data as-is.
+			}
+			throw new Error(detail);
 		}
 
 		if (!ANTHROPIC_MESSAGE_EVENTS.has(sse.event ?? "")) {
+			// Capture a sample of unrecognized SSE so a non-Anthropic-shaped 200 response
+			// (common with aggregator proxies) surfaces a useful error instead of a cryptic
+			// "stream ended without a stop reason".
+			if (!firstUnrecognizedSample) {
+				firstUnrecognizedSample = (sse.data || sse.raw.join("\n")).slice(0, 200);
+			}
 			continue;
 		}
 
@@ -481,6 +498,10 @@ async function* iterateAnthropicEvents(
 
 	if (sawMessageStart && !sawMessageEnd) {
 		throw new Error("Anthropic stream ended before message_stop");
+	}
+	if (!sawMessageStart) {
+		const sample = firstUnrecognizedSample ? `; first data: ${firstUnrecognizedSample}` : "; no SSE data received";
+		throw new Error(`Anthropic stream produced no message_start event${sample}`);
 	}
 }
 
@@ -557,7 +578,24 @@ export const stream: StreamFunction<"anthropic-messages", AnthropicOptions> = (
 				maxRetries: 0,
 			};
 			const response = await retryProviderRequest(
-				() => client.messages.create({ ...params, stream: true }, requestOptions).asResponse(),
+				async () => {
+					const r = await client.messages.create({ ...params, stream: true }, requestOptions).asResponse();
+					if (!r.ok) {
+						// The Anthropic SDK throws before asResponse() resolves, but compatible injected
+						// clients may return the raw non-2xx response instead.
+						let bodyText = "";
+						try {
+							bodyText = await r.text();
+						} catch {
+							// Body unreadable or already consumed; status is still useful.
+						}
+						const detail = truncateErrorText(bodyText.trim(), MAX_PROVIDER_ERROR_BODY_CHARS);
+						const error = new Error(`Anthropic request failed (HTTP ${r.status})${detail ? `: ${detail}` : ""}`);
+						Object.assign(error, { status: r.status, headers: r.headers });
+						throw error;
+					}
+					return r;
+				},
 				{
 					maxRetries: options?.maxRetries,
 					maxRetryDelayMs: options?.maxRetryDelayMs,

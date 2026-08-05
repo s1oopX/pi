@@ -323,4 +323,79 @@ describe("Anthropic raw SSE parsing", () => {
 		expect(result.errorMessage).toBeUndefined();
 		expect(result.content).toEqual([{ type: "text", text: "Hello" }]);
 	});
+
+	it("surfaces non-2xx response bodies from injected compatible clients", async () => {
+		const model = getModel("anthropic", "claude-haiku-4-5");
+		const context: Context = {
+			messages: [{ role: "user", content: "Say hello.", timestamp: Date.now() }],
+		};
+		const response = new Response('{"error":{"message":"quota exhausted"}}', {
+			status: 429,
+			headers: { "content-type": "application/json" },
+		});
+
+		const result = await streamAnthropic(model, context, {
+			client: createFakeAnthropicClient(response),
+		}).result();
+
+		expect(result.stopReason).toBe("error");
+		expect(result.errorMessage).toContain("Anthropic request failed (HTTP 429)");
+		expect(result.errorMessage).toContain("quota exhausted");
+	});
+
+	it("preserves non-2xx response bodies thrown by the Anthropic SDK", async () => {
+		const model = getModel("anthropic", "claude-haiku-4-5");
+		const context: Context = {
+			messages: [{ role: "user", content: "Say hello.", timestamp: Date.now() }],
+		};
+
+		const result = await streamAnthropic(model, context, {
+			apiKey: "test",
+			fetch: async () =>
+				new Response('{"type":"error","error":{"type":"rate_limit_error","message":"gateway quota exhausted"}}', {
+					status: 429,
+					headers: { "content-type": "application/json" },
+				}),
+		}).result();
+
+		expect(result.stopReason).toBe("error");
+		expect(result.errorMessage).toContain("429");
+		expect(result.errorMessage).toContain("gateway quota exhausted");
+	});
+
+	it("surfaces the message from a mid-stream Anthropic error event", async () => {
+		const model = getModel("anthropic", "claude-haiku-4-5");
+		const context: Context = {
+			messages: [{ role: "user", content: "Say hello.", timestamp: Date.now() }],
+		};
+		const response = createSseResponse([
+			{ event: "error", data: '{"type":"error","error":{"type":"overloaded_error","message":"Overloaded"}}' },
+		]);
+
+		const result = await streamAnthropic(model, context, {
+			client: createFakeAnthropicClient(response),
+		}).result();
+
+		expect(result.stopReason).toBe("error");
+		expect(result.errorMessage).toBe("Overloaded");
+	});
+
+	it("includes a raw non-SSE 200 response in the protocol error", async () => {
+		const model = getModel("anthropic", "claude-haiku-4-5");
+		const context: Context = {
+			messages: [{ role: "user", content: "Say hello.", timestamp: Date.now() }],
+		};
+		const response = new Response('{"error":{"message":"wrong upstream route"}}', {
+			status: 200,
+			headers: { "content-type": "application/json" },
+		});
+
+		const result = await streamAnthropic(model, context, {
+			client: createFakeAnthropicClient(response),
+		}).result();
+
+		expect(result.stopReason).toBe("error");
+		expect(result.errorMessage).toContain("Anthropic stream produced no message_start event");
+		expect(result.errorMessage).toContain("wrong upstream route");
+	});
 });
