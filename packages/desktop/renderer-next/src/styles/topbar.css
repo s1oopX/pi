@@ -21,12 +21,18 @@
 .top-bar-context {
   min-width: 0;
   display: flex;
-  flex-direction: column;
-  align-items: flex-start;
+  align-items: center;
   justify-content: center;
-  gap: 1px;
+  gap: 8px;
   font-size: var(--font-size-ui);
   line-height: var(--line-height-ui);
+}
+
+.top-bar-context-icon {
+  width: 16px;
+  height: 16px;
+  flex: 0 0 16px;
+  color: var(--muted);
 }
 
 .top-bar-title {
@@ -39,30 +45,14 @@
   white-space: nowrap;
 }
 
-.top-bar-meta {
-  min-width: 0;
-  display: flex;
-  align-items: center;
-  gap: var(--space-3);
-}
-
-.top-bar-workspace {
-  max-width: min(28vw, 260px);
-  overflow: hidden;
-  color: var(--muted);
-  font-size: var(--font-size-compact);
-  line-height: 15px;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
 .top-bar-git {
   min-width: 0;
   max-width: min(24vw, 220px);
   display: inline-flex;
   align-items: center;
   gap: var(--space-2);
-  padding: 0 4px;
+  margin-left: 2px;
+  padding: 2px 5px;
   border-radius: var(--radius-xs);
   color: var(--muted);
   font-size: var(--font-size-compact);
@@ -282,7 +272,6 @@
     padding-inline: 12px 10px;
   }
 
-  .top-bar-workspace,
   .top-bar-git {
     display: none;
   }

@@ -1,9 +1,8 @@
 /**
- * Pure task-registry logic for parallel tasks (M2 phase B1 — see
- * docs/parallel-tasks-m2-tdd.md). Two-tier model: the active task renders
- * through the existing AppState; every task additionally keeps this
- * lightweight summary fed by tagged backend events. All functions are
- * immutable state transitions so they unit-test without the store.
+ * Pure task-registry logic for parallel tasks. The active task renders through
+ * the existing AppState; every task additionally keeps this lightweight
+ * summary fed by tagged backend events. All functions are immutable state
+ * transitions so they unit-test without the store.
  */
 
 export const PRIMARY_TASK_ID = "main";

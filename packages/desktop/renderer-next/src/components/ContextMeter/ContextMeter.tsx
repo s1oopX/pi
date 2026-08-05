@@ -37,8 +37,6 @@ export function ContextMeter() {
   const isCompacting = compactionActivity !== null || Boolean(session?.isCompacting);
   const hasStats = messageCount > 0 || tokensIn > 0 || tokensOut > 0 || cost > 0;
 
-  // Nothing meaningful to show until a workspace is loaded with some history or
-  // an active run. Hidden during workspace switches so it fades in with the rest.
   const active = isStreaming || isCompacting;
   const visible = !workspaceLoading && (active || hasStats);
 
@@ -161,7 +159,7 @@ export function ContextMeter() {
                 />
               )}
             </svg>
-            <span className="context-meter-value">{percentLabel}</span>
+            {hasStats && <span className="context-meter-value">{percentLabel}</span>}
           </>
         )}
       </button>
@@ -173,55 +171,18 @@ export function ContextMeter() {
           role="dialog"
           aria-label={t("Context usage", "上下文用量")}
         >
-          <div className="context-meter-popover-title">{t("Context window", "上下文窗口")}</div>
+          <div className="context-meter-popover-title">{t("Context window:", "背景信息窗口：")}</div>
+          <div className="context-meter-popover-usage">
+            {contextPercent !== null
+              ? t("{percent}% used", "{percent}% 已用", { percent: Math.round(contextPercent) })
+              : t("Usage unavailable", "用量未知")}
+          </div>
           {contextUsage && (
-            <div className="context-meter-popover-section">
-              <div className="context-meter-popover-row">
-                <span>{contextPercent !== null ? t("Used", "已用") : t("Tokens", "令牌")}</span>
-                <span>
-                  {contextPercent !== null
-                    ? t("{percent}% used", "{percent}% 已用", { percent: Math.round(contextPercent) })
-                    : t("Unknown", "未知")}
-                </span>
-              </div>
-              <span className={`context-usage-track ${tone}`}>
-                <span
-                  className="context-usage-fill"
-                  style={{ width: `${contextPercent ?? 0}%` }}
-                />
-              </span>
-              <div className="context-meter-popover-row">
-                <span>{t("Window", "窗口")}</span>
-                <span>
-                  {contextUsage.tokens?.toLocaleString() ?? "?"} / {contextUsage.contextWindow.toLocaleString()}
-                </span>
-              </div>
-            </div>
-          )}
-          {messageCount > 0 && (
-            <div className="context-meter-popover-row">
-              <span>{t("Messages", "消息")}</span>
-              <span>{messageCount.toLocaleString()}</span>
-            </div>
-          )}
-          {(tokensIn > 0 || tokensOut > 0) && (
-            <div className="context-meter-popover-row">
-              <span>{t("Tokens", "令牌")}</span>
-              <span title={t("Input {input}, output {output}", "输入 {input}，输出 {output}", {
-                input: tokensIn.toLocaleString(),
-                output: tokensOut.toLocaleString(),
-              })}>
-                {t("{input} in · {output} out", "输入 {input} · 输出 {output}", {
-                  input: formatTokens(tokensIn),
-                  output: formatTokens(tokensOut),
-                })}
-              </span>
-            </div>
-          )}
-          {cost > 0 && (
-            <div className="context-meter-popover-row">
-              <span>{t("Cost", "费用")}</span>
-              <span>${cost.toFixed(4)}</span>
+            <div className="context-meter-popover-tokens">
+              {t("{used} tokens used, {total} total", "已用 {used} 标记，共 {total}", {
+                used: formatTokens(contextUsage.tokens ?? 0),
+                total: formatTokens(contextUsage.contextWindow),
+              })}
             </div>
           )}
         </div>
@@ -231,7 +192,7 @@ export function ContextMeter() {
 }
 
 function formatTokens(value: number): string {
-  if (value >= 1_000_000) return `${(value / 1_000_000).toFixed(1)}M`;
-  if (value >= 1_000) return `${(value / 1_000).toFixed(1)}k`;
+  if (value >= 1_000_000) return `${(value / 1_000_000).toFixed(1).replace(".0", "")}M`;
+  if (value >= 1_000) return `${(value / 1_000).toFixed(1).replace(".0", "")}k`;
   return String(value);
 }

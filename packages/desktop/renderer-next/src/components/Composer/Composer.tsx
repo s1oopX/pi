@@ -23,6 +23,7 @@ import { InlineApproval, isInteractiveExtensionUIRequest } from "../Message/Inli
 import { showToast } from "../Toast";
 import { isActiveBackendReady } from "../../store/taskRegistry";
 import { findLatestTaskGoal, findLatestTaskPlan } from "../Workbench/planState";
+import { isSameWorkspace } from "../Sidebar/sidebarState";
 import {
   MAX_ATTACHMENT_COUNT,
   MAX_ATTACHMENT_MEGABYTES,
@@ -80,6 +81,7 @@ export function Composer() {
   const { t } = useI18n();
   const suggestionsListboxId = useId();
   const workspaceCwd = useStore((state) => state.workspaceCwd);
+  const taskCwd = useStore((state) => state.taskCwd);
   const sessionId = useStore((state) => state.session?.sessionId ?? null);
   const composerContextKey = getComposerWorkspaceDraftKey(workspaceCwd, sessionId);
   const composerContextRef = useRef({ key: composerContextKey, cwd: workspaceCwd, sessionId });
@@ -123,6 +125,21 @@ export function Composer() {
   const attachmentsRef = useRef(attachments);
   inputRef.current = input;
   attachmentsRef.current = attachments;
+
+  const showWorkspacePicker = messages.length === 0 && !isStreaming;
+  const isTaskContext = Boolean(taskCwd && isSameWorkspace(workspaceCwd, taskCwd));
+
+  async function handleChooseWorkspace() {
+    if (workspaceLoading || isStreaming) return;
+    try {
+      const selection = await api.chooseWorkspace();
+      if (selection.changed) await useStore.getState().resetForWorkspace(selection.cwd);
+    } catch (error) {
+      showToast(t("Failed to choose workspace: {error}", "选择工作区失败：{error}", {
+        error: error instanceof Error ? error.message : String(error),
+      }), "error");
+    }
+  }
 
   const token = getActiveToken(input, caret);
   const approvalRequests = useMemo(
@@ -622,7 +639,7 @@ export function Composer() {
         </div>
       )}
       <form
-        className={`composer ${draggingFiles ? "drag-active" : ""}`}
+        className={`composer${showWorkspacePicker ? " with-workspace-picker" : ""}${draggingFiles ? " drag-active" : ""}`}
         onSubmit={handleSubmit}
         onDragEnter={handleDragEnter}
         onDragOver={handleDragOver}
@@ -679,6 +696,22 @@ export function Composer() {
               </div>
             ))}
           </div>
+        )}
+        {showWorkspacePicker && (
+          <button
+            className="composer-workspace-picker"
+            type="button"
+            onClick={() => void handleChooseWorkspace()}
+            disabled={workspaceLoading}
+            title={!isTaskContext && workspaceCwd ? workspaceCwd : t("Choose a project", "选择项目")}
+          >
+            <Icon name="folder" size={17} strokeWidth={1.5} />
+            <span>
+              {isTaskContext
+                ? t("Choose project", "选择项目")
+                : workspaceCwd.split(/[\\/]/).filter(Boolean).pop() ?? t("Choose project", "选择项目")}
+            </span>
+          </button>
         )}
         <div className="composer-input-wrap">
           {menuOpen && suggestions.length > 0 && (
@@ -766,7 +799,7 @@ export function Composer() {
               disabled={submitting || readingAttachments}
               onClick={() => fileInputRef.current?.click()}
             >
-              <Icon name="paperclip" size={18} />
+              <Icon name="plus" size={18} />
             </button>
             <PermissionSelector />
           </div>

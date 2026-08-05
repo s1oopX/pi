@@ -10,7 +10,7 @@ const THINKING_LEVELS: ThinkingLevel[] = ["off", "minimal", "low", "medium", "hi
 const THINKING_LEVEL_SUFFIX_PATTERN = /^(.*?)(?:[-_: ])(off|minimal|low|medium|high|xhigh|max)$/i;
 
 // Which submenu (if any) is expanded in the popover.
-type Submenu = null | "model" | "thinking" | "speed";
+type Submenu = null | "model" | "thinking";
 
 interface ModelOption {
   key: string;
@@ -131,7 +131,7 @@ function getOptionTargetForThinking(option: ModelOption, level: ThinkingLevel): 
   return option.byLevel[level] ?? option.byLevel.medium ?? option.fallback;
 }
 
-// Codex-style model picker: a compact pill in the composer footer that opens a
+// Codex-style model picker: a compact trigger in the composer footer that opens a
 // tiered menu (model / reasoning level), each row expanding into a submenu.
 export function ModelSelector() {
   const { t } = useI18n();
@@ -168,15 +168,18 @@ export function ModelSelector() {
 
   function thinkingLabel(level: ThinkingLevel): string {
     if (level === "off") return t("Off", "关闭");
-    if (level === "minimal") return t("Minimal", "最少");
+    if (level === "minimal") return t("Minimum", "最低");
     if (level === "low") return t("Low", "低");
     if (level === "medium") return t("Medium", "中");
     if (level === "high") return t("High", "高");
+    if (level === "xhigh") return t("Extra high", "极高");
     return t("Maximum", "最高");
   }
 
   function compactModelLabel(value: string): string {
     const trimmed = value.trim();
+    const deepseekMatch = /^dee[pk]seek[-_\s]?v?(\d+(?:\.\d+)?)/i.exec(trimmed);
+    if (deepseekMatch) return `DeepSeek v${deepseekMatch[1]}`;
     const grokMatch = /^grok[-_\s]?(\d+(?:\.\d+)?)/i.exec(trimmed);
     if (grokMatch) return `grok ${grokMatch[1]}`;
     const gptMatch = /^gpt[-_\s]?(\d+(?:\.\d+)?)/i.exec(trimmed);
@@ -341,17 +344,11 @@ export function ModelSelector() {
         aria-expanded={open}
         aria-controls={popoverId}
         title={backendStatus.ready
-          ? t("Model, reasoning effort, and speed", "模型、推理强度和速度")
+          ? t("Select model", "选择模型")
           : t("The agent backend is not ready", "智能体后端尚未就绪")}
       >
         <span className="model-picker-bolt" aria-hidden="true">
-          <svg viewBox="0 0 24 24" width="13" height="13">
-            <path
-              d="M13 2 4 14h7l-1 8 9-12h-7z"
-              fill="currentColor"
-              stroke="none"
-            />
-          </svg>
+          <Icon name="zap" size={13} />
         </span>
         <span className="model-picker-name">{compactModelName}</span>
         {modelSupportsThinking && effectiveThinkingLevel !== "off" && (
@@ -366,7 +363,7 @@ export function ModelSelector() {
         <div
           id={popoverId}
           ref={popoverRef}
-          className="model-picker-popover"
+          className={`model-picker-popover ${submenu ? "has-submenu" : ""}`}
           role="menu"
           onKeyDown={handlePopoverKeyDown}
           onBlur={(event) => {
@@ -374,8 +371,7 @@ export function ModelSelector() {
             closeMenu();
           }}
         >
-          {submenu === null && (
-            <>
+          <div className="model-picker-panel model-picker-main-panel">
               <button
                 type="button"
                 className="model-picker-row"
@@ -400,35 +396,10 @@ export function ModelSelector() {
                   <span className="model-picker-row-arrow" aria-hidden="true">&#8250;</span>
                 </button>
               )}
-              <button
-                type="button"
-                className="model-picker-row"
-                role="menuitem"
-                tabIndex={-1}
-                onClick={() => setSubmenu("speed")}
-              >
-                <span className="model-picker-row-label">{t("Speed", "速度")}</span>
-                <span className="model-picker-row-value">{t("Fast", "快速")}</span>
-                <span className="model-picker-row-arrow" aria-hidden="true">&#8250;</span>
-              </button>
-              <div className="model-picker-separator" role="separator" />
-              <button
-                type="button"
-                className="model-picker-row model-picker-reset"
-                role="menuitem"
-                tabIndex={-1}
-                onClick={handleResetDefaults}
-              >
-                <span className="model-picker-row-label">{t("Reset to defaults", "重置为默认设置")}</span>
-                <span className="model-picker-reset-icon" aria-hidden="true">
-                  <Icon name="rotate-ccw" size={15} strokeWidth={1.4} />
-                </span>
-              </button>
-            </>
-          )}
+          </div>
 
           {submenu === "model" && (
-            <>
+            <div className="model-picker-panel model-picker-submenu-panel">
               <button
                 type="button"
                 className="model-picker-back"
@@ -478,11 +449,11 @@ export function ModelSelector() {
                   );
                 })}
               </div>
-            </>
+            </div>
           )}
 
           {submenu === "thinking" && (
-            <>
+            <div className="model-picker-panel model-picker-submenu-panel model-picker-thinking-panel">
               <button
                 type="button"
                 className="model-picker-back"
@@ -516,44 +487,9 @@ export function ModelSelector() {
                   );
                 })}
               </div>
-            </>
+            </div>
           )}
 
-          {submenu === "speed" && (
-            <>
-              <button
-                type="button"
-                className="model-picker-back"
-                onClick={() => setSubmenu(null)}
-                role="menuitem"
-                tabIndex={-1}
-              >
-                <span aria-hidden="true">&#8249;</span>
-                <span>{t("Speed", "速度")}</span>
-              </button>
-              <div className="model-picker-sublist">
-                <button
-                  type="button"
-                  className="model-picker-suboption active"
-                  role="menuitemradio"
-                  tabIndex={-1}
-                  aria-checked="true"
-                  title={t("Speed is currently determined by the selected provider and model.", "当前速度由所选提供商和模型决定。")}
-                  onClick={() => closeMenu(true)}
-                >
-                  <span className="model-picker-suboption-copy">
-                    <span className="model-picker-suboption-name">{t("Fast", "快速")}</span>
-                    <span className="model-picker-suboption-provider">
-                      {t("Managed by the provider for now", "暂由提供商决定")}
-                    </span>
-                  </span>
-                  <span className="model-picker-check" aria-hidden="true">
-                    <Icon name="check" size={14} />
-                  </span>
-                </button>
-              </div>
-            </>
-          )}
         </div>
       )}
     </div>

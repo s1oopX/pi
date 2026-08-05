@@ -58,7 +58,7 @@
 .automations-heading h1 {
   margin: 0;
   font-size: var(--font-size-title);
-  font-weight: 650;
+  font-weight: 600;
   line-height: var(--line-height-title);
 }
 
@@ -299,7 +299,7 @@
 .automation-title-row h2 {
   margin: 0 var(--space-2) 0 0;
   font-size: var(--font-size-section);
-  font-weight: 650;
+  font-weight: 600;
   line-height: var(--line-height-section);
 }
 
@@ -419,7 +419,7 @@
   width: fit-content;
   cursor: pointer;
   color: var(--text-soft);
-  font-weight: 550;
+  font-weight: 500;
 }
 
 .automation-history p {
@@ -436,7 +436,7 @@
 
 .automation-history-bulk button {
   color: var(--muted);
-  font-weight: 550;
+  font-weight: 500;
 }
 
 .automation-history-bulk button:hover:not(:disabled) {
@@ -481,7 +481,7 @@
 
 .automation-open-run {
   color: var(--accent);
-  font-weight: 550;
+  font-weight: 500;
 }
 
 .automation-run-actions {
@@ -495,7 +495,7 @@
 
 .automation-run-actions button {
   color: var(--muted);
-  font-weight: 550;
+  font-weight: 500;
 }
 
 .automation-run-actions button:hover:not(:disabled) {
@@ -524,7 +524,7 @@
   gap: var(--space-3);
   color: var(--text-soft);
   font-size: var(--font-size-compact);
-  font-weight: 550;
+  font-weight: 500;
 }
 
 .automation-schedule-fields {
@@ -540,7 +540,7 @@
   gap: var(--space-3);
   color: var(--text-soft);
   font-size: var(--font-size-compact);
-  font-weight: 550;
+  font-weight: 500;
 }
 
 .automation-form input,

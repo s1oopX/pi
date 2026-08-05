@@ -262,10 +262,11 @@ export function Automations({ onClose }: AutomationsProps) {
   function thinkingLabel(level: ThinkingLevel | undefined): string {
     if (!level) return t("Provider default", "提供商默认");
     if (level === "off") return t("Off", "关闭");
-    if (level === "minimal") return t("Minimal", "最少");
+    if (level === "minimal") return t("Minimum", "最低");
     if (level === "low") return t("Low", "低");
     if (level === "medium") return t("Medium", "中");
     if (level === "high") return t("High", "高");
+    if (level === "xhigh") return t("Extra high", "极高");
     return t("Maximum", "最高");
   }
 

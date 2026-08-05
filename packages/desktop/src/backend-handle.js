@@ -3,8 +3,7 @@
  * stdout JSONL reassembly, request correlation, restart backoff, the session
  * mutation queue, and the pending extension-UI store. main.js used to hold all
  * of this as module-level singletons for the single backend; the class exists
- * so several backends can run side by side (parallel tasks M1 — see
- * docs/parallel-tasks-design.md). Behavior is a verbatim port.
+ * so several backends can run side by side. Behavior is a verbatim port.
  *
  * Renderer-facing payloads emitted here (`backend:event` / `backend:status` /
  * `backend:log`) are tagged with `backendId`; the current renderer ignores the

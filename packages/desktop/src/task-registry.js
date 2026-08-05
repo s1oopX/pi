@@ -1,8 +1,8 @@
 /**
- * Registry mapping parallel tasks to backend handles (parallel tasks M2 —
- * docs/parallel-tasks-m2-tdd.md, phase A1). Owns the id space, the pool cap,
- * and the one-running-task-per-folder rule; the handles own their processes.
- * Pure bookkeeping: no fs and no Electron, so it unit-tests with fakes.
+ * Registry mapping parallel tasks to backend handles. Owns the id space, the
+ * pool cap, and the one-running-task-per-folder rule; the handles own their
+ * processes. Pure bookkeeping: no fs and no Electron, so it unit-tests with
+ * fakes.
  */
 
 import { resolve } from "node:path";

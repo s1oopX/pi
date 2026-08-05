@@ -76,10 +76,11 @@ export function AgentSettings() {
 
   function thinkingLabel(level: ThinkingLevel): string {
     if (level === "off") return t("Off", "关闭");
-    if (level === "minimal") return t("Minimal", "最少");
+    if (level === "minimal") return t("Minimum", "最低");
     if (level === "low") return t("Low", "低");
     if (level === "medium") return t("Medium", "中");
     if (level === "high") return t("High", "高");
+    if (level === "xhigh") return t("Extra high", "极高");
     return t("Maximum", "最高");
   }
 

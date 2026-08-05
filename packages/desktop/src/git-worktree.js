@@ -1,9 +1,8 @@
 /**
- * Git worktree provisioning for same-repo parallel tasks (M3 —
- * docs/parallel-tasks-m3-tdd.md). A second task in an already-running
- * repository gets its own worktree under the app's worktrees root on a fresh
- * task/<name> branch. Follows the no-shell execFile pattern of git-commit.js;
- * pure name allocation is unit-tested without git.
+ * Git worktree provisioning for same-repo parallel tasks. A second task in
+ * an already-running repository gets its own worktree under the app's
+ * worktrees root on a fresh task/<name> branch. Follows the no-shell execFile
+ * pattern of git-commit.js; pure name allocation is unit-tested without git.
  */
 
 import { execFile } from "node:child_process";

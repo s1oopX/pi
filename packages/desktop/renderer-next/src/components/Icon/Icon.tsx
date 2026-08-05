@@ -16,6 +16,7 @@ export type IconName =
   | "command"
   | "search"
   | "plus"
+  | "square-pen"
   | "check"
   | "alert-triangle"
   | "monitor"
@@ -33,6 +34,7 @@ export type IconName =
   | "git-pull-request"
   | "paperclip"
   | "send"
+  | "zap"
   | "queue"
   | "rotate-ccw"
   | "rotate-cw"
@@ -45,6 +47,7 @@ export type IconName =
   | "info"
   | "activity"
   | "calendar"
+  | "clock"
   | "file"
   | "download"
   | "upload"
@@ -74,6 +77,12 @@ const GLYPHS: Record<IconName, ReactNode> = {
     </>
   ),
   plus: <path d="M12 5v14M5 12h14" />,
+  "square-pen": (
+    <>
+      <path d="M12 3H5a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7" />
+      <path d="M18.4 2.6a2.1 2.1 0 0 1 3 3l-9 9a2 2 0 0 1-.9.5l-2.9.8a.5.5 0 0 1-.6-.6l.8-2.9a2 2 0 0 1 .5-.9z" />
+    </>
+  ),
   check: <path d="M20 6 9 17l-5-5" />,
   "alert-triangle": (
     <>
@@ -126,6 +135,7 @@ const GLYPHS: Record<IconName, ReactNode> = {
     <path d="m20.5 11.5-8.2 8.2a6 6 0 0 1-8.5-8.5l9-9a4 4 0 0 1 5.7 5.7l-9 9a2 2 0 1 1-2.8-2.8l8.2-8.2" />
   ),
   send: <path d="M12 19V5m0 0-5.5 5.5M12 5l5.5 5.5" />,
+  zap: <path d="M13 2 4 14h7l-1 8 9-12h-7z" fill="currentColor" stroke="none" />,
   queue: (
     <>
       <path d="M5 7h14M5 12h9M5 17h6" />
@@ -175,6 +185,12 @@ const GLYPHS: Record<IconName, ReactNode> = {
     <>
       <rect x="3" y="5" width="18" height="16" rx="2" />
       <path d="M8 3v4M16 3v4M3 10h18M8 14h3M8 17h6" />
+    </>
+  ),
+  clock: (
+    <>
+      <circle cx="12" cy="12" r="9" />
+      <path d="M12 7v5l3 2" />
     </>
   ),
   file: (

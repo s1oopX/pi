@@ -5,7 +5,6 @@ import * as api from "../../ipc/api";
 import { useStore } from "../../store";
 import { isActiveBackendReady } from "../../store/taskRegistry";
 import { summarizeGitSync } from "../GitPanel/gitPanelState";
-import { isSameWorkspace } from "../Sidebar/sidebarState";
 import { showToast } from "../Toast";
 
 interface TopBarProps {
@@ -29,7 +28,6 @@ export function TopBar({
   const session = useStore((s) => s.session);
   const sessions = useStore((s) => s.sessions);
   const workspaceCwd = useStore((s) => s.workspaceCwd);
-  const taskCwd = useStore((s) => s.taskCwd);
   const workspaceGitStatus = useStore((s) => s.workspaceGitStatus);
   const workspaceGitStatusLoading = useStore((s) => s.workspaceGitStatusLoading);
   const refreshWorkspaceGitStatus = useStore((s) => s.refreshWorkspaceGitStatus);
@@ -49,9 +47,6 @@ export function TopBar({
     activeSession?.name?.trim() ||
     activeSession?.firstMessage?.trim() ||
     t("New thread", "新会话");
-  const workspaceName = taskCwd && isSameWorkspace(workspaceCwd, taskCwd)
-    ? t("Tasks", "任务")
-    : workspaceCwd.split(/[\\/]/).filter(Boolean).pop() || t("No workspace", "未选择工作区");
   const gitLabel = workspaceGitStatus?.kind === "repository"
     ? workspaceGitStatus.detached
       ? t("Detached HEAD", "游离 HEAD")
@@ -154,49 +149,45 @@ export function TopBar({
     <div className="top-bar">
       <div className="top-bar-left">
         <div className="top-bar-context">
+          <Icon className="top-bar-context-icon" name="folder" size={16} strokeWidth={1.5} />
           <span className="top-bar-title" title={threadTitle}>{threadTitle}</span>
-          <span className="top-bar-meta">
-            <span className="top-bar-workspace" title={workspaceCwd}>{workspaceName}</span>
-            {gitLabel && (
-              <button
-                className="top-bar-git"
-                type="button"
-                disabled={workspaceGitStatusLoading}
-                onClick={() => onOpenWorkbench("git")}
-                title={t(
-                  "{branch} — {state}. Open Git tools in the workbench.",
-                  "{branch} — {state}。在工作台中打开 Git 工具。",
-                  { branch: gitLabel, state: gitState },
-                )}
-                aria-label={t("Git branch {branch}, {state}", "Git 分支 {branch}，{state}", {
-                  branch: gitLabel,
-                  state: gitState,
-                })}
-              >
-                <Icon name="git-branch" size={16} />
-                <span>{gitLabel}</span>
-                {gitSync.show && (
-                  <span className="top-bar-git-sync" aria-hidden="true">
-                    {gitSync.ahead > 0 && <span className="top-bar-git-ahead">↑{gitSync.ahead}</span>}
-                    {gitSync.behind > 0 && <span className="top-bar-git-behind">↓{gitSync.behind}</span>}
-                  </span>
-                )}
-                {workspaceGitStatus?.dirty && <span className="top-bar-git-dirty" aria-hidden="true" />}
-              </button>
-            )}
-          </span>
+          {gitLabel && (
+            <button
+              className="top-bar-git"
+              type="button"
+              disabled={workspaceGitStatusLoading}
+              onClick={() => onOpenWorkbench("git")}
+              title={t(
+                "{branch} — {state}. Open Git tools in the workbench.",
+                "{branch} — {state}。在工作台中打开 Git 工具。",
+                { branch: gitLabel, state: gitState },
+              )}
+              aria-label={t("Git branch {branch}, {state}", "Git 分支 {branch}，{state}", {
+                branch: gitLabel,
+                state: gitState,
+              })}
+            >
+              <Icon name="git-branch" size={16} />
+              <span>{gitLabel}</span>
+              {gitSync.show && (
+                <span className="top-bar-git-sync" aria-hidden="true">
+                  {gitSync.ahead > 0 && <span className="top-bar-git-ahead">↑{gitSync.ahead}</span>}
+                  {gitSync.behind > 0 && <span className="top-bar-git-behind">↓{gitSync.behind}</span>}
+                </span>
+              )}
+              {workspaceGitStatus?.dirty && <span className="top-bar-git-dirty" aria-hidden="true" />}
+            </button>
+          )}
         </div>
       </div>
 
       <div className="top-bar-right">
-        <span className={`top-bar-task-state ${isStreaming ? "running" : activeBackendReady ? "ready" : "attention"}`} role="status">
-          <span aria-hidden="true" />
-          {isStreaming
-            ? t("Running", "运行中")
-            : activeBackendReady
-              ? t("Ready", "就绪")
-              : t("Needs attention", "需要处理")}
-        </span>
+        {(isStreaming || !activeBackendReady) && (
+          <span className={`top-bar-task-state ${isStreaming ? "running" : "attention"}`} role="status">
+            <span aria-hidden="true" />
+            {isStreaming ? t("Running", "运行中") : t("Needs attention", "需要处理")}
+          </span>
+        )}
         <div className="top-bar-open-location-wrap" ref={locationMenuRef}>
           <button
             className="top-bar-open-location-main"

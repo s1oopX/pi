@@ -91,13 +91,16 @@ export function Sidebar({ collapsed, onToggle, automationsOpen, onOpenAutomation
   const [branchNavigatorOpen, setBranchNavigatorOpen] = useState(false);
   const [switchingWorkspaceCwd, setSwitchingWorkspaceCwd] = useState<string | null>(null);
   const [sessionQuery, setSessionQuery] = useState("");
+  const [sessionSearchOpen, setSessionSearchOpen] = useState(false);
   const [workspaces, setWorkspaces] = useState<string[]>(() => loadWorkspaces(localStorage));
   const [threadOrganization, setThreadOrganization] = useState<ThreadOrganization>(() =>
     loadThreadOrganization(localStorage)
   );
   const [showArchived, setShowArchived] = useState(false);
-  const [expandedProjects, setExpandedProjects] = useState<string[]>([]);
+  const [projectsExpanded, setProjectsExpanded] = useState(true);
+  const [recentExpanded, setRecentExpanded] = useState(false);
   const menuRef = useRef<HTMLDivElement>(null);
+  const searchInputRef = useRef<HTMLInputElement>(null);
   const menuTriggerRef = useRef<HTMLButtonElement | null>(null);
   const workspaceMenuRef = useRef<HTMLDivElement>(null);
   const workspaceTriggerRef = useRef<HTMLButtonElement | null>(null);
@@ -198,6 +201,8 @@ export function Sidebar({ collapsed, onToggle, automationsOpen, onOpenAutomation
   );
   const otherWorkspaces = workspaceNavigationItems.filter((cwd) => !isSameWorkspace(cwd, workspaceCwd));
   const taskSessions = sessionOwnership.tasks;
+  const showProjects = projectsExpanded || Boolean(normalizedSessionQuery);
+  const showRecent = recentExpanded || Boolean(normalizedSessionQuery) || showArchived;
   const backendStatusText = backendStatus.ready
     ? t("Ready", "就绪")
     : backendStatus.restarting
@@ -276,13 +281,6 @@ export function Sidebar({ collapsed, onToggle, automationsOpen, onOpenAutomation
       saveWorkspaces(localStorage, next);
       return next;
     });
-  }, [isTaskContext, workspaceCwd]);
-
-  useEffect(() => {
-    if (!workspaceCwd || isTaskContext) return;
-    setExpandedProjects((current) =>
-      current.some((cwd) => isSameWorkspace(cwd, workspaceCwd)) ? current : [...current, workspaceCwd]
-    );
   }, [isTaskContext, workspaceCwd]);
 
   useEffect(() => {
@@ -434,9 +432,6 @@ export function Sidebar({ collapsed, onToggle, automationsOpen, onOpenAutomation
 
   function handleNewProjectThread(cwd: string) {
     retainWorkspace(cwd);
-    setExpandedProjects((current) =>
-      current.some((candidate) => isSameWorkspace(candidate, cwd)) ? current : [...current, cwd]
-    );
     void handleNewThread(cwd);
   }
 
@@ -803,14 +798,6 @@ export function Sidebar({ collapsed, onToggle, automationsOpen, onOpenAutomation
     updateThreadOrganization((current) => setThreadArchived(current, candidate.path, !archived));
   }
 
-  function toggleProject(cwd: string) {
-    setExpandedProjects((current) =>
-      current.some((candidate) => isSameWorkspace(candidate, cwd))
-        ? current.filter((candidate) => !isSameWorkspace(candidate, cwd))
-        : [...current, cwd]
-    );
-  }
-
   function renderSessionRow(candidate: SessionInfo, nested: boolean) {
     const isActive = activeSessionId != null && candidate.id === activeSessionId;
     const pinned = isThreadPinned(threadOrganization, candidate.path);
@@ -903,6 +890,26 @@ export function Sidebar({ collapsed, onToggle, automationsOpen, onOpenAutomation
           </div>
         )}
         <span className="sidebar-header-drag" />
+        {!collapsed && (
+          <button
+            className={`icon-button sidebar-search-toggle ${sessionSearchOpen ? "active" : ""}`}
+            type="button"
+            aria-label={t("Search projects and tasks", "搜索项目和任务")}
+            aria-pressed={sessionSearchOpen}
+            title={t("Search projects and tasks", "搜索项目和任务")}
+            onClick={() => {
+              if (sessionSearchOpen) {
+                setSessionSearchOpen(false);
+                setSessionQuery("");
+                return;
+              }
+              setSessionSearchOpen(true);
+              requestAnimationFrame(() => searchInputRef.current?.focus());
+            }}
+          >
+            <Icon name="search" size={16} strokeWidth={1.4} />
+          </button>
+        )}
         <button
           className="icon-button sidebar-toggle"
           type="button"
@@ -931,7 +938,7 @@ export function Sidebar({ collapsed, onToggle, automationsOpen, onOpenAutomation
             disabled={!backendStatus.ready || switchingWorkspace || isStreaming || creatingThread}
             onClick={handleNewTask}
           >
-            <Icon name="plus" size={18} strokeWidth={1.6} />
+            <Icon name="square-pen" size={18} strokeWidth={1.5} />
           </button>
           {session && (
             <button
@@ -953,7 +960,7 @@ export function Sidebar({ collapsed, onToggle, automationsOpen, onOpenAutomation
             title={t("Scheduled tasks", "定时任务")}
             onClick={onOpenAutomations}
           >
-            <Icon name="calendar" size={18} strokeWidth={1.5} />
+            <Icon name="clock" size={18} strokeWidth={1.5} />
           </button>
           <span className="sidebar-rail-spacer" />
           <button
@@ -995,68 +1002,89 @@ export function Sidebar({ collapsed, onToggle, automationsOpen, onOpenAutomation
         </div>
       ) : (
         <>
-          <button
-            className="new-agent-button"
-            type="button"
-            disabled={!backendStatus.ready || switchingWorkspace || isStreaming || creatingThread}
-            title={isStreaming
-              ? t("Finish or stop the current run before creating a new task", "请先完成或停止当前运行，再新建任务")
-              : !backendStatus.ready
-                ? t("The agent backend is not ready", "智能体后端尚未就绪")
-                : undefined}
-            onClick={handleNewTask}
-          >
-            <Icon className="new-agent-icon" name="plus" size={18} strokeWidth={1.5} />
-            <span>{t("New task", "新建任务")}</span>
-          </button>
+          <nav className="sidebar-primary-nav" aria-label={t("Primary navigation", "主导航")}>
+            <button
+              className="new-agent-button"
+              type="button"
+              disabled={!backendStatus.ready || switchingWorkspace || isStreaming || creatingThread}
+              title={isStreaming
+                ? t("Finish or stop the current run before creating a new task", "请先完成或停止当前运行，再新建任务")
+                : !backendStatus.ready
+                  ? t("The agent backend is not ready", "智能体后端尚未就绪")
+                  : undefined}
+              onClick={handleNewTask}
+            >
+              <Icon className="new-agent-icon" name="square-pen" size={18} strokeWidth={1.5} />
+              <span>{t("New task", "新建任务")}</span>
+            </button>
+            <button
+              className={`sidebar-automations-link sidebar-automations-button ${automationsOpen ? "active" : ""}`}
+              type="button"
+              aria-current={automationsOpen ? "page" : undefined}
+              onClick={onOpenAutomations}
+              title={t("Open scheduled tasks", "打开定时任务")}
+            >
+              <Icon name="clock" size={16} strokeWidth={1.5} />
+              <span>{t("Automations", "自动任务")}</span>
+            </button>
+            <ParallelTasks />
+          </nav>
 
           <div className="agent-list-section">
-            <div className="thread-search">
-              <Icon className="thread-search-icon" name="search" size={18} strokeWidth={1.4} />
-              <input
-                className="thread-search-input"
-                type="search"
-                value={sessionQuery}
-                onChange={(event) => setSessionQuery(event.target.value)}
-                onKeyDown={(event) => {
-                  if (event.key === "Escape" && sessionQuery) {
+            {sessionSearchOpen && (
+              <div className="thread-search">
+                <Icon className="thread-search-icon" name="search" size={18} strokeWidth={1.4} />
+                <input
+                  ref={searchInputRef}
+                  className="thread-search-input"
+                  type="search"
+                  value={sessionQuery}
+                  onChange={(event) => setSessionQuery(event.target.value)}
+                  onKeyDown={(event) => {
+                    if (event.key !== "Escape") return;
                     event.preventDefault();
-                    setSessionQuery("");
-                  }
-                }}
-                placeholder={t("Search projects and tasks", "搜索项目和任务")}
-                aria-label={t("Search projects and tasks", "搜索项目和任务")}
-                maxLength={1000}
-              />
-              {sessionQuery && (
+                    if (sessionQuery) setSessionQuery("");
+                    else setSessionSearchOpen(false);
+                  }}
+                  placeholder={t("Search projects and tasks", "搜索项目和任务")}
+                  aria-label={t("Search projects and tasks", "搜索项目和任务")}
+                  maxLength={1000}
+                />
+                {sessionQuery && (
+                  <button
+                    className="thread-search-clear"
+                    type="button"
+                    aria-label={t("Clear thread search", "清除会话搜索")}
+                    onClick={() => {
+                      setSessionQuery("");
+                      searchInputRef.current?.focus();
+                    }}
+                  >
+                    <Icon name="close" size={18} strokeWidth={1.4} />
+                  </button>
+                )}
+              </div>
+            )}
+            {(threadOrganization.archived.length > 0 || showArchived) && (
+              <div className="thread-view-tabs" role="group" aria-label={t("Thread view", "会话视图")}>
                 <button
-                  className="thread-search-clear"
+                  className={!showArchived ? "active" : ""}
                   type="button"
-                  aria-label={t("Clear thread search", "清除会话搜索")}
-                  onClick={() => setSessionQuery("")}
+                  aria-pressed={!showArchived}
+                  onClick={() => setShowArchived(false)}
                 >
-                  <Icon name="close" size={18} strokeWidth={1.4} />
+                  {t("Active", "当前")}
                 </button>
-              )}
-            </div>
-            <div className="thread-view-tabs" role="group" aria-label={t("Thread view", "会话视图")}>
-              <button
-                className={!showArchived ? "active" : ""}
-                type="button"
-                aria-pressed={!showArchived}
-                onClick={() => setShowArchived(false)}
-              >
-                {t("Active", "当前")}
-              </button>
-              <button
-                className={showArchived ? "active" : ""}
-                type="button"
-                aria-pressed={showArchived}
-                onClick={() => setShowArchived(true)}
-              >
-                {t("Archived ({count})", "已归档（{count}）", { count: threadOrganization.archived.length })}
-              </button>
-            </div>
+                <button
+                  className={showArchived ? "active" : ""}
+                  type="button"
+                  aria-pressed={showArchived}
+                  onClick={() => setShowArchived(true)}
+                >
+                  {t("Archived ({count})", "已归档（{count}）", { count: threadOrganization.archived.length })}
+                </button>
+              </div>
+            )}
             <div className="agent-list ownership-list" aria-busy={sessionsLoading || sessionSearchPending}>
               {sessionsError && (
                 <div className="agent-list-error" role="alert">
@@ -1074,40 +1102,45 @@ export function Sidebar({ collapsed, onToggle, automationsOpen, onOpenAutomation
                   </button>
                 </div>
               )}
-              <ParallelTasks />
-
               <section className="ownership-section project-tree" aria-labelledby="project-tree-title">
                 <div className="ownership-section-header">
-                  <span id="project-tree-title">{t("Projects", "项目")}</span>
                   <button
-                    className="workspace-navigation-add"
+                    className="ownership-section-toggle"
                     type="button"
-                    aria-label={t("Import thread from JSONL", "从 JSONL 导入会话")}
-                    title={isStreaming
-                      ? t("Finish or stop the current run before importing a thread", "请先完成或停止当前运行，再导入会话")
-                      : !backendStatus.ready
-                        ? t("The agent backend is not ready", "智能体后端尚未就绪")
-                        : t("Import thread from JSONL", "从 JSONL 导入会话")}
-                    disabled={!backendStatus.ready || switchingWorkspace || isStreaming || importingSession}
-                    onClick={() => void handleImportSession()}
+                    aria-expanded={showProjects}
+                    aria-controls="project-tree-content"
+                    onClick={() => setProjectsExpanded((current) => !current)}
                   >
-                    <Icon name="download" size={18} strokeWidth={1.5} />
+                    <span id="project-tree-title">{t("Projects", "项目")}</span>
+                    <Icon className={showProjects ? "expanded" : ""} name="chevron-right" size={16} strokeWidth={1.4} />
                   </button>
-                  <button
-                    className="workspace-navigation-add"
-                    type="button"
-                    aria-label={t("Add project", "添加项目")}
-                    title={isStreaming
-                      ? t("Finish or stop the current run before adding a project", "请先完成或停止当前运行，再添加项目")
-                      : t("Add project", "添加项目")}
-                    disabled={switchingWorkspace || isStreaming}
-                    onClick={handleChooseWorkspace}
-                  >
-                    <Icon name="plus" size={18} strokeWidth={1.5} />
-                  </button>
+                  <span className="ownership-section-actions">
+                    <button
+                      className="workspace-navigation-add"
+                      type="button"
+                      aria-label={t("Project options", "项目选项")}
+                      title={t("Project options", "项目选项")}
+                      onClick={openWorkspaceMenu}
+                    >
+                      <Icon name="more-horizontal" size={18} strokeWidth={1.5} />
+                    </button>
+                    <button
+                      className="workspace-navigation-add"
+                      type="button"
+                      aria-label={t("Add project", "添加项目")}
+                      title={isStreaming
+                        ? t("Finish or stop the current run before adding a project", "请先完成或停止当前运行，再添加项目")
+                        : t("Add project", "添加项目")}
+                      disabled={switchingWorkspace || isStreaming}
+                      onClick={handleChooseWorkspace}
+                    >
+                      <Icon name="plus" size={18} strokeWidth={1.5} />
+                    </button>
+                  </span>
                 </div>
-                {workspaceNavigationItems.length === 0 ? (
+                {showProjects && (workspaceNavigationItems.length === 0 ? (
                   <button
+                    id="project-tree-content"
                     className="workspace-navigation-empty"
                     type="button"
                     disabled={switchingWorkspace || isStreaming}
@@ -1116,15 +1149,12 @@ export function Sidebar({ collapsed, onToggle, automationsOpen, onOpenAutomation
                     {t("Choose a folder to add your first project", "选择文件夹以添加第一个项目")}
                   </button>
                 ) : (
-                  <div className="project-tree-list" role="tree" aria-label={t("Projects", "项目")}>
+                  <div id="project-tree-content" className="project-tree-list" role="tree" aria-label={t("Projects", "项目")}>
                     {workspaceNavigationItems.map((cwd) => {
                       const isCurrent = !isTaskContext && isSameWorkspace(cwd, workspaceCwd);
                       const projectSessions = sessionOwnership.projects.find((project) => isSameWorkspace(project.cwd, cwd))?.sessions ?? [];
                       const hasProjectSessions = projectSessions.length > 0;
-                      const isExpanded = hasProjectSessions && (
-                        normalizedSessionQuery.length > 0 ||
-                        expandedProjects.some((candidate) => isSameWorkspace(candidate, cwd))
-                      );
+                      const isExpanded = hasProjectSessions && (normalizedSessionQuery.length > 0 || isCurrent);
                       const workspaceDisplay = getWorkspaceDisplayParts(cwd, workspaceNavigationItems);
                       return (
                         <div
@@ -1134,30 +1164,13 @@ export function Sidebar({ collapsed, onToggle, automationsOpen, onOpenAutomation
                           aria-expanded={hasProjectSessions ? isExpanded : undefined}
                         >
                           <div className={`project-tree-row ${isCurrent ? "active" : ""}`}>
-                            {hasProjectSessions ? (
-                              <button
-                                className="project-tree-toggle"
-                                type="button"
-                                aria-label={isExpanded
-                                  ? t("Collapse {project}", "收起 {project}", { project: workspaceDisplay.name })
-                                  : t("Expand {project}", "展开 {project}", { project: workspaceDisplay.name })}
-                                onClick={() => toggleProject(cwd)}
-                              >
-                                <Icon className={isExpanded ? "expanded" : ""} name="chevron-right" size={18} strokeWidth={1.4} />
-                              </button>
-                            ) : (
-                              <span className="project-tree-toggle" aria-hidden="true" />
-                            )}
                             <button
                               className="project-tree-main"
                               type="button"
                               aria-current={isCurrent ? "page" : undefined}
                               title={cwd}
                               disabled={switchingWorkspace || (!isCurrent && isStreaming)}
-                              onClick={() => {
-                                if (hasProjectSessions && !isExpanded) toggleProject(cwd);
-                                void handleOpenWorkspace(cwd);
-                              }}
+                              onClick={() => void handleOpenWorkspace(cwd)}
                             >
                               <Icon name="folder" size={18} strokeWidth={1.5} />
                               <span className="workspace-navigation-copy">
@@ -1188,32 +1201,46 @@ export function Sidebar({ collapsed, onToggle, automationsOpen, onOpenAutomation
                       );
                     })}
                   </div>
-                )}
+                ))}
               </section>
 
               {(taskSessions.length > 0 || normalizedSessionQuery || showArchived) && (
                 <section className="ownership-section task-tree" aria-labelledby="task-tree-title">
                   <div className="ownership-section-header">
-                    <span id="task-tree-title">{t("Tasks", "任务")}</span>
-                    <span className="agent-list-count">
-                      {taskSessions.length}
-                    </span>
                     <button
-                      className="workspace-navigation-add"
+                      className="ownership-section-toggle"
                       type="button"
-                      aria-label={t("New task", "新建任务")}
-                      title={isStreaming
-                        ? t("Finish or stop the current run before creating a new task", "请先完成或停止当前运行，再新建任务")
-                        : !backendStatus.ready
-                          ? t("The agent backend is not ready", "智能体后端尚未就绪")
-                          : t("New task", "新建任务")}
-                      disabled={!backendStatus.ready || switchingWorkspace || isStreaming || creatingThread}
-                      onClick={handleNewTask}
+                      aria-expanded={showRecent}
+                      aria-controls="task-tree-content"
+                      onClick={() => setRecentExpanded((current) => !current)}
                     >
-                      <Icon name="plus" size={18} strokeWidth={1.5} />
+                      <span id="task-tree-title">{t("Recent", "最近")}</span>
+                      <Icon className={showRecent ? "expanded" : ""} name="chevron-right" size={16} strokeWidth={1.4} />
                     </button>
+                    <span className="ownership-section-actions">
+                      <button
+                        className="workspace-navigation-add"
+                        type="button"
+                        aria-label={showArchived ? t("Show current threads", "显示当前会话") : t("Show archived threads", "显示已归档会话")}
+                        title={showArchived ? t("Show current threads", "显示当前会话") : t("Show archived threads", "显示已归档会话")}
+                        disabled={threadOrganization.archived.length === 0}
+                        onClick={() => setShowArchived((current) => !current)}
+                      >
+                        <Icon name="more-horizontal" size={18} strokeWidth={1.5} />
+                      </button>
+                      <button
+                        className="workspace-navigation-add"
+                        type="button"
+                        aria-label={t("New task", "新建任务")}
+                        title={t("New task", "新建任务")}
+                        disabled={!backendStatus.ready || switchingWorkspace || isStreaming || creatingThread}
+                        onClick={handleNewTask}
+                      >
+                        <Icon name="pencil" size={16} strokeWidth={1.5} />
+                      </button>
+                    </span>
                   </div>
-                  <div className="task-tree-list" role="list">
+                  {showRecent && <div id="task-tree-content" className="task-tree-list" role="list">
                     {taskSessions.map((candidate) => renderSessionRow(candidate, false))}
                     {!sessionsError && !sessionsLoading && !sessionSearchPending && taskSessions.length === 0 && (normalizedSessionQuery || showArchived) && (
                       <div className="agent-empty-state">
@@ -1224,9 +1251,9 @@ export function Sidebar({ collapsed, onToggle, automationsOpen, onOpenAutomation
                           : showArchived
                             ? t("No archived tasks", "没有已归档任务")
                             : t("No tasks yet", "尚无任务")}
-                      </div>
-                    )}
-                  </div>
+                        </div>
+                      )}
+                  </div>}
                 </section>
               )}
               {(sessionsLoading || sessionSearchPending) && sessions.length === 0 && (
@@ -1234,7 +1261,7 @@ export function Sidebar({ collapsed, onToggle, automationsOpen, onOpenAutomation
                   {sessionLoadingText}
                 </div>
               )}
-              {sessionsHasMore && sessions.length > 0 && (
+              {showRecent && sessionsHasMore && sessions.length > 0 && (
                 <div className="agent-list-pagination">
                   <button
                     className="agent-list-load-more"
@@ -1251,23 +1278,13 @@ export function Sidebar({ collapsed, onToggle, automationsOpen, onOpenAutomation
 
           <div className="sidebar-footer">
             <button
-              className={`sidebar-automations-link sidebar-automations-button ${automationsOpen ? "active" : ""}`}
+              className="sidebar-action-btn sidebar-account-btn"
               type="button"
-              aria-current={automationsOpen ? "page" : undefined}
-              onClick={onOpenAutomations}
-              title={t("Open scheduled tasks", "打开定时任务")}
+              onClick={() => openSettings("account")}
+              title={t("Account and settings", "账户与设置")}
             >
-              <Icon name="calendar" size={16} strokeWidth={1.5} />
-              <span>{t("Automations", "自动任务")}</span>
-            </button>
-            <button
-              className="sidebar-action-btn"
-              type="button"
-              onClick={() => openSettings("models-providers")}
-              title={t("Open settings", "打开设置")}
-            >
-              <Icon name="settings" size={16} strokeWidth={1.5} />
-              <span>{t("Settings", "设置")}</span>
+              <Icon name="user" size={16} strokeWidth={1.5} />
+              <span>{t("Account and settings", "账户与设置")}</span>
             </button>
             {showBackendStatus && (
               <div
@@ -1496,6 +1513,19 @@ export function Sidebar({ collapsed, onToggle, automationsOpen, onOpenAutomation
           >
             <Icon name="plus" size={18} strokeWidth={1.5} />
             <span>{t("Add workspace...", "添加工作区...")}</span>
+          </button>
+          <button
+            className="workspace-menu-item"
+            type="button"
+            role="menuitem"
+            disabled={!backendStatus.ready || switchingWorkspace || isStreaming || importingSession}
+            onClick={() => {
+              setWorkspaceMenu(null);
+              void handleImportSession();
+            }}
+          >
+            <Icon name="download" size={18} strokeWidth={1.5} />
+            <span>{importingSession ? t("Importing...", "正在导入...") : t("Import thread...", "导入会话...")}</span>
           </button>
           {otherWorkspaces.length > 0 && (
             <button

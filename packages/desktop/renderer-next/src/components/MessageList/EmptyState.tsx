@@ -1,130 +1,47 @@
-import type { ReactNode } from "react";
-import { useState } from "react";
 import { useI18n } from "../../i18n";
 import * as api from "../../ipc/api";
 import { useStore } from "../../store";
 import { BrandIcon } from "../BrandIcon";
-import { CreateProjectDialog } from "../CreateProjectDialog";
-import { Icon } from "../Icon";
+import { Icon, type IconName } from "../Icon";
 import { isSameWorkspace } from "../Sidebar/sidebarState";
 import { showToast } from "../Toast";
 
-interface LocalizedText {
-  english: string;
-  simplifiedChinese: string;
-}
-
-interface ActionCard {
-  id: string;
-  title: LocalizedText;
-  description: LocalizedText;
-  prompt: LocalizedText;
-  icon: ReactNode;
-}
-
-interface QuickStartTemplate {
-  id: string;
-  name: LocalizedText;
-  description: LocalizedText;
-  icon: ReactNode;
-  badges: { label: LocalizedText }[];
-}
-
-const QUICK_START_TEMPLATES: QuickStartTemplate[] = [
+const ACTION_CARDS: ReadonlyArray<{
+  title: [string, string];
+  prompt: [string, string];
+  icon: IconName;
+}> = [
   {
-    id: "nextjs",
-    name: { english: "Next.js", simplifiedChinese: "Next.js" },
-    description: {
-      english: "Full-stack React with SSR, routing, and API routes",
-      simplifiedChinese: "全栈 React，支持 SSR、路由和 API 路由",
-    },
-    icon: <Icon name="grid" size={20} />,
-    badges: [
-      { label: { english: "React", simplifiedChinese: "React" } },
-      { label: { english: "TypeScript", simplifiedChinese: "TypeScript" } },
-      { label: { english: "SSR", simplifiedChinese: "SSR" } },
+    title: ["Explore and understand the code", "探索并理解代码"],
+    prompt: [
+      "Explore this codebase and explain its structure, main modules, and how they fit together.",
+      "请探索这个代码库，并说明它的结构、主要模块以及它们之间的关系。",
     ],
+    icon: "search",
   },
   {
-    id: "express",
-    name: { english: "Express", simplifiedChinese: "Express" },
-    description: {
-      english: "Minimalist Node.js API server with middleware",
-      simplifiedChinese: "简约的 Node.js API 服务器，支持中间件",
-    },
-    icon: <Icon name="terminal" size={20} />,
-    badges: [
-      { label: { english: "Node.js", simplifiedChinese: "Node.js" } },
-      { label: { english: "REST", simplifiedChinese: "REST" } },
+    title: ["Build a new feature, app, or tool", "构建新功能、应用或工具"],
+    prompt: [
+      "Help me build a new feature, app, or tool. Start by understanding what I need, then plan and implement it.",
+      "请帮我构建一个新功能、应用或工具。先了解我的需求，再规划并实现它。",
     ],
+    icon: "plus",
   },
   {
-    id: "cli",
-    name: { english: "CLI Tool", simplifiedChinese: "CLI 工具" },
-    description: {
-      english: "Command-line utility scaffolded with arg parsing",
-      simplifiedChinese: "命令行工具，带参数解析脚手架",
-    },
-    icon: <Icon name="command" size={20} />,
-    badges: [
-      { label: { english: "Node.js", simplifiedChinese: "Node.js" } },
-      { label: { english: "CLI", simplifiedChinese: "CLI" } },
+    title: ["Review code and suggest improvements", "审查代码并提出修改建议"],
+    prompt: [
+      "Review the relevant code and suggest concrete improvements, including any bugs or risks you find.",
+      "请审查相关代码，并提出具体的修改建议，包括你发现的错误或风险。",
     ],
-  },
-];
-
-const ACTION_CARDS: ActionCard[] = [
-  {
-    id: "explore-codebase",
-    title: { english: "Explore the codebase", simplifiedChinese: "探索代码库" },
-    description: {
-      english: "Map structure and module relationships",
-      simplifiedChinese: "梳理结构和模块关系",
-    },
-    prompt: {
-      english: "Explore this codebase and give me an overview of its structure, main modules, and how they fit together.",
-      simplifiedChinese: "请探索这个代码库，概述其结构、主要模块及它们之间的关系。",
-    },
-    icon: <Icon name="search" size={20} />,
+    icon: "check",
   },
   {
-    id: "build-feature",
-    title: { english: "Build a new feature", simplifiedChinese: "开发新功能" },
-    description: {
-      english: "Add functionality or extend tools",
-      simplifiedChinese: "添加功能或扩展工具",
-    },
-    prompt: {
-      english: "I want to build a new feature. Help me plan and implement it. Here is what I have in mind: ",
-      simplifiedChinese: "我想开发一个新功能。请帮我规划并实现。我的想法是：",
-    },
-    icon: <Icon name="plus" size={20} />,
-  },
-  {
-    id: "review-changes",
-    title: { english: "Review changes", simplifiedChinese: "审查更改" },
-    description: {
-      english: "Get feedback and improvements",
-      simplifiedChinese: "获取反馈和修改建议",
-    },
-    prompt: {
-      english: "Review the recent changes in this repository and suggest improvements.",
-      simplifiedChinese: "请审查这个仓库中的近期更改，并提出改进建议。",
-    },
-    icon: <Icon name="check" size={20} />,
-  },
-  {
-    id: "fix-problem",
-    title: { english: "Fix a problem", simplifiedChinese: "修复问题" },
-    description: {
-      english: "Diagnose errors or unexpected behavior",
-      simplifiedChinese: "诊断错误或异常行为",
-    },
-    prompt: {
-      english: "I'm hitting a problem. Help me diagnose and fix it. Here are the details: ",
-      simplifiedChinese: "我遇到了一个问题。请帮我诊断并修复。具体情况是：",
-    },
-    icon: <Icon name="alert-triangle" size={20} />,
+    title: ["Fix problems and failures", "修复问题和失败"],
+    prompt: [
+      "Help me diagnose and fix this problem. I will provide the symptoms and any relevant context.",
+      "请帮我诊断并修复这个问题。我会提供现象和相关背景。",
+    ],
+    icon: "alert-triangle",
   },
 ];
 
@@ -132,7 +49,6 @@ export function EmptyState() {
   const { t } = useI18n();
   const models = useStore((s) => s.models);
   const openSettings = useStore((s) => s.openSettings);
-  const setComposerDraft = useStore((s) => s.setComposerDraft);
   const workspaceCwd = useStore((s) => s.workspaceCwd);
   const taskCwd = useStore((s) => s.taskCwd);
   const isTaskContext = Boolean(taskCwd && isSameWorkspace(workspaceCwd, taskCwd));
@@ -140,8 +56,7 @@ export function EmptyState() {
     ? t("Tasks", "任务")
     : workspaceCwd.split(/[\\/]/).filter(Boolean).pop();
   const backendStatus = useStore((s) => s.backendStatus);
-
-  const [createTemplate, setCreateTemplate] = useState<string | null>(null);
+  const setComposerDraft = useStore((s) => s.setComposerDraft);
 
   async function restartBackend() {
     try {
@@ -215,72 +130,22 @@ export function EmptyState() {
       <div className="empty-state-icon empty-state-brand" aria-hidden="true">
         <BrandIcon className="empty-state-brand-icon" />
       </div>
-      <h2 className="empty-state-title">{t("What should we work on?", "我们要做什么？")}</h2>
-      <p className="empty-state-subtitle">
-        {isTaskContext
-          ? t("Start a task, or pick a prompt below.", "开始一个任务，或选择下方提示。")
-          : workspaceName
-          ? t("Start a thread in {workspace}, or pick a prompt below.", "在 {workspace} 中开始会话，或选择下方提示。", {
-              workspace: workspaceName,
-            })
-          : t("Pick a starting point, or type a message below.", "选择一个起点，或在下方输入消息。")}
-      </p>
+      <h2 className="empty-state-title">{t("What should we build?", "我们该构建什么？")}</h2>
       <div className="empty-state-cards">
         {ACTION_CARDS.map((card) => (
           <button
-            key={card.id}
+            key={card.title[0]}
             className="empty-state-card"
             type="button"
-            onClick={() => setComposerDraft(t(card.prompt.english, card.prompt.simplifiedChinese))}
+            onClick={() => setComposerDraft(t(card.prompt[0], card.prompt[1]))}
           >
-            <span className="empty-state-card-icon" aria-hidden="true">{card.icon}</span>
-            <span className="empty-state-card-title">{t(card.title.english, card.title.simplifiedChinese)}</span>
-            <span className="empty-state-card-desc">
-              {t(card.description.english, card.description.simplifiedChinese)}
+            <span className="empty-state-card-icon" aria-hidden="true">
+              <Icon name={card.icon} size={18} strokeWidth={1.6} />
             </span>
+            <span className="empty-state-card-title">{t(card.title[0], card.title[1])}</span>
           </button>
         ))}
       </div>
-
-      <hr className="empty-state-templates-divider" />
-
-      <h3 className="empty-state-templates-heading">
-        {t("Quick Start", "快速开始")}
-      </h3>
-
-      <div className="empty-state-templates">
-        {QUICK_START_TEMPLATES.map((tmpl) => (
-          <button
-            key={tmpl.id}
-            className="empty-state-template-card"
-            type="button"
-            onClick={() => setCreateTemplate(tmpl.id)}
-          >
-            <span className="empty-state-template-card-icon" aria-hidden="true">{tmpl.icon}</span>
-            <span className="empty-state-template-card-name">
-              {t(tmpl.name.english, tmpl.name.simplifiedChinese)}
-            </span>
-            <span className="empty-state-template-card-badges">
-              {tmpl.badges.map((badge, i) => (
-                <span key={i} className="empty-state-template-card-badge">
-                  {t(badge.label.english, badge.label.simplifiedChinese)}
-                </span>
-              ))}
-            </span>
-            <span className="empty-state-template-card-desc">
-              {t(tmpl.description.english, tmpl.description.simplifiedChinese)}
-            </span>
-          </button>
-        ))}
-      </div>
-
-      {createTemplate && (
-        <CreateProjectDialog
-          open
-          template={createTemplate}
-          onClose={() => setCreateTemplate(null)}
-        />
-      )}
     </div>
   );
 }

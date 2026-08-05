@@ -32,6 +32,7 @@ export function ParallelTasks() {
   const [forgettingId, setForgettingId] = useState<string | null>(null);
 
   const rows = buildParallelTaskRows(taskRegistry);
+  const visibleRows = rows.some((row) => !row.isPrimary) ? rows : [];
   const attentionCount = taskRegistry.unavailableTasks.length
     + rows.filter((row) => row.streaming || row.unread > 0 || row.completed).length;
   const poolFull = isPoolFull(taskRegistry);
@@ -142,9 +143,10 @@ export function ParallelTasks() {
   }
 
   return (
-    <section className="ownership-section parallel-tasks" aria-labelledby="parallel-tasks-title">
-      <div className="ownership-section-header">
-        <span id="parallel-tasks-title">{t("Activity", "活动")}</span>
+    <section className="parallel-tasks" aria-labelledby="parallel-tasks-title">
+      <div className="parallel-tasks-header">
+        <Icon name="git-branch" size={16} strokeWidth={1.5} />
+        <span id="parallel-tasks-title">{t("Parallel tasks", "并行任务")}</span>
         {attentionCount > 0 && <span className="activity-count">{attentionCount}</span>}
         <button
           className="workspace-navigation-add"
@@ -214,7 +216,7 @@ export function ParallelTasks() {
         </div>
       )}
       <div className="parallel-task-list" role="list">
-        {rows.map((row) => {
+        {visibleRows.map((row) => {
           const ready = row.isPrimary ? primaryBackendStatus.ready : row.ready;
           const starting = row.isPrimary
             ? primaryBackendStatus.starting || primaryBackendStatus.restarting

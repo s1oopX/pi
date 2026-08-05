@@ -72,6 +72,9 @@ import { loadStoredWorkspace, saveStoredWorkspace } from "./workspace-state.js";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const PRODUCT_NAME = "Pi Studio";
+const DEFAULT_WINDOW_FRAME_WIDTH = 1628;
+const DEFAULT_WINDOW_FRAME_HEIGHT = 818;
+const WINDOW_FRAME_OVERHEAD = 4;
 
 // Relocates all profile state (window/workspace state, renderer localStorage,
 // the single-instance lock) so e2e runs never touch the real profile. Must run
@@ -1260,10 +1263,16 @@ function automationWorktreePaths() {
 
 async function createWindow() {
 	const isDark = nativeTheme.shouldUseDarkColors;
-	const { workAreaSize } = screen.getPrimaryDisplay();
+	const display = screen.getPrimaryDisplay();
+	const { workAreaSize } = display;
+	// BrowserWindow bounds use display-independent pixels; convert the target
+	// Windows frame size before applying the work-area clamp.
+	const scaleFactor = display.scaleFactor || 1;
+	const defaultWidth = Math.max(980, Math.round(DEFAULT_WINDOW_FRAME_WIDTH / scaleFactor) - WINDOW_FRAME_OVERHEAD);
+	const defaultHeight = Math.max(640, Math.round(DEFAULT_WINDOW_FRAME_HEIGHT / scaleFactor) - WINDOW_FRAME_OVERHEAD);
 	const savedWindowState = loadWindowState();
-	const initialWidth = savedWindowState?.width ?? Math.min(1200, Math.max(980, workAreaSize.width - 16));
-	const initialHeight = savedWindowState?.height ?? Math.min(800, Math.max(640, workAreaSize.height - 16));
+	const initialWidth = savedWindowState?.width ?? Math.min(defaultWidth, Math.max(980, workAreaSize.width - 16));
+	const initialHeight = savedWindowState?.height ?? Math.min(defaultHeight, Math.max(640, workAreaSize.height - 16));
 	const window = new BrowserWindow({
 		...(savedWindowState ? { x: savedWindowState.x, y: savedWindowState.y } : {}),
 		width: initialWidth,
@@ -1300,7 +1309,13 @@ async function createWindow() {
 	mainWindow = window;
 
 	window.once("ready-to-show", () => {
-		if (savedWindowState?.maximized) window.maximize();
+		window.unmaximize();
+		window.setBounds({
+			x: savedWindowState?.x ?? window.getPosition()[0],
+			y: savedWindowState?.y ?? window.getPosition()[1],
+			width: initialWidth,
+			height: initialHeight,
+		});
 		window.show();
 		primaryBackend.start();
 	});

@@ -52,7 +52,7 @@
   overflow: hidden;
   margin: 0;
   font-size: calc(13px * var(--font-scale));
-  font-weight: 650;
+  font-weight: 600;
   line-height: calc(20px * var(--font-scale));
   color: var(--text);
   text-overflow: ellipsis;
@@ -165,7 +165,7 @@
   padding: 7px 10px;
   border-radius: var(--radius-sm);
   font-size: calc(12px * var(--font-scale));
-  font-weight: 450;
+  font-weight: 400;
   color: var(--text-soft);
   text-align: left;
   transition:
@@ -251,7 +251,7 @@
 .settings-subsection-title {
   margin: 28px 0 10px;
   font-size: calc(12px * var(--font-scale));
-  font-weight: 650;
+  font-weight: 600;
   color: var(--text-soft);
   text-transform: uppercase;
   letter-spacing: 0;
@@ -329,7 +329,7 @@
   display: block;
   margin-bottom: 6px;
   font-size: calc(12px * var(--font-scale));
-  font-weight: 550;
+  font-weight: 500;
   color: var(--text-soft);
 }
 
@@ -391,7 +391,7 @@
   background: var(--control-bg);
   color: var(--text);
   box-shadow: none;
-  font-weight: 550;
+  font-weight: 500;
   white-space: nowrap;
   transition:
     background var(--transition),
@@ -597,7 +597,7 @@
   padding: 6px 12px;
   border-radius: var(--radius-sm);
   font-size: calc(12px * var(--font-scale));
-  font-weight: 550;
+  font-weight: 500;
   color: var(--muted);
   text-align: center;
   transition:
@@ -838,7 +838,7 @@
 .model-provider-name {
   overflow: hidden;
   font-size: calc(12px * var(--font-scale));
-  font-weight: 650;
+  font-weight: 600;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
@@ -1012,7 +1012,7 @@
 
 .about-label {
   font-size: calc(11px * var(--font-scale));
-  font-weight: 550;
+  font-weight: 500;
   color: var(--muted);
 }
 
@@ -1044,7 +1044,7 @@
   display: block;
   color: var(--text-soft);
   font-size: calc(12px * var(--font-scale));
-  font-weight: 650;
+  font-weight: 600;
 }
 
 .custom-provider-presets-desc {
@@ -1087,7 +1087,7 @@
 .custom-provider-preset-name {
   color: var(--text);
   font-size: calc(13px * var(--font-scale));
-  font-weight: 650;
+  font-weight: 600;
 }
 
 .custom-provider-preset-url {
@@ -1126,7 +1126,7 @@
 .mirror-manager-name {
   color: var(--text);
   font-size: calc(13px * var(--font-scale));
-  font-weight: 650;
+  font-weight: 600;
 }
 
 .mirror-manager-config {
@@ -1178,7 +1178,7 @@
   border-color: var(--primary);
   background: color-mix(in srgb, var(--primary) 14%, transparent);
   color: var(--text);
-  font-weight: 650;
+  font-weight: 600;
 }
 
 .mirror-preset-btn:disabled:not(.active) {
@@ -1221,7 +1221,7 @@
   overflow: hidden;
   color: var(--text);
   font-size: calc(13px * var(--font-scale));
-  font-weight: 650;
+  font-weight: 600;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
@@ -1444,7 +1444,7 @@
   min-width: 0;
   overflow: hidden;
   font-size: calc(12px * var(--font-scale));
-  font-weight: 650;
+  font-weight: 600;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
@@ -1575,7 +1575,7 @@
 .fetched-model-id {
   min-width: 0;
   overflow: hidden;
-  font-weight: 550;
+  font-weight: 500;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
@@ -1602,7 +1602,7 @@
   width: fit-content;
   border-radius: var(--radius-sm);
   font-size: calc(11px * var(--font-scale));
-  font-weight: 550;
+  font-weight: 500;
   color: var(--muted);
   cursor: pointer;
   user-select: none;
