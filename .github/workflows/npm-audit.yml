@@ -27,5 +27,10 @@ jobs:
       - name: Audit production vulnerabilities
         run: npm audit --omit=dev --audit-level=moderate
 
+      # Electron is a build dependency but its runtime is embedded in the
+      # desktop executable, so the production-only audit does not cover it.
+      - name: Audit desktop runtime and build dependencies
+        run: npm audit --workspace @s1oopx/pi-studio-dev --include=dev --audit-level=moderate
+
       - name: Verify registry signatures
-        run: npm audit signatures --omit=dev
+        run: npm audit signatures

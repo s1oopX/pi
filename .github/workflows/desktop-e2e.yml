@@ -57,6 +57,7 @@ jobs:
       - name: Run E2E smoke test
         run: npm run test:e2e -w @s1oopx/pi-studio-dev
         env:
+          PI_STUDIO_E2E_EXECUTABLE: ${{ github.workspace }}/packages/desktop/release/win-unpacked/Pi Studio Dev.exe
           PI_STUDIO_E2E_ARTIFACTS: ${{ github.workspace }}/e2e-artifacts
 
       - name: Upload failure artifacts
