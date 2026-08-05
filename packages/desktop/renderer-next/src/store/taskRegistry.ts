@@ -27,7 +27,16 @@ export interface TaskListSnapshot {
   isPrimary: boolean;
   ready: boolean;
   starting: boolean;
+  streaming?: boolean;
+  unread?: number;
+  completed?: boolean;
   branch?: string;
+}
+
+export interface UnavailableTaskSummary {
+  taskId: string;
+  cwd: string;
+  error: string;
 }
 
 export interface TaskRegistryState {
@@ -35,6 +44,8 @@ export interface TaskRegistryState {
   activeTaskId: string;
   /** Live pool cap from the main process; undefined until the first task:list. */
   maxTasks?: number;
+  unavailableTasks: UnavailableTaskSummary[];
+  error?: string;
 }
 
 export interface RouteResult {
@@ -64,6 +75,7 @@ export function createInitialTaskRegistryState(): TaskRegistryState {
   return {
     tasks: { [PRIMARY_TASK_ID]: { ...emptySummary(PRIMARY_TASK_ID), isPrimary: true } },
     activeTaskId: PRIMARY_TASK_ID,
+    unavailableTasks: [],
   };
 }
 
@@ -139,7 +151,7 @@ export function isActiveBackendReady(state: TaskRegistryState, primaryReady: boo
 }
 
 /** Short human label for a task: the folder name of its cwd, else the id. */
-export function describeTask(summary: TaskSummary | undefined, taskId: string): string {
+export function describeTask(summary: { cwd?: string } | undefined, taskId: string): string {
   const cwd = summary?.cwd ?? "";
   const base = cwd.split(/[\\/]/u).filter(Boolean).pop();
   return base || taskId;
@@ -162,6 +174,9 @@ export function mergeTaskList(state: TaskRegistryState, snapshots: TaskListSnaps
       isPrimary: snapshot.isPrimary,
       ready: snapshot.ready,
       starting: snapshot.starting,
+      streaming: snapshot.streaming ?? existing.streaming,
+      unread: snapshot.unread ?? existing.unread,
+      completed: snapshot.completed ?? existing.completed,
       ...(snapshot.branch ? { branch: snapshot.branch } : {}),
     };
   }

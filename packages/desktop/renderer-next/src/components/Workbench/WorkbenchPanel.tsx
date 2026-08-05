@@ -11,10 +11,12 @@ import { useI18n } from "../../i18n";
 import * as api from "../../ipc/api";
 import type { WorkspaceFilePreview } from "../../ipc/types";
 import { createBashExecutionId, subscribeBashExecution } from "../../ipc/bashExecutionStream";
+import { isInteractiveExtensionUIRequest } from "../../ipc/extensionUIEffects";
 import { useStore } from "../../store";
 import { createCommandHistoryState, pushCommand, recallNext, recallPrevious } from "./commandHistory";
 import { findLatestTaskPlan } from "./planState";
 import { collectTaskArtifacts, collectTaskSources } from "./taskResources";
+import { summarizeTaskDelivery } from "./taskDelivery";
 
 export type WorkbenchView = "launcher" | "plan" | "sources" | "artifacts" | "review" | "git" | "terminal" | "browser" | "files" | "side-task";
 
@@ -22,6 +24,7 @@ export type WorkbenchKeybindingLabels = Partial<Record<WorkbenchView | "toggle",
 
 interface WorkbenchPanelProps {
   activeView: WorkbenchView;
+  hidden?: boolean;
   keybindingLabels: WorkbenchKeybindingLabels;
   onClose: () => void;
   onSelectView: (view: WorkbenchView) => void;
@@ -47,10 +50,12 @@ interface WorkbenchTerminalTab {
   running: boolean;
 }
 
-export function WorkbenchPanel({ activeView, keybindingLabels, onClose, onSelectView }: WorkbenchPanelProps) {
+export function WorkbenchPanel({ activeView, hidden = false, keybindingLabels, onClose, onSelectView }: WorkbenchPanelProps) {
   const { t } = useI18n();
   const backButtonRef = useRef<HTMLButtonElement>(null);
   const previousActiveViewRef = useRef(activeView);
+  const [terminalMounted, setTerminalMounted] = useState(activeView === "terminal");
+  const activeTaskId = useStore((state) => state.taskRegistry.activeTaskId);
   const title = getWorkbenchTitle(activeView, t);
   const entries = useMemo<WorkbenchEntry[]>(() => [
     {
@@ -106,6 +111,10 @@ export function WorkbenchPanel({ activeView, keybindingLabels, onClose, onSelect
   ], [keybindingLabels, t]);
 
   useEffect(() => {
+    if (activeView === "terminal") setTerminalMounted(true);
+  }, [activeView]);
+
+  useEffect(() => {
     const previousActiveView = previousActiveViewRef.current;
     previousActiveViewRef.current = activeView;
     if (activeView !== "review" || previousActiveView === "review") return;
@@ -118,6 +127,8 @@ export function WorkbenchPanel({ activeView, keybindingLabels, onClose, onSelect
   return (
     <aside
       className="workbench-panel"
+      hidden={hidden}
+      style={hidden ? { display: "none" } : undefined}
       aria-label={t("Workbench", "工作台")}
       onKeyDown={(event) => {
         if (event.key !== "Escape") return;
@@ -151,7 +162,10 @@ export function WorkbenchPanel({ activeView, keybindingLabels, onClose, onSelect
       </div>
 
       <div className={`workbench-body workbench-${activeView}-view`}>
-        {activeView === "launcher" ? (
+        {(terminalMounted || activeView === "terminal") && (
+          <WorkbenchTerminal key={activeTaskId} hidden={activeView !== "terminal"} />
+        )}
+        {!hidden && activeView !== "terminal" && (activeView === "launcher" ? (
           <WorkbenchLauncher entries={entries} onSelectView={onSelectView} />
         ) : activeView === "plan" ? (
           <WorkbenchPlan />
@@ -160,18 +174,16 @@ export function WorkbenchPanel({ activeView, keybindingLabels, onClose, onSelect
         ) : activeView === "artifacts" ? (
           <WorkbenchArtifacts />
         ) : activeView === "review" ? (
-          <WorkbenchReview />
+          <WorkbenchReview onClose={onClose} onSelectView={onSelectView} />
         ) : activeView === "git" ? (
           <GitPanel onClose={onClose} />
-        ) : activeView === "terminal" ? (
-          <WorkbenchTerminal />
         ) : activeView === "browser" ? (
           <WorkbenchBrowser />
         ) : activeView === "files" ? (
           <WorkbenchFiles />
         ) : (
           <WorkbenchSideTask />
-        )}
+        ))}
       </div>
     </aside>
   );
@@ -541,16 +553,143 @@ function WorkbenchLauncher({
   );
 }
 
-function WorkbenchReview() {
+function WorkbenchReview({
+  onClose,
+  onSelectView,
+}: {
+  onClose: () => void;
+  onSelectView: (view: WorkbenchView) => void;
+}) {
+  const { t } = useI18n();
   const refreshAsync = useStore((state) => state.refreshAsync);
+  const messages = useStore((state) => state.messages);
+  const isStreaming = useStore((state) => state.isStreaming);
+  const pendingApprovalCount = useStore((state) => (
+    state.extensionUIRequests.filter(isInteractiveExtensionUIRequest).length
+  ));
+  const delivery = useMemo(() => summarizeTaskDelivery(messages, isStreaming), [isStreaming, messages]);
+  const [activeTab, setActiveTab] = useState<"changes" | "branches">("changes");
+  const tabs = [
+    { id: "changes" as const, label: t("Changes", "变更") },
+    { id: "branches" as const, label: t("Branches", "分支") },
+  ];
+
+  function handleTabKeyDown(event: KeyboardEvent<HTMLButtonElement>, index: number) {
+    let nextIndex: number | undefined;
+    if (event.key === "ArrowLeft") nextIndex = (index - 1 + tabs.length) % tabs.length;
+    if (event.key === "ArrowRight") nextIndex = (index + 1) % tabs.length;
+    if (event.key === "Home") nextIndex = 0;
+    if (event.key === "End") nextIndex = tabs.length - 1;
+    if (nextIndex === undefined) return;
+    event.preventDefault();
+    const nextTab = tabs[nextIndex].id;
+    setActiveTab(nextTab);
+    requestAnimationFrame(() => document.getElementById(`workbench-review-tab-${nextTab}`)?.focus());
+  }
+
+  function openApprovalRequest() {
+    onClose();
+    requestAnimationFrame(() => {
+      document.querySelector<HTMLElement>(
+        ".composer-approval-stack .inline-approval :is(button, input, textarea, select):not(:disabled)",
+      )?.focus();
+    });
+  }
+
   return (
-    <div className="workbench-scroll">
-      <BranchNavigatorContent onSessionChanged={refreshAsync} />
+    <div className="workbench-review">
+      <div className={`workbench-delivery ${delivery.status}`}>
+        <div className="workbench-delivery-heading" aria-live="polite">
+          <span className="workbench-delivery-dot" aria-hidden="true" />
+          <span className="workbench-delivery-copy">
+            <strong>
+              {delivery.status === "running"
+                ? t("Task is still running", "任务仍在运行")
+                : delivery.status === "ready"
+                  ? t("Ready for review", "可以审阅")
+                  : t("Review workspace changes", "审阅工作区变更")}
+            </strong>
+            <span title={delivery.lastReply ?? undefined}>
+              {delivery.lastReply
+                ?? t("Inspect the current Git changes before committing or pushing.", "提交或推送前检查当前 Git 变更。")}
+            </span>
+          </span>
+        </div>
+        {(delivery.totalPlanSteps > 0 || delivery.artifactCount > 0) && (
+          <div className="workbench-delivery-links">
+            {delivery.totalPlanSteps > 0 && (
+              <button type="button" onClick={() => onSelectView("plan")}>
+                <WorkbenchIcon icon="plan" />
+                {t("Plan {completed}/{total}", "计划 {completed}/{total}", {
+                  completed: delivery.completedPlanSteps,
+                  total: delivery.totalPlanSteps,
+                })}
+              </button>
+            )}
+            {delivery.artifactCount > 0 && (
+              <button type="button" onClick={() => onSelectView("artifacts")}>
+                <WorkbenchIcon icon="artifacts" />
+                {t("{count} artifacts", "{count} 个产物", { count: delivery.artifactCount })}
+              </button>
+            )}
+          </div>
+        )}
+      </div>
+      <div className="workbench-review-tabs" role="tablist" aria-label={t("Review views", "审阅视图")}>
+        {tabs.map((tab, index) => (
+          <button
+            id={`workbench-review-tab-${tab.id}`}
+            className="workbench-review-tab"
+            type="button"
+            role="tab"
+            aria-selected={activeTab === tab.id}
+            aria-controls={`workbench-review-panel-${tab.id}`}
+            tabIndex={activeTab === tab.id ? 0 : -1}
+            key={tab.id}
+            onClick={() => setActiveTab(tab.id)}
+            onKeyDown={(event) => handleTabKeyDown(event, index)}
+          >
+            {tab.label}
+          </button>
+        ))}
+      </div>
+      {pendingApprovalCount > 0 && (
+        <div className="workbench-review-approval">
+          <span role="status">
+            {t("Pending requests: {count}", "待审批请求：{count}", { count: pendingApprovalCount })}
+          </span>
+          <button className="workbench-primary secondary" type="button" onClick={openApprovalRequest}>
+            {t("Open request", "打开请求")}
+          </button>
+        </div>
+      )}
+      <div
+        id="workbench-review-panel-changes"
+        className="workbench-review-panel"
+        role="tabpanel"
+        aria-labelledby="workbench-review-tab-changes"
+        hidden={activeTab !== "changes"}
+      >
+        {activeTab === "changes" && <GitPanel onClose={onClose} />}
+      </div>
+      <div
+        id="workbench-review-panel-branches"
+        className="workbench-review-panel"
+        role="tabpanel"
+        aria-labelledby="workbench-review-tab-branches"
+        hidden={activeTab !== "branches"}
+      >
+        {activeTab === "branches" && (
+          <div className="workbench-scroll">
+            <BranchNavigatorContent onClose={onClose} onSessionChanged={refreshAsync} />
+          </div>
+        )}
+      </div>
     </div>
   );
 }
 
-function WorkbenchTerminal() {
+function WorkbenchTerminal({ hidden = false }: { hidden?: boolean }) {
   const { t } = useI18n();
   const [tabs, setTabs] = useState<WorkbenchTerminalTab[]>([{ id: 1, running: false }]);
   const [activeTabId, setActiveTabId] = useState(1);
@@ -591,7 +730,7 @@ function WorkbenchTerminal() {
   }
 
   return (
-    <div className="workbench-terminal">
+    <div className="workbench-terminal" hidden={hidden}>
       <div className="workbench-terminal-toolbar">
         <div className="workbench-terminal-tabs" role="tablist" aria-label={t("Terminals", "终端")}>
           {tabs.map((tab, index) => {

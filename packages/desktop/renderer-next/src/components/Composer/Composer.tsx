@@ -22,14 +22,16 @@ import { ExtensionWidgets } from "../ExtensionWidgets";
 import { InlineApproval, isInteractiveExtensionUIRequest } from "../Message/InlineApproval";
 import { showToast } from "../Toast";
 import { isActiveBackendReady } from "../../store/taskRegistry";
+import { findLatestTaskGoal, findLatestTaskPlan } from "../Workbench/planState";
 import {
   MAX_ATTACHMENT_COUNT,
   MAX_ATTACHMENT_MEGABYTES,
-  ImageAttachmentError,
+  AttachmentError,
   appendAttachments,
   getTransferredFiles,
   getPromptText,
-  readImageAttachment,
+  readComposerAttachment,
+  resolveImageMimeType,
   toImageContent,
   type ComposerAttachment,
 } from "./attachments";
@@ -43,6 +45,7 @@ import {
   clearComposerWorkspaceDraft,
   getComposerWorkspaceDraftKey,
   getComposerWorkspaceDraft,
+  loadPersistedComposerWorkspaceDraft,
   setComposerWorkspaceDraft,
 } from "./workspaceDrafts";
 
@@ -51,18 +54,24 @@ type Suggestion =
   | { kind: "file"; value: string; label: string };
 
 // Extracts the active `/command` or `@file` token immediately before the cursor.
-function getActiveToken(text: string, caret: number): { trigger: "/" | "@"; query: string; start: number } | null {
-  const upto = text.slice(0, caret);
+export function getActiveToken(
+  text: string,
+  caret: number,
+): { trigger: "/" | "@"; query: string; start: number; end: number } | null {
+  const boundedCaret = Math.max(0, Math.min(caret, text.length));
+  const upto = text.slice(0, boundedCaret);
+  const nextWhitespace = text.slice(boundedCaret).search(/\s/);
+  const end = nextWhitespace === -1 ? text.length : boundedCaret + nextWhitespace;
   // Slash command only triggers at the very start of the input.
   const slashMatch = /^\/(\S*)$/.exec(upto);
   if (slashMatch) {
-    return { trigger: "/", query: slashMatch[1], start: 0 };
+    return { trigger: "/", query: slashMatch[1], start: 0, end };
   }
   // @file triggers anywhere, on a whitespace-delimited token.
   const atMatch = /(?:^|\s)@(\S*)$/.exec(upto);
   if (atMatch) {
     const start = upto.lastIndexOf("@");
-    return { trigger: "@", query: atMatch[1], start };
+    return { trigger: "@", query: atMatch[1], start, end };
   }
   return null;
 }
@@ -74,13 +83,18 @@ export function Composer() {
   const sessionId = useStore((state) => state.session?.sessionId ?? null);
   const composerContextKey = getComposerWorkspaceDraftKey(workspaceCwd, sessionId);
   const composerContextRef = useRef({ key: composerContextKey, cwd: workspaceCwd, sessionId });
+  const composerHydrationRef = useRef({ key: composerContextKey, revision: 0, ready: false });
+  const composerRevisionRef = useRef(0);
+  const hydratedWorkspacesRef = useRef(new Set<string>());
   const pendingTextareaResizeRef = useRef<string | null>(null);
   const [input, setInput] = useState(() => getComposerWorkspaceDraft(workspaceCwd, sessionId).input);
+  const [caret, setCaret] = useState(() => input.length);
   const [attachments, setAttachments] = useState<ComposerAttachment[]>(
     () => getComposerWorkspaceDraft(workspaceCwd, sessionId).attachments,
   );
   const [readingAttachments, setReadingAttachments] = useState(false);
   const [submitting, setSubmitting] = useState(false);
+  const [aborting, setAborting] = useState(false);
   const [streamingSubmitMode, setStreamingSubmitMode] = useState<StreamingSubmitMode>("follow-up");
   const [draggingFiles, setDraggingFiles] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
@@ -95,6 +109,7 @@ export function Composer() {
   const commands = useStore((s) => s.commands);
   const extensionWidgets = useStore((s) => s.extensionWidgets);
   const extensionUIRequests = useStore((s) => s.extensionUIRequests);
+  const messages = useStore((s) => s.messages);
   const modelSupportsImages = useStore((s) => s.session?.model?.input.includes("image") ?? true);
   const composerDraft = useStore((s) => s.composerDraft);
   const setComposerDraft = useStore((s) => s.setComposerDraft);
@@ -104,24 +119,46 @@ export function Composer() {
   const fileRequestSeq = useRef(0);
   const attachmentRequestSeq = useRef(0);
   const dragDepthRef = useRef(0);
+  const inputRef = useRef(input);
+  const attachmentsRef = useRef(attachments);
+  inputRef.current = input;
+  attachmentsRef.current = attachments;
 
-  const token = getActiveToken(input, input.length);
+  const token = getActiveToken(input, caret);
   const approvalRequests = useMemo(
     () => extensionUIRequests.filter(isInteractiveExtensionUIRequest),
     [extensionUIRequests],
   );
+  const taskPlan = useMemo(() => findLatestTaskPlan(messages), [messages]);
+  const taskGoal = useMemo(() => findLatestTaskGoal(messages), [messages]);
+  const completedPlanSteps = taskPlan?.steps.filter((step) => step.status === "completed").length ?? 0;
+  const currentPlanStep = taskPlan?.steps.find((step) => step.status === "in_progress")
+    ?? taskPlan?.steps.find((step) => step.status === "pending");
+  const activeTaskGoal = taskGoal?.status === "active" || taskGoal?.status === "blocked" ? taskGoal : null;
+  const showTaskProgress = Boolean(activeTaskGoal || currentPlanStep);
 
   useLayoutEffect(() => {
     const previousContext = composerContextRef.current;
     if (previousContext.key !== composerContextKey) {
-      setComposerWorkspaceDraft(previousContext.cwd, previousContext.sessionId, input, attachments);
-      const draft = getComposerWorkspaceDraft(workspaceCwd, sessionId);
+      const hydration = composerHydrationRef.current;
+      if (hydration.ready || composerRevisionRef.current !== hydration.revision) {
+        setComposerWorkspaceDraft(previousContext.cwd, previousContext.sessionId, input, attachments);
+      }
+      const storedDraft = getComposerWorkspaceDraft(workspaceCwd, sessionId);
+      const carryStartupDraft = previousContext.cwd === workspaceCwd && previousContext.sessionId === null && sessionId !== null
+        && (input.length > 0 || attachments.length > 0)
+        && !storedDraft.input && storedDraft.attachments.length === 0;
+      const draft = carryStartupDraft ? { input, attachments } : storedDraft;
+      if (carryStartupDraft) setComposerWorkspaceDraft(workspaceCwd, sessionId, draft.input, draft.attachments);
       composerContextRef.current = { key: composerContextKey, cwd: workspaceCwd, sessionId };
+      composerHydrationRef.current = { key: composerContextKey, revision: composerRevisionRef.current, ready: false };
       pendingTextareaResizeRef.current = composerContextKey;
       setInput(draft.input);
+      setCaret(draft.input.length);
       setAttachments(draft.attachments);
       setReadingAttachments(false);
       setSubmitting(false);
+      setAborting(false);
       setStreamingSubmitMode("follow-up");
       setDraggingFiles(false);
       setMenuOpen(false);
@@ -141,8 +178,50 @@ export function Composer() {
         textarea.style.height = `${Math.min(textarea.scrollHeight, 200)}px`;
       }
     }
-    setComposerWorkspaceDraft(workspaceCwd, sessionId, input, attachments);
+    if (composerHydrationRef.current.ready) {
+      setComposerWorkspaceDraft(workspaceCwd, sessionId, input, attachments);
+    }
   }, [attachments, composerContextKey, input, sessionId, workspaceCwd]);
+
+  useEffect(() => {
+    const hydration = composerHydrationRef.current;
+    if (hydration.key !== composerContextKey) return;
+    const workspaceKey = workspaceCwd.trim() || "__no_workspace__";
+    const memoryDraft = getComposerWorkspaceDraft(workspaceCwd, sessionId);
+    if (memoryDraft.input || memoryDraft.attachments.length > 0) {
+      hydration.ready = true;
+      hydratedWorkspacesRef.current.add(workspaceKey);
+      setComposerWorkspaceDraft(workspaceCwd, sessionId, memoryDraft.input, memoryDraft.attachments);
+      return;
+    }
+
+    let cancelled = false;
+    void loadPersistedComposerWorkspaceDraft(
+      workspaceCwd,
+      sessionId,
+      !hydratedWorkspacesRef.current.has(workspaceKey),
+    ).then((draft) => {
+      if (cancelled || composerContextRef.current.key !== composerContextKey) return;
+      const currentHydration = composerHydrationRef.current;
+      if (currentHydration.key !== composerContextKey) return;
+      currentHydration.ready = true;
+      hydratedWorkspacesRef.current.add(workspaceKey);
+      if (composerRevisionRef.current === currentHydration.revision && draft) {
+        inputRef.current = draft.input;
+        attachmentsRef.current = draft.attachments;
+        setInput(draft.input);
+        setCaret(draft.input.length);
+        setAttachments(draft.attachments);
+        setComposerWorkspaceDraft(workspaceCwd, sessionId, draft.input, draft.attachments);
+        pendingTextareaResizeRef.current = composerContextKey;
+        return;
+      }
+      setComposerWorkspaceDraft(workspaceCwd, sessionId, inputRef.current, attachmentsRef.current);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [composerContextKey, sessionId, workspaceCwd]);
 
   useEffect(() => {
     const focusFrame = requestAnimationFrame(() => {
@@ -157,6 +236,7 @@ export function Composer() {
   // prefill the input, focus, size to fit, then clear the shared draft.
   useEffect(() => {
     if (composerDraft == null) return;
+    composerRevisionRef.current += 1;
     setInput((current) => typeof composerDraft === "function" ? composerDraft(current) : composerDraft);
     setComposerDraft(null);
     requestAnimationFrame(() => {
@@ -164,6 +244,7 @@ export function Composer() {
       if (!el) return;
       el.focus();
       el.setSelectionRange(el.value.length, el.value.length);
+      setCaret(el.value.length);
       el.style.height = "auto";
       el.style.height = `${Math.min(el.scrollHeight, 200)}px`;
     });
@@ -215,17 +296,17 @@ export function Composer() {
 
   function applySuggestion(suggestion: Suggestion) {
     if (!token) return;
-    let next: string;
-    if (suggestion.kind === "command") {
-      next = `${suggestion.value} `;
-    } else {
-      // Replace the @token span with the picked file path.
-      next = `${input.slice(0, token.start)}@${suggestion.value} `;
-    }
+    const suffix = input.slice(token.end);
+    const value = suggestion.kind === "command" ? suggestion.value : `@${suggestion.value}`;
+    const replacement = `${value}${suffix.length === 0 || !/^\s/.test(suffix) ? " " : ""}`;
+    const next = `${input.slice(0, token.start)}${replacement}${suffix}`;
     setInput(next);
+    const nextCaret = token.start + replacement.length;
+    setCaret(nextCaret);
     setMenuOpen(false);
     requestAnimationFrame(() => {
       textareaRef.current?.focus();
+      textareaRef.current?.setSelectionRange(nextCaret, nextCaret);
       autosize();
     });
   }
@@ -236,18 +317,14 @@ export function Composer() {
 
   async function addAttachmentFiles(selectedFiles: readonly File[]) {
     if (selectedFiles.length === 0) return;
-    if (!modelSupportsImages) {
-      showToast(t("The current model does not support image input", "当前模型不支持图片输入"), "error");
-      return;
-    }
     if (submitting || readingAttachments) {
-      showToast(t("Wait for the current message or images to finish processing", "请等待当前消息或图片处理完成"), "info");
+      showToast(t("Wait for the current message or files to finish processing", "请等待当前消息或文件处理完成"), "info");
       return;
     }
 
     const availableSlots = Math.max(0, MAX_ATTACHMENT_COUNT - attachments.length);
     if (availableSlots === 0) {
-      showToast(t("You can attach up to {count} images", "最多可附加 {count} 张图片", {
+      showToast(t("You can attach up to {count} files", "最多可附加 {count} 个文件", {
         count: MAX_ATTACHMENT_COUNT,
       }), "error");
       return;
@@ -258,25 +335,35 @@ export function Composer() {
     const requestSeq = ++attachmentRequestSeq.current;
     try {
       const filesToRead = selectedFiles.slice(0, availableSlots);
-      const results = await Promise.allSettled(filesToRead.map((file) => readImageAttachment(file)));
+      const results = await Promise.allSettled(filesToRead.map((file) => {
+        if (!modelSupportsImages && resolveImageMimeType(file)) {
+          throw new AttachmentError("image-unsupported", file.name.trim() || "image");
+        }
+        return readComposerAttachment(file, api.getDroppedFilePath);
+      }));
       if (requestSeq !== attachmentRequestSeq.current || composerContextRef.current.key !== requestKey) return;
       const accepted = results.flatMap((result) => (result.status === "fulfilled" ? [result.value] : []));
       const errors = results.flatMap((result) =>
         result.status === "rejected"
-          ? [result.reason instanceof ImageAttachmentError
-              ? result.reason.reason === "unsupported"
-                ? t("{name} is not a supported image", "{name} 不是受支持的图片", {
+          ? [result.reason instanceof AttachmentError
+              ? result.reason.reason === "image-unsupported"
+                ? t("The current model does not support {name}", "当前模型不支持 {name}", {
                     name: result.reason.attachmentName,
                   })
-                : t("{name} exceeds the {size} MB attachment limit", "{name} 超出 {size} MB 的附件上限", {
-                    name: result.reason.attachmentName,
-                    size: MAX_ATTACHMENT_MEGABYTES,
-                  })
+                : result.reason.reason === "path-unavailable"
+                  ? t("Could not access the path for {name}", "无法访问 {name} 的文件路径", {
+                      name: result.reason.attachmentName,
+                    })
+                  : t("{name} exceeds the {size} MB attachment limit", "{name} 超出 {size} MB 的附件上限", {
+                      name: result.reason.attachmentName,
+                      size: MAX_ATTACHMENT_MEGABYTES,
+                    })
               : result.reason instanceof Error
                 ? result.reason.message
                 : String(result.reason)]
           : [],
       );
+      if (accepted.length > 0) composerRevisionRef.current += 1;
       setAttachments((current) => appendAttachments(current, accepted).attachments);
 
       const dropped = selectedFiles.length - filesToRead.length;
@@ -287,7 +374,7 @@ export function Composer() {
         showToast(`${errors[0]}${suffix}`, "error");
       }
       if (dropped > 0) {
-        showToast(t("Only the first {count} images were attached", "仅附加了前 {count} 张图片", {
+        showToast(t("Only the first {count} files were attached", "仅附加了前 {count} 个文件", {
           count: availableSlots,
         }), "info");
       }
@@ -342,8 +429,10 @@ export function Composer() {
   async function handleSubmit(e?: FormEvent) {
     e?.preventDefault();
     if (input.trim() === "/memories" && attachments.length === 0 && !submitting && !readingAttachments) {
+      composerRevisionRef.current += 1;
       clearComposerWorkspaceDraft(workspaceCwd, sessionId);
       setInput("");
+      setCaret(0);
       openSettings("memory");
       return;
     }
@@ -368,7 +457,7 @@ export function Composer() {
     }
     const message = input.trim();
     if ((!message && attachments.length === 0) || submitting || readingAttachments) return;
-    if (attachments.length > 0 && !modelSupportsImages) {
+    if (attachments.some((attachment) => attachment.type === "image") && !modelSupportsImages) {
       showToast(t("The current model does not support image input", "当前模型不支持图片输入"), "error");
       return;
     }
@@ -376,10 +465,12 @@ export function Composer() {
     setSubmitting(true);
     try {
       const images = toImageContent(attachments);
-      await submit(getPromptText(message, images.length), images.length > 0 ? images : undefined);
-      if (composerContextRef.current.key !== requestKey) return;
+      await submit(getPromptText(message, attachments), images.length > 0 ? images : undefined);
+      composerRevisionRef.current += 1;
       clearComposerWorkspaceDraft(workspaceCwd, sessionId);
+      if (composerContextRef.current.key !== requestKey) return;
       setInput("");
+      setCaret(0);
       setAttachments([]);
       if (textareaRef.current) textareaRef.current.style.height = "auto";
     } catch (error) {
@@ -432,12 +523,42 @@ export function Composer() {
   }
 
   async function handleAbort() {
+    if (aborting) return;
+    const requestContext = composerContextRef.current;
+    setAborting(true);
     try {
-      await api.abort();
+      const queued = await api.abort();
+      const restored = [...queued.steering, ...queued.followUp]
+        .filter((message) => message.trim().length > 0)
+        .join("\n\n");
+      if (!restored) return;
+
+      if (composerContextRef.current.key === requestContext.key) {
+        composerRevisionRef.current += 1;
+        setInput((current) => [restored, current].filter((text) => text.trim().length > 0).join("\n\n"));
+        requestAnimationFrame(() => {
+          const textarea = textareaRef.current;
+          if (!textarea) return;
+          textarea.focus();
+          textarea.setSelectionRange(textarea.value.length, textarea.value.length);
+          setCaret(textarea.value.length);
+          autosize();
+        });
+      } else {
+        const draft = getComposerWorkspaceDraft(requestContext.cwd, requestContext.sessionId);
+        setComposerWorkspaceDraft(
+          requestContext.cwd,
+          requestContext.sessionId,
+          [restored, draft.input].filter((text) => text.trim().length > 0).join("\n\n"),
+          draft.attachments,
+        );
+      }
     } catch (error) {
       showToast(t("Failed to stop generation: {error}", "停止生成失败：{error}", {
         error: error instanceof Error ? error.message : String(error),
       }), "error");
+    } finally {
+      setAborting(false);
     }
   }
 
@@ -457,6 +578,42 @@ export function Composer() {
   return (
     <div className="composer-wrap">
       <ExtensionWidgets widgets={extensionWidgets} placement="aboveEditor" />
+      {showTaskProgress && (
+        <div
+          className={`composer-task-progress ${activeTaskGoal?.status === "blocked" ? "blocked" : isStreaming ? "running" : ""}`}
+          role="status"
+          aria-live="polite"
+        >
+          <span className="composer-task-progress-dot" aria-hidden="true" />
+          <span className="composer-task-progress-copy">
+            <strong title={activeTaskGoal?.objective}>
+              {activeTaskGoal?.objective ?? t("Task progress", "任务进度")}
+            </strong>
+            <span title={currentPlanStep?.step}>
+              {activeTaskGoal?.status === "blocked"
+                ? t("Needs input", "需要输入")
+                : currentPlanStep?.step
+                  ?? (isStreaming ? t("Working", "正在处理") : t("Ready for the next step", "等待下一步"))}
+            </span>
+          </span>
+          {taskPlan && taskPlan.steps.length > 0 && (
+            <>
+              <span className="composer-task-progress-count">
+                {completedPlanSteps}/{taskPlan.steps.length}
+              </span>
+              <progress
+                className="composer-task-progress-bar"
+                max={taskPlan.steps.length}
+                value={completedPlanSteps}
+                aria-label={t("{completed} of {total} completed", "已完成 {completed}/{total}", {
+                  completed: completedPlanSteps,
+                  total: taskPlan.steps.length,
+                })}
+              />
+            </>
+          )}
+        </div>
+      )}
       {approvalRequests.length > 0 && (
         <div className="composer-approval-stack">
           {approvalRequests.map((request) => (
@@ -474,40 +631,48 @@ export function Composer() {
       >
         {draggingFiles && (
           <div
-            className={`composer-drop-overlay ${modelSupportsImages ? "" : "unsupported"}`}
+            className="composer-drop-overlay"
             role="status"
             aria-live="polite"
           >
             <span className="composer-drop-title">
-              {modelSupportsImages
-                ? t("Drop images to attach", "拖放图片以附加")
-                : t("This model cannot accept images", "此模型无法接收图片")}
+              {t("Drop files to attach", "拖放文件以附加")}
             </span>
             <span className="composer-drop-description">
               {t(
-                "PNG, JPEG, GIF, or WebP; up to {count} images; {size} MB each",
-                "支持 PNG、JPEG、GIF 或 WebP；最多 {count} 张；每张 {size} MB",
+                "Up to {count} files; images can be up to {size} MB each",
+                "最多 {count} 个文件；图片每张不超过 {size} MB",
                 { count: MAX_ATTACHMENT_COUNT, size: MAX_ATTACHMENT_MEGABYTES },
               )}
             </span>
           </div>
         )}
         {attachments.length > 0 && (
-          <div className="composer-attachments" role="group" aria-label={t("Image attachments", "图片附件")}>
+          <div className="composer-attachments" role="group" aria-label={t("Attachments", "附件")}>
             {attachments.map((attachment) => (
-              <div className="composer-attachment" key={attachment.id}>
-                <img
-                  src={`data:${attachment.mimeType};base64,${attachment.data}`}
-                  alt={attachment.name}
-                  title={attachment.name}
-                />
+              <div className={`composer-attachment ${attachment.type === "file" ? "file" : ""}`} key={attachment.id}>
+                {attachment.type === "image" ? (
+                  <img
+                    src={`data:${attachment.mimeType};base64,${attachment.data}`}
+                    alt={attachment.name}
+                    title={attachment.name}
+                  />
+                ) : (
+                  <div className="composer-attachment-file" title={attachment.path}>
+                    <Icon name="file" size={18} />
+                    <span>{attachment.name}</span>
+                  </div>
+                )}
                 <button
                   className="composer-attachment-remove"
                   type="button"
                   aria-label={t("Remove {name}", "移除 {name}", { name: attachment.name })}
-                  title={t("Remove image", "移除图片")}
+                  title={t("Remove attachment", "移除附件")}
                   disabled={submitting}
-                  onClick={() => setAttachments((current) => current.filter((item) => item.id !== attachment.id))}
+                  onClick={() => {
+                    composerRevisionRef.current += 1;
+                    setAttachments((current) => current.filter((item) => item.id !== attachment.id));
+                  }}
                 >
                   <Icon name="close" size={16} />
                 </button>
@@ -552,8 +717,16 @@ export function Composer() {
             ref={textareaRef}
             className="composer-input"
             value={input}
-            onChange={(e) => { setInput(e.target.value); autosize(); }}
+            onChange={(e) => {
+              composerRevisionRef.current += 1;
+              setInput(e.target.value);
+              setCaret(e.target.selectionStart);
+              autosize();
+            }}
             onKeyDown={handleKeyDown}
+            onKeyUp={(e) => setCaret(e.currentTarget.selectionStart)}
+            onSelect={(e) => setCaret(e.currentTarget.selectionStart)}
+            onClick={(e) => setCaret(e.currentTarget.selectionStart)}
             onPaste={handlePaste}
             placeholder={inputPlaceholder}
             rows={1}
@@ -563,13 +736,13 @@ export function Composer() {
             aria-expanded={menuOpen}
             aria-activedescendant={menuOpen && suggestions[activeIndex] ? `${suggestionsListboxId}-${activeIndex}` : undefined}
             aria-label={t("Message input", "消息输入框")}
-            aria-describedby="composer-image-attachment-hint"
+            aria-describedby="composer-attachment-hint"
             disabled={submitting}
           />
-          <span className="composer-a11y-description" id="composer-image-attachment-hint">
+          <span className="composer-a11y-description" id="composer-attachment-hint">
             {t(
-              "Paste or drop PNG, JPEG, GIF, or WebP images to attach them. Up to {count} images, {size} megabytes each.",
-              "粘贴或拖放 PNG、JPEG、GIF 或 WebP 图片以附加。最多 {count} 张，每张 {size} MB。",
+              "Paste images or select and drop files to attach them. Up to {count} files; images can be {size} megabytes each.",
+              "可粘贴图片，或选择、拖放文件作为附件。最多 {count} 个文件；图片每张不超过 {size} MB。",
               { count: MAX_ATTACHMENT_COUNT, size: MAX_ATTACHMENT_MEGABYTES },
             )}
           </span>
@@ -580,8 +753,7 @@ export function Composer() {
               ref={fileInputRef}
               className="composer-file-input"
               type="file"
-              aria-label={t("Attach images", "附加图片")}
-              accept="image/png,image/jpeg,image/gif,image/webp"
+              aria-label={t("Attach files", "附加文件")}
               multiple
               tabIndex={-1}
               onChange={handleAttachmentSelection}
@@ -589,11 +761,9 @@ export function Composer() {
             <button
               className="composer-attach-btn"
               type="button"
-              aria-label={t("Attach images", "附加图片")}
-              title={modelSupportsImages
-                ? t("Attach images", "附加图片")
-                : t("Current model does not support images", "当前模型不支持图片")}
-              disabled={submitting || readingAttachments || !modelSupportsImages}
+              aria-label={t("Attach files", "附加文件")}
+              title={t("Attach files", "附加文件")}
+              disabled={submitting || readingAttachments}
               onClick={() => fileInputRef.current?.click()}
             >
               <Icon name="paperclip" size={18} />
@@ -632,8 +802,12 @@ export function Composer() {
                   <button
                     className="composer-abort-btn"
                     type="button"
+                    disabled={aborting}
                     onClick={handleAbort}
-                    aria-label={t("Stop generating", "停止生成")}
+                    aria-busy={aborting}
+                    aria-label={aborting
+                      ? t("Stopping generation", "正在停止生成")
+                      : t("Stop generating", "停止生成")}
                   >
                     <span className="composer-abort-icon" aria-hidden="true" />
                     <span>{t("Stop", "停止")}</span>
@@ -650,7 +824,7 @@ export function Composer() {
                     !activeBackendReady ||
                     isPromptSubmissionBlocked(retrying, compacting) ||
                     !hasDraft ||
-                    (attachments.length > 0 && !modelSupportsImages)
+                    (attachments.some((attachment) => attachment.type === "image") && !modelSupportsImages)
                   }
                   aria-label={isStreaming ? streamingSubmitLabel : t("Send message", "发送消息")}
                   title={

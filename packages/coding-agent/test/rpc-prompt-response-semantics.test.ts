@@ -325,8 +325,8 @@ describe("RPC prompt response semantics", () => {
 		}
 	});
 
-	it("clears queued streaming prompts when aborting", async () => {
-		const { lineHandler, cleanup } = await startRpcMode({ withAuth: true, responseDelayMs: 100 });
+	it("returns and clears queued streaming prompts when aborting", async () => {
+		const { lineHandler, cleanup } = await startRpcMode({ withAuth: true, responseDelayMs: 500 });
 
 		try {
 			lineHandler(JSON.stringify({ id: "abort-start", type: "prompt", message: "Start" }));
@@ -353,6 +353,10 @@ describe("RPC prompt response semantics", () => {
 					type: "response",
 					command: "abort",
 					success: true,
+					data: {
+						steering: [],
+						followUp: ["Do not keep this queued"],
+					},
 				});
 			});
 
@@ -360,6 +364,49 @@ describe("RPC prompt response semantics", () => {
 			await vi.waitFor(() => {
 				expect(getResponse(rpcIo.outputLines, "abort-state", "get_state")).toMatchObject({
 					data: { pendingMessageCount: 0 },
+				});
+			});
+		} finally {
+			await cleanup();
+		}
+	});
+
+	it("returns queued streaming prompts for editing without aborting", async () => {
+		const { lineHandler, cleanup } = await startRpcMode({ withAuth: true, responseDelayMs: 500 });
+
+		try {
+			lineHandler(JSON.stringify({ id: "dequeue-start", type: "prompt", message: "Start" }));
+			await vi.waitFor(() => {
+				expect(getPromptResponses(rpcIo.outputLines, "dequeue-start")).toHaveLength(1);
+			});
+
+			lineHandler(
+				JSON.stringify({
+					id: "dequeue-queued",
+					type: "prompt",
+					message: "Edit this queued message",
+					streamingBehavior: "followUp",
+				}),
+			);
+			await vi.waitFor(() => {
+				expect(getPromptResponses(rpcIo.outputLines, "dequeue-queued")).toHaveLength(1);
+			});
+
+			lineHandler(JSON.stringify({ id: "dequeue-now", type: "dequeue" }));
+			await vi.waitFor(() => {
+				expect(getResponse(rpcIo.outputLines, "dequeue-now", "dequeue")).toMatchObject({
+					success: true,
+					data: {
+						steering: [],
+						followUp: ["Edit this queued message"],
+					},
+				});
+			});
+
+			lineHandler(JSON.stringify({ id: "dequeue-state", type: "get_state" }));
+			await vi.waitFor(() => {
+				expect(getResponse(rpcIo.outputLines, "dequeue-state", "get_state")).toMatchObject({
+					data: { isStreaming: true, pendingMessageCount: 0 },
 				});
 			});
 		} finally {

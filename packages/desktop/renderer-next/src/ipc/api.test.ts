@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, expectTypeOf, it } from "vitest";
 import {
   cloneSession,
+  dequeue,
   followUp,
   forkSession,
   getAuthStatus,
@@ -63,6 +64,25 @@ describe("image prompt API", () => {
       { type: "steer", message: "Adjust now", images: [image] },
       { type: "follow_up", message: "More detail", images: [image] },
     ]);
+  });
+});
+
+describe("queued prompt API", () => {
+  it("returns dequeued messages for editing", async () => {
+    const queued = { steering: ["Adjust now"], followUp: ["Continue later"] };
+    Object.defineProperty(globalThis, "window", {
+      configurable: true,
+      value: {
+        piDesktop: {
+          request(command: BackendCommand) {
+            expect(command).toEqual({ type: "dequeue" });
+            return Promise.resolve(queued);
+          },
+        },
+      },
+    });
+
+    await expect(dequeue()).resolves.toEqual(queued);
   });
 });
 

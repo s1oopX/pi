@@ -44,6 +44,8 @@ function createHandle(overrides = {}) {
 		},
 		existsSyncImpl: overrides.existsSyncImpl ?? (() => true),
 		...(overrides.nowImpl ? { nowImpl: overrides.nowImpl } : {}),
+		...(overrides.resumeSessionFile ? { resumeSessionFile: overrides.resumeSessionFile } : {}),
+		...(overrides.onSessionFileChanged ? { onSessionFileChanged: overrides.onSessionFileChanged } : {}),
 	});
 	return { handle, events, children, notified, sessionCwds };
 }
@@ -78,6 +80,42 @@ test("start spawns in the cwd, pings get_state, and reports ready with tagged st
 	]);
 	assert.equal(context.handle.statusSnapshot().ready, true);
 	assert.equal(context.handle.statusSnapshot().backendId, "test");
+});
+
+test("startup restores the saved session before reporting the backend ready", async (t) => {
+	const changed = [];
+	const context = createHandle({
+		resumeSessionFile: "C:\\sessions\\saved.jsonl",
+		onSessionFileChanged: (sessionFile) => changed.push(sessionFile),
+	});
+	t.after(() => context.handle.stop());
+
+	context.handle.start();
+	const child = context.children.at(-1);
+	replyTo(child, child.written.at(-1), { data: { sessionFile: "C:\\sessions\\fresh.jsonl" } });
+	await Promise.resolve();
+	const switched = JSON.parse(child.written.at(-1));
+	assert.equal(switched.type, "switch_session");
+	assert.equal(switched.sessionPath, "C:\\sessions\\saved.jsonl");
+	replyTo(child, child.written.at(-1), { data: { sessionFile: "C:\\sessions\\saved.jsonl" } });
+	await Promise.resolve();
+	await Promise.resolve();
+
+	assert.equal(context.handle.ready, true);
+	assert.deepEqual(changed, []);
+});
+
+test("prompt responses update the session file used for later recovery", async (t) => {
+	const changed = [];
+	const context = createHandle({ onSessionFileChanged: (sessionFile) => changed.push(sessionFile) });
+	t.after(() => context.handle.stop());
+	const child = await startReady(context);
+
+	const pending = context.handle.request({ type: "prompt", message: "hello" });
+	replyTo(child, child.written.at(-1), { data: { sessionFile: "C:\\sessions\\current.jsonl" } });
+	await pending;
+	assert.equal(context.handle.resumeSessionFile, "C:\\sessions\\current.jsonl");
+	assert.deepEqual(changed, ["C:\\sessions\\current.jsonl"]);
 });
 
 test("start accepts a custom launch spec and writes its stdin prefix before RPC", async (t) => {

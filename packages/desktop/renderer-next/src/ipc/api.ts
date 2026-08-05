@@ -83,13 +83,16 @@ export interface PiDesktopApi {
   getBackendStatus(taskId?: string): Promise<BackendStatus>;
   getPendingExtensionUIRequests?: (taskId?: string) => Promise<ExtensionUIRequestEvent[]>;
   createTask?: (cwd: string) => Promise<TaskSnapshot>;
-  listTasks?: () => Promise<{ tasks: TaskSnapshot[]; maxTasks?: number }>;
+  listTasks?: () => Promise<{ tasks: TaskSnapshot[]; maxTasks?: number; unavailableTasks?: UnavailableTaskSnapshot[] }>;
   stopTask?: (taskId: string) => Promise<{ stopped: boolean; taskId: string; worktreeRemoved?: boolean; worktreeKeptReason?: string }>;
+  retryTask?: (taskId: string) => Promise<TaskSnapshot>;
+  forgetSavedTask?: (taskId: string) => Promise<{ forgotten: boolean; taskId: string }>;
   pickTaskFolder?: () => Promise<{ canceled: boolean; cwd?: string }>;
   notifyActiveTask?: (taskId: string) => void;
   getTaskSettings?: () => Promise<TaskPoolSettings>;
   configureTasks?: (settings: Partial<TaskPoolSettings>) => Promise<TaskPoolSettings>;
   onTaskChanged?: (listener: (payload: TaskChangedEvent) => void) => () => void;
+  onTaskFocus?: (listener: (payload: TaskFocusEvent) => void) => () => void;
   listAutomations?: () => Promise<{ automations: AutomationRecord[] }>;
   createAutomation?: (input: AutomationInput, taskId?: string) => Promise<AutomationRecord>;
   updateAutomation?: (id: string, input: AutomationInput) => Promise<AutomationRecord>;
@@ -213,9 +216,18 @@ export interface TaskSnapshot {
   isPrimary: boolean;
   ready: boolean;
   starting: boolean;
+  streaming?: boolean;
+  unread?: number;
+  completed?: boolean;
   /** Worktree tasks carry the branch they run on and the repo they came from. */
   branch?: string;
   sourceRepo?: string;
+}
+
+export interface UnavailableTaskSnapshot {
+  taskId: string;
+  cwd: string;
+  error: string;
 }
 
 export async function createTask(cwd: string): Promise<TaskSnapshot> {
@@ -234,6 +246,11 @@ export interface TaskChangedEvent {
   reason: string;
   worktreeRemoved?: boolean;
   worktreeKeptReason?: string;
+}
+
+export interface TaskFocusEvent {
+  taskId: string;
+  view?: "review";
 }
 
 export type AutomationStatus = "active" | "paused";
@@ -321,11 +338,31 @@ export interface AutomationsChangedEvent {
   automations: AutomationRecord[];
 }
 
-export async function listTasks(): Promise<{ tasks: TaskSnapshot[]; maxTasks?: number }> {
+export async function listTasks(): Promise<{
+  tasks: TaskSnapshot[];
+  maxTasks?: number;
+  unavailableTasks?: UnavailableTaskSnapshot[];
+}> {
   const api = getApi();
   if (!api?.listTasks) return { tasks: [] };
   const result = await api.listTasks();
-  return { tasks: result.tasks ?? [], maxTasks: (result as { maxTasks?: number }).maxTasks };
+  return {
+    tasks: result.tasks ?? [],
+    maxTasks: result.maxTasks,
+    unavailableTasks: result.unavailableTasks,
+  };
+}
+
+export async function retryTask(taskId: string): Promise<TaskSnapshot> {
+  const api = requireApi();
+  if (!api.retryTask) throw new Error("Saved task recovery needs a newer Pi Studio build");
+  return api.retryTask(taskId);
+}
+
+export async function forgetSavedTask(taskId: string): Promise<void> {
+  const api = requireApi();
+  if (!api.forgetSavedTask) throw new Error("Saved task recovery needs a newer Pi Studio build");
+  await api.forgetSavedTask(taskId);
 }
 
 export async function getTaskSettings(): Promise<TaskPoolSettings | null> {
@@ -344,6 +381,12 @@ export function onTaskChanged(listener: (payload: TaskChangedEvent) => void): ()
   const api = getApi();
   if (!api?.onTaskChanged) return () => {};
   return api.onTaskChanged(listener);
+}
+
+export function onTaskFocus(listener: (payload: TaskFocusEvent) => void): () => void {
+  const api = getApi();
+  if (!api?.onTaskFocus) return () => {};
+  return api.onTaskFocus(listener);
 }
 
 export interface WorktreeLeftover {
@@ -708,8 +751,12 @@ export async function followUp(message: string, images?: ImageContent[]): Promis
   await backendRequest({ type: "follow_up", message, images });
 }
 
-export async function abort(): Promise<void> {
-  await backendRequest({ type: "abort" });
+export async function dequeue(): Promise<{ steering: string[]; followUp: string[] }> {
+  return (await backendRequest({ type: "dequeue" })) as { steering: string[]; followUp: string[] };
+}
+
+export async function abort(): Promise<{ steering: string[]; followUp: string[] }> {
+  return (await backendRequest({ type: "abort" })) as { steering: string[]; followUp: string[] };
 }
 
 export async function newSession(cwd?: string): Promise<{ cancelled: boolean; cwd: string }> {

@@ -4,7 +4,8 @@
  * reply), streamed as SSE when the client asks for streaming. No network
  * beyond 127.0.0.1.
  *
- * Steps: `{ reply: "text" }` or `{ toolCalls: [{ id, name, arguments }] }`
+ * Steps: `{ reply: "text" }`, `{ status: 401, error: "message" }`, or
+ * `{ toolCalls: [{ id, name, arguments }] }`
  * (arguments as a plain object). Requests past the end of the script repeat
  * the last step. Optional per-step fields:
  * - `when`: substring matched against the request messages; matching steps
@@ -66,6 +67,12 @@ function toWireToolCalls(toolCalls) {
 }
 
 function respondChatCompletion(res, request, step) {
+	if (step.status) {
+		res.writeHead(step.status, { "content-type": "application/json" });
+		res.end(JSON.stringify({ error: { message: step.error ?? `Faux provider error ${step.status}` } }));
+		return;
+	}
+
 	const model = request?.model ?? "faux-model";
 	const usage = { prompt_tokens: 1, completion_tokens: 1, total_tokens: 2 };
 	const toolCalls = step.toolCalls ? toWireToolCalls(step.toolCalls) : undefined;

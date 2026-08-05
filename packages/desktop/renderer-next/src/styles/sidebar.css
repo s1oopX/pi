@@ -656,6 +656,15 @@
   margin-right: 2px;
 }
 
+.activity-count {
+  min-width: 16px;
+  margin-left: auto;
+  color: var(--accent);
+  font-size: var(--font-size-meta);
+  font-variant-numeric: tabular-nums;
+  text-align: center;
+}
+
 .project-tree-list,
 .task-tree-list {
   display: flex;
@@ -795,6 +804,76 @@
   gap: 1px;
 }
 
+.parallel-tasks-error {
+  display: -webkit-box;
+  overflow: hidden;
+  padding: 5px 8px;
+  color: var(--danger);
+  font-size: calc(11px * var(--font-scale));
+  line-height: var(--line-height-meta);
+  overflow-wrap: anywhere;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 3;
+}
+
+.parallel-task-recovery-list {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+
+.parallel-task-recovery-row {
+  min-width: 0;
+  display: grid;
+  grid-template-columns: 14px minmax(0, 1fr) 24px 24px;
+  align-items: center;
+  gap: 5px;
+  padding: 4px 4px 4px 8px;
+  color: var(--warning);
+}
+
+.parallel-task-recovery-copy {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.parallel-task-recovery-label,
+.parallel-task-recovery-error {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.parallel-task-recovery-label {
+  color: var(--text-soft);
+  font-size: calc(12px * var(--font-scale));
+}
+
+.parallel-task-recovery-error {
+  color: var(--muted);
+  font-size: calc(10.5px * var(--font-scale));
+}
+
+.parallel-task-recovery-action {
+  width: 24px;
+  height: 24px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: var(--radius-xs);
+  color: var(--muted);
+}
+
+.parallel-task-recovery-action:hover:not(:disabled) {
+  background: var(--control-hover);
+  color: var(--text);
+}
+
+.parallel-task-forget:hover:not(:disabled) {
+  color: var(--danger);
+}
+
 .parallel-task-row {
   display: flex;
   align-items: center;
@@ -857,9 +936,25 @@
 }
 
 .parallel-task-label {
+  min-width: 0;
+  flex: 1;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.parallel-task-status {
+  flex: none;
+  color: var(--faint);
+  font-size: calc(10.5px * var(--font-scale));
+}
+
+.parallel-task-status.running {
+  color: var(--accent);
+}
+
+.parallel-task-status.ready {
+  color: var(--success);
 }
 
 .parallel-task-kind {
@@ -869,8 +964,7 @@
 }
 
 .parallel-task-branch {
-  flex: none;
-  max-width: 45%;
+  display: none;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;

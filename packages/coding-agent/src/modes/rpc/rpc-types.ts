@@ -50,6 +50,7 @@ export type RpcCommand =
 	| { id?: string; type: "prompt"; message: string; images?: ImageContent[]; streamingBehavior?: "steer" | "followUp" }
 	| { id?: string; type: "steer"; message: string; images?: ImageContent[] }
 	| { id?: string; type: "follow_up"; message: string; images?: ImageContent[] }
+	| { id?: string; type: "dequeue" }
 	| { id?: string; type: "abort" }
 	| { id?: string; type: "new_session"; cwd?: string; parentSession?: string }
 
@@ -250,10 +251,29 @@ export interface RpcSessionState {
 // Success responses with data
 export type RpcResponse =
 	// Prompting (async - events follow)
-	| { id?: string; type: "response"; command: "prompt"; success: true }
+	| {
+			id?: string;
+			type: "response";
+			command: "prompt";
+			success: true;
+			data: { sessionId: string; sessionFile?: string };
+	  }
 	| { id?: string; type: "response"; command: "steer"; success: true }
 	| { id?: string; type: "response"; command: "follow_up"; success: true }
-	| { id?: string; type: "response"; command: "abort"; success: true }
+	| {
+			id?: string;
+			type: "response";
+			command: "dequeue";
+			success: true;
+			data: { steering: string[]; followUp: string[] };
+	  }
+	| {
+			id?: string;
+			type: "response";
+			command: "abort";
+			success: true;
+			data: { steering: string[]; followUp: string[] };
+	  }
 	| { id?: string; type: "response"; command: "new_session"; success: true; data: RpcSessionChangeResultDTO }
 
 	// State

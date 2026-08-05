@@ -53,12 +53,15 @@ Settings → Connections discovers local WSL distributions and also accepts save
 
 ### Security model
 
-Pi Studio assumes the workspace may be hostile (a cloned repository) and the renderer may be compromised:
+Pi Studio assumes the workspace and provider-supplied content may be hostile. The renderer is a trusted UI authority:
+it can intentionally start prompts and terminal commands, mutate files, and perform Git operations, so compromising it is
+equivalent to controlling the application. Electron sandboxing and the IPC allowlist reduce attack surface and contain
+untrusted framed content; they are defense in depth, not an authorization boundary against compromised renderer code.
 
 | Layer | Enforcement |
 | --- | --- |
 | Renderer confinement | `sandbox: true`, `contextIsolation: true`, `nodeIntegration: false`; top-level navigation and window-open are denied and routed through a protocol-checked external opener, while user-entered HTTP(S) previews stay inside a sandboxed frame |
-| IPC allowlist | The main process forwards only the renderer's typed command set to the backend (`backend-command-allowlist.js`); unknown command types are rejected before they reach the RPC layer |
+| IPC allowlist | The main process forwards only the renderer's typed command set to the backend (`backend-command-allowlist.js`); unknown command types are rejected before they reach the RPC layer, but allowed commands carry the trusted renderer's authority |
 | Tool approval | A bundled inline extension registers the `permission-mode` flag and gates tool calls at the agent loop's single choke point: `full` runs everything, `auto` asks before risky bash, out-of-workspace writes, computer control, and image generation, while `ask` also confirms passive screen access |
 | Project trust | Folders carrying project-local resources (`.pi` extensions, settings, skills) load **untrusted by default**; extensions do not execute until the user trusts the folder (persisted in `<agentDir>/trust.json`, revocable from Settings, hot-reloaded both ways) |
 | Process hygiene | Local git and gh use `execFile` argument vectors; SSH and WSL operations allow only fixed commands and quote every remote-shell argument. Branch names and commit messages are validated before they become argv entries |
@@ -86,7 +89,7 @@ Sessions are append-only JSONL files owned by the backend. The client adds impor
 
 ## Development
 
-Prerequisites: Node 24+, Bun 1.3+, git. All commands from the repository root unless noted.
+Prerequisites: Node 22.19+, Bun 1.3.14, git. All commands from the repository root unless noted.
 
 ```sh
 npm install --ignore-scripts
@@ -129,9 +132,15 @@ The fork root is an upstream commit, so upstream releases merge as plain three-w
 
 ## Roadmap
 
-Near-term: extend the plugin bridge only when Codex manifest, app, hook, or marketplace compatibility has a verified local use case.
+Pi Studio targets individual developers and small teams that bring their own model endpoints. Its core workflow is: open a local, WSL, or SSH workspace; run isolated agent tasks; review the resulting diff; commit, push, or open a pull request; and resume the session later.
 
-Deliberately deferred: code signing and auto-update, installer distribution, backend size reduction (~100 MB Bun runtime), macOS/Linux, additional locales.
+User settings, model configuration, sessions, automations, trust records, and task metadata must migrate forward without silent data loss. The renderer, main process, and backend ship together, so their internal RPC contract does not retain compatibility layers and downgrade compatibility is not guaranteed.
+
+Upstream releases are evaluated from stable tags. Security and model-protocol fixes may be cherry-picked, but Pi Studio's product boundaries take precedence over minimizing the fork diff.
+
+Near-term: stabilize the core workflow and extend the plugin bridge only when Codex manifest, app, hook, or marketplace compatibility has a verified local use case.
+
+Deliberately deferred: cloud accounts and sync, team permissions, hosted agents, a plugin marketplace, first-party model billing, code signing and auto-update, installer distribution, backend size reduction (~100 MB Bun runtime), macOS/Linux, and additional locales.
 
 ## License
 

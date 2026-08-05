@@ -1248,10 +1248,37 @@
 }
 
 .message-error-text {
+  flex: 1;
+  min-width: 0;
   color: var(--danger);
   font-size: calc(13px * var(--font-scale));
   line-height: 1.5;
   word-break: break-word;
+}
+
+.message-error-retry {
+  display: inline-flex;
+  flex-shrink: 0;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+  min-height: 26px;
+  padding: 3px 8px;
+  border: 1px solid color-mix(in srgb, var(--danger) 40%, var(--border));
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--danger);
+  font-size: calc(11.5px * var(--font-scale));
+  font-weight: 600;
+}
+
+.message-error-retry:not(:disabled):hover {
+  background: color-mix(in srgb, var(--danger-soft) 65%, var(--surface-hover));
+}
+
+.message-error-retry:disabled {
+  opacity: 0.55;
+  cursor: wait;
 }
 
 .message-empty-note {

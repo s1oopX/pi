@@ -16,6 +16,7 @@ import { ToastContainer } from "./components/Toast";
 import { TopBar } from "./components/TopBar";
 import { TrustBanner } from "./components/TrustBanner";
 import { WorkbenchPanel, type WorkbenchKeybindingLabels, type WorkbenchView } from "./components/Workbench";
+import { subscribeTaskReview } from "./components/Workbench/taskReviewNavigation";
 import { useI18n } from "./i18n";
 import { useBackendEvents } from "./ipc/events";
 import {
@@ -29,12 +30,15 @@ import { useStore } from "./store";
 
 const DEFAULT_VIEWPORT_WIDTH = 1200;
 const SIDEBAR_COLLAPSED_WIDTH = 52;
+const NARROW_VIEWPORT_WIDTH = 480;
 
 export function App() {
   const { t } = useI18n();
   const [commandPaletteOpen, setCommandPaletteOpen] = useState(false);
   const [automationsOpen, setAutomationsOpen] = useState(false);
-  const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(() =>
+    typeof window !== "undefined" && window.innerWidth <= NARROW_VIEWPORT_WIDTH
+  );
   const [workbenchView, setWorkbenchView] = useState<WorkbenchView | "closed">("closed");
   const workbenchReturnFocusRef = useRef<HTMLElement | null>(null);
   const workbenchWasOpenRef = useRef(false);
@@ -111,6 +115,12 @@ export function App() {
     setWorkbenchView(view);
   }, [rememberWorkbenchReturnFocus]);
 
+  useEffect(() => subscribeTaskReview(() => {
+    setAutomationsOpen(false);
+    setCommandPaletteOpen(false);
+    openWorkbench("review");
+  }), [openWorkbench]);
+
   const toggleWorkbench = useCallback(() => {
     rememberWorkbenchReturnFocus();
     setWorkbenchView((current) => current === "closed" ? "launcher" : "closed");
@@ -163,7 +173,10 @@ export function App() {
 
   useEffect(() => {
     if (typeof window === "undefined") return;
-    const handleResize = () => setViewportWidth(window.innerWidth);
+    const handleResize = () => {
+      setViewportWidth(window.innerWidth);
+      if (window.innerWidth <= NARROW_VIEWPORT_WIDTH) setSidebarCollapsed(true);
+    };
     window.addEventListener("resize", handleResize);
     return () => window.removeEventListener("resize", handleResize);
   }, []);
@@ -254,7 +267,6 @@ export function App() {
                   <Composer />
                 </section>
                 {workbenchView !== "closed" && (
-                  <>
                     <div
                       className={`panel-resize-handle workbench-resize ${workbenchResize.willCollapse ? "will-collapse" : ""}`}
                       role="separator"
@@ -267,14 +279,14 @@ export function App() {
                       onPointerDown={workbenchResize.onHandlePointerDown}
                       onKeyDown={workbenchResize.onHandleKeyDown}
                     />
-                    <WorkbenchPanel
-                      activeView={workbenchView}
-                      keybindingLabels={workbenchKeybindingLabels}
-                      onClose={() => setWorkbenchView("closed")}
-                      onSelectView={openWorkbench}
-                    />
-                  </>
                 )}
+                <WorkbenchPanel
+                  activeView={workbenchView === "closed" ? "launcher" : workbenchView}
+                  hidden={workbenchView === "closed"}
+                  keybindingLabels={workbenchKeybindingLabels}
+                  onClose={() => setWorkbenchView("closed")}
+                  onSelectView={openWorkbench}
+                />
               </div>
             </>
           )}

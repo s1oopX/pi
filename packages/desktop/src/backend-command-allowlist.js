@@ -2,8 +2,10 @@
  * Allowlists for backend commands accepted from the renderer.
  *
  * The RPC backend already rejects unknown command types, but the main process
- * still refuses anything outside the renderer's typed command surface so a
- * compromised renderer cannot reach backend commands the UI never sends.
+ * still refuses anything outside the renderer's typed command surface. This
+ * bounds the protocol and rejects accidental/malformed calls; it is not an
+ * authorization boundary because the renderer legitimately owns commands
+ * such as prompts, user bash, package management, and project trust.
  * Mirrors `BackendCommand` / `BackendSendCommand` in
  * `renderer-next/src/ipc/types.ts`.
  */
@@ -17,6 +19,7 @@ export const BACKEND_REQUEST_COMMAND_TYPES = new Set([
 	"compact",
 	"cycle_model",
 	"cycle_thinking_level",
+	"dequeue",
 	"export_html",
 	"fetch_provider_models",
 	"follow_up",

@@ -50,6 +50,22 @@ test("git flow: create a branch and push to a bare remote", async (t) => {
 	try {
 		await studio.waitUntilReady();
 
+		// Review defaults to the existing changes UI while preserving the
+		// session-branch navigator as a second, keyboard-accessible tab.
+		await studio.page.locator(".top-bar-workbench-toggle").click();
+		await studio.page.locator('[data-workbench-view="review"]').click();
+		const review = studio.page.locator(".workbench-review");
+		await review.getByText("notes.txt").first().waitFor({ state: "visible", timeout: LAUNCH_TIMEOUT_MS });
+		const changesTab = review.locator("#workbench-review-tab-changes");
+		const branchesTab = review.locator("#workbench-review-tab-branches");
+		assert.equal(await changesTab.getAttribute("role"), "tab");
+		assert.equal(await changesTab.getAttribute("aria-selected"), "true");
+		await changesTab.focus();
+		await changesTab.press("ArrowRight");
+		await review.locator(".branch-navigator-description").waitFor({ state: "visible", timeout: LAUNCH_TIMEOUT_MS });
+		assert.equal(await branchesTab.getAttribute("aria-selected"), "true");
+		await studio.page.locator(".workbench-header > .icon-button:last-child").click();
+
 		// Open the git panel from the top-bar branch button.
 		await studio.page.locator(".top-bar-git").click();
 		const panel = studio.page.locator(".git-panel");
@@ -154,6 +170,60 @@ test("git flow: create a branch and push to a bare remote", async (t) => {
 			if (!removed) await studio.page.waitForTimeout(500);
 		}
 		assert.equal(removed, true, "discarding an untracked file should recycle it off the disk");
+
+		// Commit a file, then edit the same path again. The first click after the
+		// commit must load the new diff instead of toggling stale review state.
+		const repeatPath = join(studio.workspaceDir, "repeat.txt");
+		writeFileSync(repeatPath, "first revision\n");
+		await panel.locator(".git-panel-refresh").click();
+		await panel.getByText("repeat.txt").first().waitFor({ state: "visible", timeout: LAUNCH_TIMEOUT_MS });
+		await panel.locator(".git-panel-file").filter({ hasText: "repeat.txt" }).click();
+		await panel.locator(".git-panel-file-diff").waitFor({ state: "visible", timeout: LAUNCH_TIMEOUT_MS });
+		await panel.getByText("first revision").first().waitFor({ state: "visible", timeout: LAUNCH_TIMEOUT_MS });
+		await panel.locator(".git-panel-hunk-action").filter({ hasText: /Stage hunk|暂存此块/u }).click();
+		await panel.getByText(/Staged changes|已暂存更改/u).waitFor({ state: "visible", timeout: LAUNCH_TIMEOUT_MS });
+		assert.equal(
+			await panel.locator(".git-panel-file").filter({ hasText: "repeat.txt" }).getAttribute("aria-expanded"),
+			"true",
+			"staging a hunk should keep the refreshed diff open",
+		);
+
+		await panel.locator(".git-panel-message").fill("Commit repeat file");
+		await panel.locator(".git-panel-commit-btn").click();
+		let committedSubject = "";
+		for (let attempt = 0; attempt < 40 && committedSubject !== "Commit repeat file"; attempt++) {
+			committedSubject = execFileSync("git", ["log", "-1", "--pretty=%s"], { cwd: studio.workspaceDir })
+				.toString()
+				.trim();
+			if (committedSubject !== "Commit repeat file") await studio.page.waitForTimeout(250);
+		}
+		assert.equal(committedSubject, "Commit repeat file");
+		await panel.getByText(/Working tree clean|工作树干净/u).waitFor({ state: "visible", timeout: LAUNCH_TIMEOUT_MS });
+
+		writeFileSync(repeatPath, "second revision\n");
+		await panel.locator(".git-panel-refresh").click();
+		await panel.getByText("repeat.txt").first().waitFor({ state: "visible", timeout: LAUNCH_TIMEOUT_MS });
+		const repeatFile = panel.locator(".git-panel-file").filter({ hasText: "repeat.txt" });
+		await repeatFile.click();
+		assert.equal(await repeatFile.getAttribute("aria-expanded"), "true", "the refreshed file should open its latest diff");
+		await panel.locator(".git-panel-file-diff").waitFor({ state: "visible", timeout: LAUNCH_TIMEOUT_MS });
+		await panel.getByText("second revision").first().waitFor({ state: "visible", timeout: LAUNCH_TIMEOUT_MS });
+
+		git(studio.workspaceDir, ["remote", "set-url", "origin", remoteDir]);
+		await panel.locator(".git-panel-push-btn").click();
+		const localHead = execFileSync("git", ["rev-parse", "HEAD"], { cwd: studio.workspaceDir }).toString().trim();
+		let pushedHead = "";
+		for (let attempt = 0; attempt < 40 && pushedHead !== localHead; attempt++) {
+			try {
+				pushedHead = execFileSync("git", ["--git-dir", remoteDir, "rev-parse", "feature/e2e"], {
+					stdio: ["ignore", "pipe", "ignore"],
+				})
+					.toString()
+					.trim();
+			} catch {}
+			if (pushedHead !== localHead) await studio.page.waitForTimeout(250);
+		}
+		assert.equal(pushedHead, localHead, "the post-commit push should update the remote branch");
 	} catch (error) {
 		await studio.dumpDiagnostics();
 		throw error;

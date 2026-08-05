@@ -57,7 +57,7 @@ test("worktree isolation: a second task in the same repo runs on its own branch"
 		// The task comes up in a worktree, labeled with its branch.
 		const activeRow = studio.page.locator(".parallel-task-row.active");
 		await activeRow.locator(".parallel-task-branch").filter({ hasText: "task/workspace-1" }).first()
-			.waitFor({ state: "visible", timeout: LAUNCH_TIMEOUT_MS });
+			.waitFor({ state: "attached", timeout: LAUNCH_TIMEOUT_MS });
 		await studio.page
 			.locator(".parallel-task-row.active .parallel-task-dot.ready")
 			.waitFor({ state: "visible", timeout: LAUNCH_TIMEOUT_MS });

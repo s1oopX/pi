@@ -25,7 +25,7 @@ import {
 } from "./toolPresentation";
 import { shouldAutoExpandToolBody, summarizeToolOutput } from "./toolOutputPresentation";
 import { formatMessageMeta } from "./messageMeta";
-import { beginEditUserMessage } from "./editUserMessage";
+import { beginEditUserMessage, retryAssistantMessage } from "./editUserMessage";
 import { TurnSummary } from "./TurnSummary";
 import * as ipcApi from "../../ipc/api";
 import type { Message, ToolCall } from "../../ipc/types";
@@ -212,8 +212,9 @@ function AssistantContent({
       )}
       {errorMessage && !suppressError && (
         <div className="message-error" role="alert">
-          <span className="message-error-icon" aria-hidden="true">&#9888;</span>
+          <Icon className="message-error-icon" name="alert-triangle" size={15} strokeWidth={1.7} />
           <span className="message-error-text">{errorMessage}</span>
+          <RetryButton message={message} language={resolvedLanguage} />
         </div>
       )}
       {!hasRenderableContent && !errorMessage && !streaming && (
@@ -221,6 +222,35 @@ function AssistantContent({
       )}
     </div>
     </CodeStreamingContext.Provider>
+  );
+}
+
+function RetryButton({ message, language }: { message: Message; language: ResolvedLanguage }) {
+  const { t } = useI18n();
+  const [retrying, setRetrying] = useState(false);
+
+  async function handleRetry() {
+    if (retrying) return;
+    setRetrying(true);
+    try {
+      await retryAssistantMessage(message, language);
+    } finally {
+      setRetrying(false);
+    }
+  }
+
+  return (
+    <button
+      className="message-error-retry"
+      type="button"
+      disabled={retrying}
+      onClick={handleRetry}
+      aria-busy={retrying}
+      aria-label={retrying ? t("Retrying last message", "正在重试上一条消息") : t("Retry last message", "重试上一条消息")}
+    >
+      <Icon name="rotate-cw" size={13} strokeWidth={1.7} />
+      <span>{t("Retry", "重试")}</span>
+    </button>
   );
 }
 
@@ -497,13 +527,16 @@ function EditButton({ message, language }: { message: Message; language: Resolve
 function CopyButton({ text }: { text: string }) {
   const { t } = useI18n();
   const [copied, setCopied] = useState(false);
+  const copyResetTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
   function handleCopy() {
     ipcApi.writeClipboardText(text).catch(() => {
       navigator.clipboard?.writeText(text);
     });
+    clearTimeout(copyResetTimer.current);
     setCopied(true);
-    setTimeout(() => setCopied(false), 2000);
+    copyResetTimer.current = setTimeout(() => setCopied(false), 2000);
   }
+  useEffect(() => () => clearTimeout(copyResetTimer.current), []);
   return (
     <button
       className="message-copy-btn"

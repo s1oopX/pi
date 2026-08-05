@@ -34,7 +34,9 @@ describe("message localization", () => {
   });
 });
 
-function assistantMessage(content: Extract<Message, { role: "assistant" }>["content"]): Message {
+function assistantMessage(
+  content: Extract<Message, { role: "assistant" }>["content"],
+): Extract<Message, { role: "assistant" }> {
   return {
     role: "assistant",
     content,
@@ -55,6 +57,20 @@ function assistantMessage(content: Extract<Message, { role: "assistant" }>["cont
 }
 
 describe("Codex-style process presentation", () => {
+  it("offers a direct retry action for a terminal assistant error", () => {
+    const message = assistantMessage([]);
+    message.stopReason = "error";
+    message.errorMessage = "Invalid API key";
+    const markup = renderToStaticMarkup(createElement(MessageBubble, {
+      message,
+      toolExecutionsByCallId: {},
+    }));
+
+    expect(markup).toContain("message-error");
+    expect(markup).toContain('aria-label="Retry last message"');
+    expect(markup).toContain(">Retry</span>");
+  });
+
   it("renders thinking and tools as process rows with restrained status", () => {
     const message = assistantMessage([
       { type: "thinking", thinking: "Plan the change." },

@@ -34,6 +34,30 @@ test("RRULE parsing and next-run calculation cover the supported schedules", () 
 	assert.throws(() => parseRRule("FREQ=DAILY;BYDAY=MO"), /do not support BYDAY/);
 });
 
+test("invalid persisted automation state is reported and never overwritten", (t) => {
+	const paths = tempWorkspace();
+	t.after(() => rmSync(paths.root, { recursive: true, force: true }));
+	const original = '{"version":999,"automations":[]}\n';
+	writeFileSync(paths.statePath, original);
+	const errors = [];
+	const service = createAutomationService({
+		filePath: paths.statePath,
+		runAutomation: async () => ({}),
+		onError: (error) => errors.push(error),
+	});
+	t.after(() => service.stop());
+
+	assert.match(service.getLoadError().message, /unsupported format/);
+	assert.match(errors[0].message, /unsupported format/);
+	assert.throws(() => service.create({
+		name: "Must not overwrite",
+		prompt: "Keep the original state file",
+		cwd: paths.workspace,
+		rrule: "FREQ=DAILY;BYHOUR=9;BYMINUTE=0",
+	}), /original file was not changed/);
+	assert.equal(readFileSync(paths.statePath, "utf8"), original);
+});
+
 test("automation runs persist their independent session history", async (t) => {
 	const paths = tempWorkspace();
 	t.after(() => rmSync(paths.root, { recursive: true, force: true }));

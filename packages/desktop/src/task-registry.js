@@ -22,22 +22,38 @@ function canonicalCwd(cwd) {
 /**
  * @typedef {import("./backend-handle.js").BackendHandle} RegistryHandle
  * @typedef {{ branch?: string, sourceRepo?: string, worktreePath?: string }} TaskMeta
- * @typedef {{ taskId: string, cwd: () => string, handle: RegistryHandle, isPrimary: boolean, meta?: TaskMeta }} RegistryEntry
+ * @typedef {{ unread?: number, completed?: boolean }} TaskActivity
+ * @typedef {{ taskId: string, cwd: () => string, handle: RegistryHandle, isPrimary: boolean, streaming: boolean, unread: number, completed: boolean, meta?: TaskMeta }} RegistryEntry
  */
 
 /**
  * @param {object} options
  * @param {RegistryHandle} options.primary
- * @param {(id: string, cwd: string) => RegistryHandle} options.createHandle
+ * @param {(id: string, cwd: string, sessionFile?: string) => RegistryHandle} options.createHandle
  * @param {number} [options.maxTasks]
  */
 export function createTaskRegistry({ primary, createHandle, maxTasks = DEFAULT_MAX_TASKS }) {
 	/** @type {RegistryEntry} */
-	const primaryEntry = { taskId: primary.id, cwd: () => primary.getCwd(), handle: primary, isPrimary: true };
+	const primaryEntry = {
+		taskId: primary.id,
+		cwd: () => primary.getCwd(),
+		handle: primary,
+		isPrimary: true,
+		streaming: false,
+		unread: 0,
+		completed: false,
+	};
 	/** @type {Map<string, RegistryEntry>} */
 	const pool = new Map();
 	let taskCounter = 0;
 	let poolCap = Math.min(MAX_MAX_TASKS, Math.max(MIN_MAX_TASKS, maxTasks));
+
+	/** @param {string} taskId */
+	function reserveTaskId(taskId) {
+		if (!/^task_[1-9]\d*$/u.test(taskId)) throw new Error("Stored task id is invalid");
+		const numericId = Number(taskId.slice("task_".length));
+		if (Number.isSafeInteger(numericId)) taskCounter = Math.max(taskCounter, numericId);
+	}
 
 	/** @param {RegistryEntry} entry */
 	function snapshot(entry) {
@@ -47,6 +63,9 @@ export function createTaskRegistry({ primary, createHandle, maxTasks = DEFAULT_M
 			isPrimary: entry.isPrimary,
 			ready: Boolean(entry.handle.ready),
 			starting: Boolean(entry.handle.starting),
+			streaming: entry.streaming,
+			unread: entry.unread,
+			completed: entry.completed,
 			// Worktree tasks carry their provenance for display and cleanup.
 			...(entry.meta?.branch ? { branch: entry.meta.branch } : {}),
 			...(entry.meta?.sourceRepo ? { sourceRepo: entry.meta.sourceRepo } : {}),
@@ -61,6 +80,41 @@ export function createTaskRegistry({ primary, createHandle, maxTasks = DEFAULT_M
 			if (canonicalCwd(entry.cwd()) === wanted) return entry;
 		}
 		return undefined;
+	}
+
+	/**
+	 * @param {string} taskId
+	 * @param {string} cwd
+	 * @param {TaskMeta | undefined} meta
+	 * @param {string | undefined} sessionFile
+	 * @param {TaskActivity} [activity]
+	 */
+	function add(taskId, cwd, meta, sessionFile, activity = {}) {
+		if (pool.has(taskId)) throw new Error(`Task id is already running: ${taskId}`);
+		reserveTaskId(taskId);
+		const claim = findClaim(cwd);
+		if (claim) {
+			throw new Error(
+				claim.isPrimary
+					? "That folder is the primary workspace and already running"
+					: `A task is already running in that folder: ${claim.taskId}`,
+			);
+		}
+		const fixedCwd = String(cwd);
+		const handle = createHandle(taskId, fixedCwd, sessionFile);
+		const entry = {
+			taskId,
+			cwd: () => fixedCwd,
+			handle,
+			isPrimary: false,
+			streaming: false,
+			unread: Number.isSafeInteger(activity.unread) && Number(activity.unread) > 0 ? Number(activity.unread) : 0,
+			completed: Boolean(activity.completed),
+			meta,
+		};
+		pool.set(taskId, entry);
+		handle.start();
+		return snapshot(entry);
 	}
 
 	return {
@@ -87,22 +141,22 @@ export function createTaskRegistry({ primary, createHandle, maxTasks = DEFAULT_M
 				const running = [...pool.values()].map((entry) => `${entry.taskId} (${entry.cwd()})`).join(", ");
 				throw new Error(`Task limit reached (${poolCap}). Stop one first — running: ${running}`);
 			}
-			const claim = findClaim(cwd);
-			if (claim) {
-				throw new Error(
-					claim.isPrimary
-						? `That folder is the primary workspace and already running`
-						: `A task is already running in that folder: ${claim.taskId}`,
-				);
-			}
 			const taskId = `task_${++taskCounter}`;
-			const fixedCwd = String(cwd);
-			const handle = createHandle(taskId, fixedCwd);
-			const entry = { taskId, cwd: () => fixedCwd, handle, isPrimary: false, meta };
-			pool.set(taskId, entry);
-			handle.start();
-			return snapshot(entry);
+			return add(taskId, cwd, meta, undefined);
 		},
+
+		/** Restore one previously persisted task without lowering the live pool to a newer cap. */
+		/** @param {{ taskId: string, cwd: string, sessionFile?: string } & TaskMeta & TaskActivity} stored */
+		restore(stored) {
+			if (pool.size >= MAX_MAX_TASKS) throw new Error(`Task restore limit reached (${MAX_MAX_TASKS})`);
+			return add(stored.taskId, stored.cwd, {
+				...(stored.branch ? { branch: stored.branch } : {}),
+				...(stored.sourceRepo ? { sourceRepo: stored.sourceRepo } : {}),
+				...(stored.worktreePath ? { worktreePath: stored.worktreePath } : {}),
+			}, stored.sessionFile, stored);
+		},
+
+		reserveTaskId,
 
 		/** @param {string | undefined | null} [taskId] */
 		get(taskId) {
@@ -132,6 +186,38 @@ export function createTaskRegistry({ primary, createHandle, maxTasks = DEFAULT_M
 
 		list() {
 			return [primaryEntry, ...pool.values()].map(snapshot);
+		},
+
+		/**
+		 * Track the small activity summary needed by the desktop task inbox.
+		 * @param {string} taskId
+		 * @param {{ type?: string, willRetry?: boolean }} payload
+		 * @param {string} activeTaskId
+		 */
+		recordEvent(taskId, payload, activeTaskId) {
+			const entry = taskId === primaryEntry.taskId ? primaryEntry : pool.get(taskId);
+			if (!entry) return false;
+			const before = `${entry.streaming}:${entry.unread}:${entry.completed}`;
+			if (payload.type === "agent_start") {
+				entry.streaming = true;
+				entry.completed = false;
+			} else if (payload.type === "message_end" && taskId !== activeTaskId) {
+				entry.unread += 1;
+			} else if (payload.type === "agent_end") {
+				entry.streaming = Boolean(payload.willRetry);
+				entry.completed = !payload.willRetry && taskId !== activeTaskId;
+			}
+			return before !== `${entry.streaming}:${entry.unread}:${entry.completed}`;
+		},
+
+		/** @param {string} taskId */
+		activate(taskId) {
+			const entry = taskId === primaryEntry.taskId ? primaryEntry : pool.get(taskId);
+			if (!entry) return false;
+			const changed = entry.unread > 0 || entry.completed;
+			entry.unread = 0;
+			entry.completed = false;
+			return changed;
 		},
 
 		stopAll() {

@@ -1,5 +1,6 @@
 import { mkdirSync, readFileSync, renameSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { dirname } from "node:path";
+import { parseSshWorkspaceUri } from "./ssh-remote.js";
 
 const WORKSPACE_STATE_VERSION = 1;
 const MAX_WORKSPACE_STATE_BYTES = 16 * 1024;
@@ -27,17 +28,17 @@ export function parseWorkspaceState(contents) {
 
 /**
  * @param {string} contents
- * @param {(path: string) => boolean} isDirectory
+ * @param {(path: string) => boolean} isWorkspace
  */
-export function resolveStoredWorkspace(contents, isDirectory) {
+export function resolveStoredWorkspace(contents, isWorkspace) {
 	const cwd = parseWorkspaceState(contents);
-	return cwd && isDirectory(cwd) ? cwd : undefined;
+	return cwd && isWorkspace(cwd) ? cwd : undefined;
 }
 
 /** @param {string} path */
-function isDirectory(path) {
+function isWorkspace(path) {
 	try {
-		return statSync(path).isDirectory();
+		return Boolean(parseSshWorkspaceUri(path)) || statSync(path).isDirectory();
 	} catch {
 		return false;
 	}
@@ -48,7 +49,7 @@ export function loadStoredWorkspace(statePath) {
 	try {
 		const stateStats = statSync(statePath);
 		if (!stateStats.isFile() || stateStats.size > MAX_WORKSPACE_STATE_BYTES) return undefined;
-		return resolveStoredWorkspace(readFileSync(statePath, "utf8"), isDirectory);
+		return resolveStoredWorkspace(readFileSync(statePath, "utf8"), isWorkspace);
 	} catch {
 		return undefined;
 	}
@@ -59,7 +60,7 @@ export function loadStoredWorkspace(statePath) {
  * @param {string} cwd
  */
 export function saveStoredWorkspace(statePath, cwd) {
-	if (typeof cwd !== "string" || !cwd.trim() || !isDirectory(cwd)) {
+	if (typeof cwd !== "string" || !cwd.trim() || !isWorkspace(cwd)) {
 		throw new Error(`Workspace not found: ${cwd}`);
 	}
 

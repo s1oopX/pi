@@ -3,6 +3,7 @@ import { useI18n } from "../../i18n";
 import { Icon } from "../Icon";
 import * as api from "../../ipc/api";
 import { useStore } from "../../store";
+import { isActiveBackendReady } from "../../store/taskRegistry";
 import { summarizeGitSync } from "../GitPanel/gitPanelState";
 import { isSameWorkspace } from "../Sidebar/sidebarState";
 import { showToast } from "../Toast";
@@ -32,6 +33,8 @@ export function TopBar({
   const workspaceGitStatus = useStore((s) => s.workspaceGitStatus);
   const workspaceGitStatusLoading = useStore((s) => s.workspaceGitStatusLoading);
   const refreshWorkspaceGitStatus = useStore((s) => s.refreshWorkspaceGitStatus);
+  const isStreaming = useStore((s) => s.isStreaming);
+  const activeBackendReady = useStore((s) => isActiveBackendReady(s.taskRegistry, s.backendStatus.ready));
   const [openingLocation, setOpeningLocation] = useState(false);
   const [locationMenuOpen, setLocationMenuOpen] = useState(false);
   const locationMenuRef = useRef<HTMLDivElement>(null);
@@ -152,11 +155,9 @@ export function TopBar({
       <div className="top-bar-left">
         <div className="top-bar-context">
           <span className="top-bar-title" title={threadTitle}>{threadTitle}</span>
-          <span className="top-bar-divider" aria-hidden="true">·</span>
-          <span className="top-bar-workspace" title={workspaceCwd}>{workspaceName}</span>
-          {gitLabel && (
-            <>
-              <span className="top-bar-divider top-bar-git-divider" aria-hidden="true">·</span>
+          <span className="top-bar-meta">
+            <span className="top-bar-workspace" title={workspaceCwd}>{workspaceName}</span>
+            {gitLabel && (
               <button
                 className="top-bar-git"
                 type="button"
@@ -182,12 +183,20 @@ export function TopBar({
                 )}
                 {workspaceGitStatus?.dirty && <span className="top-bar-git-dirty" aria-hidden="true" />}
               </button>
-            </>
-          )}
+            )}
+          </span>
         </div>
       </div>
 
       <div className="top-bar-right">
+        <span className={`top-bar-task-state ${isStreaming ? "running" : activeBackendReady ? "ready" : "attention"}`} role="status">
+          <span aria-hidden="true" />
+          {isStreaming
+            ? t("Running", "运行中")
+            : activeBackendReady
+              ? t("Ready", "就绪")
+              : t("Needs attention", "需要处理")}
+        </span>
         <div className="top-bar-open-location-wrap" ref={locationMenuRef}>
           <button
             className="top-bar-open-location-main"

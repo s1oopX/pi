@@ -1,5 +1,5 @@
 .top-bar {
-  height: 46px;
+  height: 48px;
   flex-shrink: 0;
   display: flex;
   align-items: center;
@@ -21,8 +21,10 @@
 .top-bar-context {
   min-width: 0;
   display: flex;
-  align-items: center;
-  gap: var(--space-3);
+  flex-direction: column;
+  align-items: flex-start;
+  justify-content: center;
+  gap: 1px;
   font-size: var(--font-size-ui);
   line-height: var(--line-height-ui);
 }
@@ -32,14 +34,16 @@
   overflow: hidden;
   color: var(--text);
   font-weight: 600;
+  line-height: 17px;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
-.top-bar-divider {
-  flex-shrink: 0;
-  color: var(--faint);
-  user-select: none;
+.top-bar-meta {
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
 }
 
 .top-bar-workspace {
@@ -47,6 +51,7 @@
   overflow: hidden;
   color: var(--muted);
   font-size: var(--font-size-compact);
+  line-height: 15px;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
@@ -57,7 +62,7 @@
   display: inline-flex;
   align-items: center;
   gap: var(--space-2);
-  padding: 2px 5px;
+  padding: 0 4px;
   border-radius: var(--radius-xs);
   color: var(--muted);
   font-size: var(--font-size-compact);
@@ -104,6 +109,52 @@
   align-items: center;
   gap: var(--space-2);
   -webkit-app-region: no-drag;
+}
+
+.top-bar-task-state {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 26px;
+  padding: 0 7px;
+  border-radius: var(--radius-sm);
+  color: var(--muted);
+  font-size: var(--font-size-meta);
+  white-space: nowrap;
+}
+
+.top-bar-task-state > span {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--faint);
+}
+
+.top-bar-task-state.running {
+  color: var(--text-soft);
+  background: var(--accent-soft);
+}
+
+.top-bar-task-state.running > span {
+  background: var(--accent);
+  animation: top-bar-status-pulse 1.2s ease-in-out infinite;
+}
+
+.top-bar-task-state.ready > span {
+  background: var(--success);
+}
+
+.top-bar-task-state.attention {
+  color: var(--warning);
+  background: var(--warning-soft);
+}
+
+.top-bar-task-state.attention > span {
+  background: var(--warning);
+}
+
+@keyframes top-bar-status-pulse {
+  50% { opacity: 0.35; }
 }
 
 .top-bar-open-location-wrap {
@@ -231,10 +282,16 @@
     padding-inline: 12px 10px;
   }
 
-  .top-bar-divider,
   .top-bar-workspace,
   .top-bar-git {
     display: none;
+  }
+
+  .top-bar-task-state {
+    width: 26px;
+    justify-content: center;
+    padding: 0;
+    font-size: 0;
   }
 
   .top-bar-open-location-label {
@@ -272,4 +329,10 @@
 
 .top-bar-git-behind {
   color: var(--danger);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .top-bar-task-state.running > span {
+    animation: none;
+  }
 }

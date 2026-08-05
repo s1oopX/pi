@@ -1,5 +1,5 @@
 import { useEffect } from "react";
-import { getPendingExtensionUIRequests, onEvent, onLog, onStatus, onTaskChanged } from "./api";
+import { getPendingExtensionUIRequests, onEvent, onLog, onStatus, onTaskChanged, onTaskFocus } from "./api";
 import { emitBashExecutionDelta } from "./bashExecutionStream";
 import { isInteractiveExtensionUIRequest, parseExtensionUIEffect } from "./extensionUIEffects";
 import { createExtensionUIRequestTimeoutManager } from "./extensionUIRequestTimeouts";
@@ -8,6 +8,7 @@ import { useStore } from "../store";
 import { applyTaskStatus, describeTask, PRIMARY_TASK_ID, routeBackendEvent } from "../store/taskRegistry";
 import { showToast } from "../components/Toast";
 import { isSameWorkspace } from "../components/Sidebar/sidebarState";
+import { requestTaskReview } from "../components/Workbench/taskReviewNavigation";
 import { t } from "../i18n";
 
 const MAX_EXTENSION_ERROR_DETAIL_LENGTH = 200;
@@ -403,6 +404,26 @@ export function useBackendEvents(): void {
         );
       }
     });
+    const unsubTaskFocus = onTaskFocus((payload) => {
+      const taskId = typeof payload?.taskId === "string" ? payload.taskId : "";
+      if (!taskId) return;
+      void (async () => {
+        if (!useStore.getState().taskRegistry.tasks[taskId]) {
+          await useStore.getState().refreshTasks();
+        }
+        const state = useStore.getState();
+        if (!state.taskRegistry.tasks[taskId]) {
+          showToast(t("That task is no longer running.", "该任务已不再运行。"), "info");
+          return;
+        }
+        await state.switchActiveTask(taskId);
+        if (payload.view === "review") requestTaskReview();
+      })().catch((error: unknown) => {
+        showToast(t("Could not open the task: {message}", "无法打开任务：{message}", {
+          message: error instanceof Error ? error.message : String(error),
+        }), "error");
+      });
+    });
     const unsubHydration = useStore.subscribe(hydratePendingExtensionUIRequestsWhenReady);
     hydratePendingExtensionUIRequestsWhenReady();
 
@@ -415,6 +436,7 @@ export function useBackendEvents(): void {
       unsubStatus();
       unsubLog();
       unsubTaskChanged();
+      unsubTaskFocus();
       unsubHydration();
       unsubExtensionUIRequests();
       extensionUIRequestTimeouts.dispose();

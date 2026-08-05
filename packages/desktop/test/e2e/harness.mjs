@@ -6,13 +6,16 @@
 import assert from "node:assert/strict";
 import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { dirname, join } from "node:path";
+import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { _electron } from "playwright-core";
 import { startFauxOpenAiServer } from "./faux-openai-server.mjs";
 
 const desktopDir = dirname(dirname(dirname(fileURLToPath(import.meta.url))));
 const repoRoot = dirname(dirname(desktopDir));
+const packagedExecutable = process.env.PI_STUDIO_E2E_EXECUTABLE
+	? resolve(process.env.PI_STUDIO_E2E_EXECUTABLE)
+	: undefined;
 
 export const LAUNCH_TIMEOUT_MS = 60000;
 export const REPLY_TIMEOUT_MS = 90000;
@@ -38,13 +41,26 @@ function assertPrerequisite(path, buildHint) {
 }
 
 export function assertPrerequisites() {
+	if (packagedExecutable) {
+		assertPrerequisite(packagedExecutable, "npm run pack:offline (in packages/desktop)");
+		return;
+	}
 	assertPrerequisite(electronPath, "npm install --ignore-scripts && node node_modules/electron/install.js");
 	assertPrerequisite(rendererIndex, "npm run build:renderer:offline (in packages/desktop)");
 	assertPrerequisite(backendExe, "npm run build:backend (in packages/desktop)");
 }
 
-export async function launchStudio({ reply, script, setupWorkspace, extraWorkspaces = 0, extraEnv = {} } = {}) {
-	const tempRoot = mkdtempSync(join(tmpdir(), "pi-studio-e2e-"));
+export async function launchStudio({
+	reply,
+	script,
+	setupWorkspace,
+	extraWorkspaces = 0,
+	extraEnv = {},
+	modelInput,
+	rootDir,
+} = {}) {
+	const ownsTempRoot = !rootDir;
+	const tempRoot = rootDir ? resolve(rootDir) : mkdtempSync(join(tmpdir(), "pi-studio-e2e-"));
 	const workspaceDir = join(tempRoot, "workspace");
 	const agentDir = join(tempRoot, "agent");
 	const userDataDir = join(tempRoot, "user-data");
@@ -68,7 +84,13 @@ export async function launchStudio({ reply, script, setupWorkspace, extraWorkspa
 						baseUrl: server.baseUrl,
 						api: "openai-completions",
 						apiKey: "faux-key",
-						models: [{ id: "faux-1", name: "Faux 1", contextWindow: 32000, maxTokens: 4096 }],
+						models: [{
+							id: "faux-1",
+							name: "Faux 1",
+							contextWindow: 32000,
+							maxTokens: 4096,
+							...(modelInput ? { input: modelInput } : {}),
+						}],
 					},
 				},
 			},
@@ -80,15 +102,15 @@ export async function launchStudio({ reply, script, setupWorkspace, extraWorkspa
 	const mainProcessLogs = [];
 	const rendererLogs = [];
 	const app = await _electron.launch({
-		executablePath: electronPath,
-		args: [desktopDir],
-		cwd: desktopDir,
+		executablePath: packagedExecutable ?? electronPath,
+		args: packagedExecutable ? [] : [desktopDir],
+		cwd: packagedExecutable ? dirname(packagedExecutable) : desktopDir,
 		env: {
 			...process.env,
 			PI_DESKTOP_CWD: workspaceDir,
 			PI_CODING_AGENT_DIR: agentDir,
 			PI_STUDIO_USER_DATA_DIR: userDataDir,
-			PI_DEV: "",
+			PI_DEV: process.env.PI_STUDIO_E2E_DEV === "1" ? "1" : "",
 			...extraEnv,
 		},
 		timeout: LAUNCH_TIMEOUT_MS,
@@ -181,11 +203,13 @@ export async function launchStudio({ reply, script, setupWorkspace, extraWorkspa
 		async close() {
 			await app.close().catch(() => {});
 			await server.close();
-			try {
-				rmSync(tempRoot, { recursive: true, force: true, maxRetries: 5 });
-			} catch {
-				// Windows can keep transient locks on the temp profile; leaving it
-				// behind is harmless.
+			if (ownsTempRoot) {
+				try {
+					rmSync(tempRoot, { recursive: true, force: true, maxRetries: 5 });
+				} catch {
+					// Windows can keep transient locks on the temp profile; leaving it
+					// behind is harmless.
+				}
 			}
 		},
 	};

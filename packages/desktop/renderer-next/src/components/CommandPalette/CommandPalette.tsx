@@ -40,7 +40,6 @@ export function CommandPalette({ entries, keybindings, platform, onClose, onRun 
   const [activeIndex, setActiveIndex] = useState(0);
   const inputRef = useRef<HTMLInputElement>(null);
   const panelRef = useRef<HTMLDivElement>(null);
-  const restoreFocusRef = useRef(true);
   const listboxId = useId();
   const titleId = useId();
   const localizedEntries = useMemo(
@@ -56,6 +55,11 @@ export function CommandPalette({ entries, keybindings, platform, onClose, onRun 
   useEffect(() => {
     setActiveIndex(findCommandPaletteEdge(visibleEntries, "first"));
   }, [visibleEntries]);
+
+  useEffect(() => {
+    if (!activeEntry) return;
+    document.getElementById(`${listboxId}-${activeEntry.id}`)?.scrollIntoView({ block: "nearest" });
+  }, [activeEntry, listboxId]);
 
   useEffect(() => {
     const previouslyFocused = document.activeElement instanceof HTMLElement ? document.activeElement : null;
@@ -80,18 +84,16 @@ export function CommandPalette({ entries, keybindings, platform, onClose, onRun 
       inertTargets.forEach((element, index) => {
         if (!priorInertState[index]) element.removeAttribute("inert");
       });
-      if (restoreFocusRef.current && previouslyFocused?.isConnected) previouslyFocused.focus();
+      if (previouslyFocused?.isConnected) previouslyFocused.focus();
     };
   }, []);
 
-  function close(restoreFocus: boolean): void {
-    restoreFocusRef.current = restoreFocus;
+  function close(): void {
     onClose();
   }
 
   function run(entry: CommandPaletteEntry | undefined): void {
     if (!entry || entry.disabled) return;
-    restoreFocusRef.current = false;
     onRun(entry.id);
   }
 
@@ -99,7 +101,7 @@ export function CommandPalette({ entries, keybindings, platform, onClose, onRun 
     if (event.key === "Escape") {
       event.preventDefault();
       event.stopPropagation();
-      close(true);
+      close();
       return;
     }
     if (event.key === "Tab") {
@@ -124,7 +126,7 @@ export function CommandPalette({ entries, keybindings, platform, onClose, onRun 
   }
 
   function handleBackdropMouseDown(event: MouseEvent<HTMLDivElement>): void {
-    if (event.target === event.currentTarget) close(true);
+    if (event.target === event.currentTarget) close();
   }
 
   return createPortal(

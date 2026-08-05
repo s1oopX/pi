@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { Message, ToolCall } from "../../ipc/types";
-import { findLatestTaskPlan } from "./planState";
+import { findLatestTaskGoal, findLatestTaskPlan } from "./planState";
 
 function toolCall(id: string, args: Record<string, unknown>): ToolCall {
   return { type: "toolCall", id, name: "update_plan", arguments: args };
@@ -61,5 +61,46 @@ describe("findLatestTaskPlan", () => {
 
   it("returns null when no valid plan exists", () => {
     expect(findLatestTaskPlan([assistant(toolCall("invalid", { plan: "later" }))])).toBeNull();
+  });
+});
+
+describe("findLatestTaskGoal", () => {
+  it("returns the latest successful goal state", () => {
+    const result = findLatestTaskGoal([
+      {
+        role: "toolResult",
+        toolCallId: "goal-1",
+        toolName: "create_goal",
+        content: [],
+        isError: false,
+        timestamp: 1,
+        details: { objective: "Ship desktop parity", status: "active", tokensUsed: 120 },
+      },
+      {
+        role: "toolResult",
+        toolCallId: "goal-2",
+        toolName: "update_goal",
+        content: [],
+        isError: false,
+        timestamp: 2,
+        details: { objective: "Ship desktop parity", status: "blocked", tokensUsed: 240 },
+      },
+    ]);
+
+    expect(result).toEqual({ objective: "Ship desktop parity", status: "blocked", tokensUsed: 240 });
+  });
+
+  it("ignores failed goal results", () => {
+    expect(findLatestTaskGoal([
+      {
+        role: "toolResult",
+        toolCallId: "goal-1",
+        toolName: "create_goal",
+        content: [],
+        isError: true,
+        timestamp: 1,
+        details: { objective: "Not created", status: "active" },
+      },
+    ])).toBeNull();
   });
 });

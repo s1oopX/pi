@@ -1,7 +1,8 @@
 import assert from "node:assert/strict";
+import { EventEmitter } from "node:events";
 import { join } from "node:path";
 import { describe, it } from "node:test";
-import { createRollingLog } from "../src/rolling-log.js";
+import { createRollingLog, registerRendererLogEvents } from "../src/rolling-log.js";
 
 /** In-memory fs standing in for appendFileSync/statSync/renames/unlinks. */
 function fakeFs(initial = {}) {
@@ -56,6 +57,23 @@ describe("createRollingLog", () => {
 		assert.ok(Buffer.byteLength(content, "utf8") < 20 * 1024);
 	});
 
+	it("redacts secrets and the user home before persisting", () => {
+		const fs = fakeFs();
+		const log = createRollingLog({ directory: DIR, homePath: "C:\\Users\\alice", ...fs.impls });
+		log.append(
+			"error",
+			"backend:main",
+			"apiKey=sk-abcdefghijklmnop Authorization: Bearer abc.def_123 path=C:/Users/alice/project url=https://example.test/?token=visible",
+		);
+
+		const content = fs.files.get(CURRENT);
+		assert.doesNotMatch(content, /abcdefghijklmnop|abc\.def_123|visible|Users[\\/]alice/u);
+		assert.match(content, /apiKey=<redacted>/u);
+		assert.match(content, /Authorization: <authorization redacted>/u);
+		assert.match(content, /path=<home>\/project/u);
+		assert.match(content, /token=<redacted>/u);
+	});
+
 	it("initializes its size from an existing file and rotates on overflow", () => {
 		const fs = fakeFs({ [CURRENT]: "y".repeat(90) });
 		const log = createRollingLog({ directory: DIR, maxBytes: 100, maxFiles: 3, ...fs.impls });
@@ -98,5 +116,27 @@ describe("createRollingLog", () => {
 		const fs = fakeFs();
 		const log = createRollingLog({ directory: DIR, ...fs.impls });
 		assert.equal(log.currentPath, CURRENT);
+	});
+});
+
+describe("registerRendererLogEvents", () => {
+	it("records renderer errors, crashes, and hangs", () => {
+		const webContents = new EventEmitter();
+		const entries = [];
+		const getLog = () => ({
+			append: (...entry) => entries.push(entry),
+		});
+		registerRendererLogEvents(webContents, getLog);
+
+		webContents.emit("console-message", { level: "warning", message: "warning", lineNumber: 10, sourceId: "renderer.js" });
+		webContents.emit("console-message", { level: "error", message: "uncaught", lineNumber: 42, sourceId: "renderer.js" });
+		webContents.emit("render-process-gone", {}, { reason: "crashed", exitCode: 7 });
+		webContents.emit("unresponsive");
+
+		assert.deepEqual(entries, [
+			["error", "renderer", "uncaught (renderer.js:42)"],
+			["error", "renderer", "render-process-gone: reason=crashed exitCode=7"],
+			["error", "renderer", "renderer became unresponsive"],
+		]);
 	});
 });

@@ -13,6 +13,9 @@ import { computeToolPairing, type ToolPairing } from "./toolPairing";
 import { useStore, type ToolExecutionsByCallId } from "../../store";
 import type { RetryActivity } from "../../store/agentActivity";
 import type { Message } from "../../ipc/types";
+import * as api from "../../ipc/api";
+import { showToast } from "../Toast";
+import { getComposerWorkspaceDraft, setComposerWorkspaceDraft } from "../Composer/workspaceDrafts";
 import { planConversationLayout } from "./conversationLayout";
 import { isMessageListNearBottom } from "./scrollState";
 import { shouldShowListStreamingDots } from "./streamingPresentation";
@@ -63,10 +66,14 @@ export function MessageList() {
   const compactionActivity = useStore((state) => state.compactionActivity);
   const queuedSteering = useStore((state) => state.queuedSteering);
   const queuedFollowUp = useStore((state) => state.queuedFollowUp);
+  const workspaceCwd = useStore((state) => state.workspaceCwd);
+  const setComposerDraft = useStore((state) => state.setComposerDraft);
   const extensionStatuses = useStore((state) => state.extensionStatuses);
   const scrollRef = useRef<HTMLDivElement>(null);
   const shouldAutoScroll = useRef(true);
+  const scrollDimensions = useRef({ scrollHeight: 0, clientHeight: 0 });
   const [showJumpToLatest, setShowJumpToLatest] = useState(false);
+  const [dequeueing, setDequeueing] = useState(false);
 
   // Pair standalone toolResult messages with their originating toolCall so they
   // can render inline in the tool card, and hide those standalone rows.
@@ -150,9 +157,32 @@ export function MessageList() {
   });
 
   useEffect(() => {
+    const scrollElement = scrollRef.current;
+    if (!scrollElement || typeof ResizeObserver === "undefined") return;
+
+    let frameId = 0;
+    const observer = new ResizeObserver(() => {
+      cancelAnimationFrame(frameId);
+      frameId = requestAnimationFrame(() => {
+        if (shouldAutoScroll.current) {
+          scrollElement.scrollTo({ top: scrollElement.scrollHeight });
+        }
+      });
+    });
+    observer.observe(scrollElement);
+    const inner = scrollElement.querySelector<HTMLElement>(".message-list-inner");
+    if (inner) observer.observe(inner);
+
+    return () => {
+      cancelAnimationFrame(frameId);
+      observer.disconnect();
+    };
+  }, [rows.length]);
+
+  useEffect(() => {
     if (!shouldAutoScroll.current || rows.length === 0) return;
     setShowJumpToLatest(false);
-    virtualizer.scrollToIndex(rows.length - 1, { align: "end", behavior: isStreaming ? "auto" : "smooth" });
+    virtualizer.scrollToIndex(rows.length - 1, { align: "end", behavior: "auto" });
   }, [
     rows.length,
     messages[messages.length - 1],
@@ -164,6 +194,13 @@ export function MessageList() {
   function handleScroll() {
     const el = scrollRef.current;
     if (!el) return;
+    const dimensionsChanged = scrollDimensions.current.scrollHeight !== el.scrollHeight
+      || scrollDimensions.current.clientHeight !== el.clientHeight;
+    scrollDimensions.current = { scrollHeight: el.scrollHeight, clientHeight: el.clientHeight };
+    if (shouldAutoScroll.current && dimensionsChanged) {
+      setShowJumpToLatest(false);
+      return;
+    }
     const nearBottom = isMessageListNearBottom(el);
     shouldAutoScroll.current = nearBottom;
     setShowJumpToLatest(!nearBottom);
@@ -173,6 +210,37 @@ export function MessageList() {
     shouldAutoScroll.current = true;
     setShowJumpToLatest(false);
     scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight, behavior: "smooth" });
+  }
+
+  async function handleDequeue() {
+    if (dequeueing) return;
+    const requestContext = { cwd: workspaceCwd, sessionId };
+    setDequeueing(true);
+    try {
+      const dequeued = await api.dequeue();
+      const restored = [...dequeued.steering, ...dequeued.followUp]
+        .filter((message) => message.trim().length > 0)
+        .join("\n\n");
+      if (!restored) return;
+
+      if (useStore.getState().session?.sessionId === requestContext.sessionId) {
+        setComposerDraft((current) => [restored, current].filter((text) => text.trim().length > 0).join("\n\n"));
+      } else {
+        const draft = getComposerWorkspaceDraft(requestContext.cwd, requestContext.sessionId);
+        setComposerWorkspaceDraft(
+          requestContext.cwd,
+          requestContext.sessionId,
+          [restored, draft.input].filter((text) => text.trim().length > 0).join("\n\n"),
+          draft.attachments,
+        );
+      }
+    } catch (error) {
+      showToast(t("Failed to edit queued messages: {error}", "取回排队消息失败：{error}", {
+        error: error instanceof Error ? error.message : String(error),
+      }), "error");
+    } finally {
+      setDequeueing(false);
+    }
   }
 
   if (rows.length === 0) {
@@ -228,7 +296,12 @@ export function MessageList() {
                 }}
               >
                 {row.kind === "inline-status" ? (
-                  <ConversationInlineStatus queued={row.queued} extensionStatuses={row.extensionStatuses} />
+                  <ConversationInlineStatus
+                    queued={row.queued}
+                    extensionStatuses={row.extensionStatuses}
+                    dequeueing={dequeueing}
+                    onDequeue={handleDequeue}
+                  />
                 ) : row.kind === "retry" ? (
                   <RetryNotice activity={row.activity} />
                 ) : row.originalIndex === streamingIndex ? (
@@ -282,9 +355,13 @@ export function MessageList() {
 function ConversationInlineStatus({
   queued,
   extensionStatuses,
+  dequeueing,
+  onDequeue,
 }: {
   queued: readonly QueuedConversationItem[];
   extensionStatuses: Readonly<Record<string, string>>;
+  dequeueing: boolean;
+  onDequeue: () => void;
 }) {
   const { t } = useI18n();
 
@@ -300,6 +377,19 @@ function ConversationInlineStatus({
               <span className="conversation-queue-text">{item.message}</span>
             </div>
           ))}
+          <button
+            className="conversation-queue-edit"
+            type="button"
+            disabled={dequeueing}
+            onClick={onDequeue}
+            aria-busy={dequeueing}
+            aria-label={dequeueing
+              ? t("Restoring queued messages", "正在取回排队消息")
+              : t("Edit all queued messages", "编辑全部排队消息")}
+            title={t("Edit all queued messages", "编辑全部排队消息")}
+          >
+            <Icon name="pencil" size={14} strokeWidth={1.7} />
+          </button>
         </div>
       )}
       <ExtensionStatuses statuses={extensionStatuses} />

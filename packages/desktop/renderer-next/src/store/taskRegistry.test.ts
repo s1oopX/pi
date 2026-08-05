@@ -100,6 +100,25 @@ describe("switchTask", () => {
 });
 
 describe("mergeTaskList", () => {
+  it("hydrates persisted inbox state from the main-process snapshot", () => {
+    const state = createInitialTaskRegistryState();
+    const merged = mergeTaskList(state, [
+      { taskId: "main", cwd: "C:\\primary", isPrimary: true, ready: true, starting: false },
+      {
+        taskId: "task_1",
+        cwd: "C:\\pool\\a",
+        isPrimary: false,
+        ready: true,
+        starting: false,
+        streaming: false,
+        unread: 2,
+        completed: true,
+      },
+    ]);
+    expect(merged.tasks.task_1.unread).toBe(2);
+    expect(merged.tasks.task_1.completed).toBe(true);
+  });
+
   it("preserves live event state for existing tasks and drops vanished ones", () => {
     let state = stateWithBackgroundTask();
     state = routeBackendEvent(state, { type: "agent_start", backendId: "task_1" }).state;

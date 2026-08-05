@@ -33,6 +33,8 @@ export class BackendHandle {
 	 * @param {(channel: string, payload: object) => void} options.sendToRenderer
 	 * @param {(cwd: string) => void} [options.onSessionChanged]
 	 * @param {(payload: object) => void} [options.notify]
+	 * @param {string} [options.resumeSessionFile]
+	 * @param {(sessionFile: string | undefined) => void} [options.onSessionFileChanged]
 	 * @param {() => boolean} [options.isQuitting]
 	 * @param {typeof spawn} [options.spawnImpl]
 	 * @param {(path: string) => boolean} [options.existsSyncImpl]
@@ -46,6 +48,8 @@ export class BackendHandle {
 		sendToRenderer,
 		onSessionChanged = () => {},
 		notify = () => {},
+		resumeSessionFile,
+		onSessionFileChanged = () => {},
 		isQuitting = () => false,
 		spawnImpl = spawn,
 		existsSyncImpl = existsSync,
@@ -58,6 +62,9 @@ export class BackendHandle {
 		this.emitToRenderer = sendToRenderer;
 		this.onSessionChanged = onSessionChanged;
 		this.notify = notify;
+		this.resumeSessionFile = resumeSessionFile;
+		this.startupResumeSessionFile = undefined;
+		this.onSessionFileChanged = onSessionFileChanged;
 		this.isQuitting = isQuitting;
 		this.spawnImpl = spawnImpl;
 		this.existsSyncImpl = existsSyncImpl;
@@ -81,6 +88,13 @@ export class BackendHandle {
 		this.restartAttempts = 0;
 		this.retryAt = 0;
 		this.mutationQueue = createBackendMutationQueue();
+	}
+
+	/** @param {string | undefined} sessionFile */
+	updateSessionFile_(sessionFile) {
+		if (this.resumeSessionFile === sessionFile) return;
+		this.resumeSessionFile = sessionFile;
+		this.onSessionFileChanged(sessionFile);
 	}
 
 	/**
@@ -130,11 +144,25 @@ export class BackendHandle {
 			) {
 				this.extensionFlagValues.set(pending.command.name, pending.command.value);
 			}
+			if (payload.success) {
+				if (pending.command?.type === "new_session") this.updateSessionFile_(undefined);
+				const sessionFile = payload.data?.sessionFile;
+				if (
+					typeof sessionFile === "string" &&
+					sessionFile &&
+					!(pending.command?.type === "get_state" && this.startupResumeSessionFile)
+				) {
+					this.updateSessionFile_(sessionFile);
+				}
+			}
 			pending.resolve(payload);
 			return;
 		}
 
 		if (payload.type === "session_changed" && typeof payload.cwd === "string") {
+			if (typeof payload.sessionFile === "string" && payload.sessionFile) {
+				this.updateSessionFile_(payload.sessionFile);
+			}
 			this.onSessionChanged(payload.cwd);
 		}
 		this.pendingExtensionUIRequests.track(payload);
@@ -268,6 +296,7 @@ export class BackendHandle {
 		this.buffer = "";
 		this.bufferBytes = 0;
 		this.retryAt = 0;
+		this.startupResumeSessionFile = this.resumeSessionFile;
 		const cwd = this.getCwd();
 		const child = this.spawnImpl(command, launchSpec?.args ?? [], {
 			cwd: launchSpec?.cwd ?? cwd,
@@ -326,8 +355,18 @@ export class BackendHandle {
 		});
 
 		void this.request({ type: "get_state" }, { allowStarting: true, timeoutMs: 15000 })
-			.then(() => {
+			.then(async () => {
 				if (this.child !== child) return;
+				const resumeSessionFile = this.startupResumeSessionFile;
+				if (resumeSessionFile) {
+					const switched = await this.request(
+						{ type: "switch_session", sessionPath: resumeSessionFile },
+						{ allowStarting: true, timeoutMs: 30000 },
+					);
+					if (!switched.success) throw new Error(switched.error || "Could not restore the task session");
+					this.updateSessionFile_(resumeSessionFile);
+				}
+				this.startupResumeSessionFile = undefined;
 				this.starting = false;
 				this.ready = true;
 				this.send_("backend:status", { ready: true, backendPath, cwd });
@@ -339,6 +378,7 @@ export class BackendHandle {
 			.catch((error) => {
 				if (this.child !== child) return;
 				this.starting = false;
+				this.startupResumeSessionFile = undefined;
 				this.ready = false;
 				this.send_("backend:status", { ready: false, error: `Pi backend failed to initialize: ${error.message}` });
 				child.kill();
@@ -351,6 +391,7 @@ export class BackendHandle {
 		this.mutationQueue.invalidate();
 		this.pendingExtensionUIRequests.clear();
 		this.extensionFlagValues.clear();
+		this.startupResumeSessionFile = undefined;
 		if (!this.child) {
 			return;
 		}

@@ -6,7 +6,7 @@ import {
   getPromptText,
   MAX_ATTACHMENT_COUNT,
   MAX_ATTACHMENT_BYTES,
-  readImageAttachment,
+  readComposerAttachment,
   resolveImageMimeType,
   toImageContent,
   type ComposerAttachment,
@@ -15,6 +15,13 @@ import {
 function attachment(id: string): ComposerAttachment {
   return { id, name: `${id}.png`, type: "image", data: id, mimeType: "image/png" };
 }
+
+const fileAttachment: ComposerAttachment = {
+  id: "notes",
+  name: "notes.txt",
+  type: "file",
+  path: "C:\\workspace\\notes.txt",
+};
 
 describe("composer attachments", () => {
   it("normalizes supported declared types and file extensions", () => {
@@ -40,13 +47,20 @@ describe("composer attachments", () => {
     ).toEqual([image]);
   });
 
-  it("applies type and size validation to transferred images", async () => {
-    await expect(readImageAttachment(new File(["svg"], "diagram.svg", { type: "image/svg+xml" }))).rejects.toThrow(
-      "diagram.svg is not a supported image",
-    );
+  it("uses file references for non-image attachments", async () => {
     await expect(
-      readImageAttachment(
+      readComposerAttachment(new File(["notes"], "notes.txt", { type: "text/plain" }), () => fileAttachment.path),
+    ).resolves.toMatchObject({ name: "notes.txt", path: fileAttachment.path, type: "file" });
+    await expect(
+      readComposerAttachment(new File(["notes"], "notes.txt", { type: "text/plain" }), () => null),
+    ).rejects.toThrow("Could not access the path for notes.txt");
+  });
+
+  it("applies size validation to transferred images", async () => {
+    await expect(
+      readComposerAttachment(
         new File([new Uint8Array(MAX_ATTACHMENT_BYTES + 1)], "large.png", { type: "image/png" }),
+        () => null,
       ),
     ).rejects.toThrow("large.png exceeds the 3 MB attachment limit");
   });
@@ -60,14 +74,15 @@ describe("composer attachments", () => {
   });
 
   it("strips composer-only metadata from RPC image content", () => {
-    expect(toImageContent([attachment("preview")])).toEqual([
+    expect(toImageContent([attachment("preview"), fileAttachment])).toEqual([
       { type: "image", data: "preview", mimeType: "image/png" },
     ]);
   });
 
-  it("adds valid text for image-only provider requests", () => {
-    expect(getPromptText("", 1)).toBe("(see attached image)");
-    expect(getPromptText("Explain this", 1)).toBe("Explain this");
-    expect(getPromptText("", 0)).toBe("");
+  it("adds file references and valid text for image-only provider requests", () => {
+    expect(getPromptText("", [attachment("preview")])).toBe("(see attached image)");
+    expect(getPromptText("Explain this", [attachment("preview")])).toBe("Explain this");
+    expect(getPromptText("Review this", [fileAttachment])).toBe("Review this\n\n@C:\\workspace\\notes.txt");
+    expect(getPromptText("", [])).toBe("");
   });
 });

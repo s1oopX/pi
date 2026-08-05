@@ -38,6 +38,12 @@ contextBridge.exposeInMainWorld("piDesktop", {
 	stopTask(/** @type {unknown} */ taskId) {
 		return ipcRenderer.invoke("task:stop", taskId);
 	},
+	retryTask(/** @type {unknown} */ taskId) {
+		return ipcRenderer.invoke("task:retry", taskId);
+	},
+	forgetSavedTask(/** @type {unknown} */ taskId) {
+		return ipcRenderer.invoke("task:forget", taskId);
+	},
 	notifyActiveTask(/** @type {unknown} */ taskId) {
 		ipcRenderer.send("task:activate", taskId);
 	},
@@ -55,6 +61,9 @@ contextBridge.exposeInMainWorld("piDesktop", {
 	},
 	onTaskChanged(/** @type {PayloadListener} */ listener) {
 		return subscribe("task:changed", listener);
+	},
+	onTaskFocus(/** @type {PayloadListener} */ listener) {
+		return subscribe("task:focus", listener);
 	},
 	listAutomations() {
 		return ipcRenderer.invoke("automation:list");

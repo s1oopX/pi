@@ -602,13 +602,25 @@ export const useStore = create<AppState>((set, get) => ({
 
   async refreshTasks() {
     try {
-      const { tasks, maxTasks } = await api.listTasks();
+      const { tasks, maxTasks, unavailableTasks } = await api.listTasks();
       if (tasks.length > 0) {
         const merged = mergeTaskList(get().taskRegistry, tasks);
-        set({ taskRegistry: maxTasks === undefined ? merged : { ...merged, maxTasks } });
+        set({
+          taskRegistry: {
+            ...merged,
+            ...(maxTasks === undefined ? {} : { maxTasks }),
+            unavailableTasks: unavailableTasks ?? [],
+            error: undefined,
+          },
+        });
       }
-    } catch {
-      // The task list is auxiliary; never let a failed poll break the UI.
+    } catch (error) {
+      set({
+        taskRegistry: {
+          ...get().taskRegistry,
+          error: error instanceof Error ? error.message : String(error),
+        },
+      });
     }
   },
 

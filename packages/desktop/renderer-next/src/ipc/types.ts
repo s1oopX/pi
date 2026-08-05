@@ -123,6 +123,10 @@ export interface AbortCommand {
   type: "abort";
 }
 
+export interface DequeueCommand {
+  type: "dequeue";
+}
+
 export interface NewSessionCommand {
   type: "new_session";
   cwd?: string;
@@ -402,6 +406,7 @@ export type BackendCommand =
   | GetSessionsCommand
   | GetAuthStatusCommand
   | PromptCommand
+  | DequeueCommand
   | AbortCommand
   | NewSessionCommand
   | SwitchSessionCommand

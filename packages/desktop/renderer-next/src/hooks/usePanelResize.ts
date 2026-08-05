@@ -71,9 +71,21 @@ export function usePanelResize(options: PanelResizeOptions): PanelResizeState {
         setWidth(resolved.width);
       };
 
-      const handleUp = (upEvent: PointerEvent) => {
+      function stopListening(): void {
         window.removeEventListener("pointermove", handleMove);
         window.removeEventListener("pointerup", handleUp);
+        window.removeEventListener("pointercancel", handleCancel);
+      }
+
+      function handleCancel(): void {
+        stopListening();
+        setDragging(false);
+        setWillCollapse(false);
+        setWidth(startWidth);
+      }
+
+      function handleUp(upEvent: PointerEvent): void {
+        stopListening();
         setDragging(false);
         setWillCollapse(false);
         const delta = upEvent.clientX - startX;
@@ -88,10 +100,11 @@ export function usePanelResize(options: PanelResizeOptions): PanelResizeState {
         }
         setWidth(resolved.width);
         saveStoredPanelWidth(storageKey, resolved.width);
-      };
+      }
 
       window.addEventListener("pointermove", handleMove);
       window.addEventListener("pointerup", handleUp);
+      window.addEventListener("pointercancel", handleCancel);
     },
     [storageKey, width],
   );

@@ -116,6 +116,7 @@ function ConfirmApproval({
         <button
           className="dialog-btn dialog-btn-danger"
           type="button"
+          autoFocus
           disabled={responding}
           onClick={() => void onRespond({ confirmed: false })}
         >
@@ -151,11 +152,12 @@ function SelectApproval({
         <span className="inline-approval-title">{title}</span>
       </div>
       <div className="inline-approval-actions">
-        {options.map((option) => (
+        {options.map((option, index) => (
           <button
             key={option}
             className="dialog-btn dialog-btn-secondary"
             type="button"
+            autoFocus={index === 0}
             disabled={responding}
             onClick={() => void onRespond({ value: option })}
           >

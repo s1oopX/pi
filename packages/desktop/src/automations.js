@@ -452,19 +452,33 @@ function saveState(filePath, automations) {
 function loadState(filePath, nowMs) {
 	try {
 		const stats = statSync(filePath);
-		if (!stats.isFile() || stats.size > MAX_AUTOMATIONS_BYTES) return { automations: [], recovered: false };
+		if (!stats.isFile()) {
+			return { automations: [], recovered: false, error: new Error("Automation state path is not a file") };
+		}
+		if (stats.size > MAX_AUTOMATIONS_BYTES) {
+			return { automations: [], recovered: false, error: new Error("Automation state file is too large") };
+		}
 		const parsed = JSON.parse(readFileSync(filePath, "utf8"));
 		if (!parsed || typeof parsed !== "object" || parsed.version !== AUTOMATIONS_VERSION || !Array.isArray(parsed.automations)) {
-			return { automations: [], recovered: false };
+			return { automations: [], recovered: false, error: new Error("Automation state file has an unsupported format") };
 		}
 		const rawAutomations = /** @type {unknown[]} */ (parsed.automations);
-		const automations = rawAutomations
-			.map((automation) => sanitizeAutomation(automation, nowMs))
-			.filter((automation) => automation !== undefined);
-		const recovered = automations.some((automation) => automation.runs.some((run) => run.error === "Pi Studio closed before this run finished."));
-		return { automations, recovered };
-	} catch {
-		return { automations: [], recovered: false };
+		const automations = rawAutomations.map((automation) => sanitizeAutomation(automation, nowMs));
+		if (automations.some((automation) => automation === undefined)) {
+			return { automations: [], recovered: false, error: new Error("Automation state file contains an invalid record") };
+		}
+		const validAutomations = /** @type {Automation[]} */ (automations);
+		const recovered = validAutomations.some((automation) => automation.runs.some((run) => run.error === "Pi Studio closed before this run finished."));
+		return { automations: validAutomations, recovered };
+	} catch (error) {
+		if (/** @type {{ code?: unknown }} */ (error)?.code === "ENOENT") {
+			return { automations: [], recovered: false };
+		}
+		return {
+			automations: [],
+			recovered: false,
+			error: new Error(`Could not load automation state: ${error instanceof Error ? error.message : String(error)}`),
+		};
 	}
 }
 
@@ -490,6 +504,7 @@ export function createAutomationService({
 	const loaded = loadState(filePath, now());
 	/** @type {Automation[]} */
 	let automations = loaded.automations;
+	const loadError = loaded.error;
 	/** @type {ReturnType<typeof setTimeout> | undefined} */
 	let timer;
 	let stopped = false;
@@ -497,6 +512,7 @@ export function createAutomationService({
 	const runningIds = new Set();
 	/** @type {Set<Promise<void>>} */
 	const activePromises = new Set();
+	if (loadError) onError(loadError);
 	if (loaded.recovered) saveState(filePath, automations);
 
 	function emit() {
@@ -509,6 +525,9 @@ export function createAutomationService({
 
 	/** @param {Automation[]} next */
 	function commit(next) {
+		if (loadError) {
+			throw new Error(`${loadError.message}. The original file was not changed.`);
+		}
 		saveState(filePath, next);
 		automations = next;
 		emit();
@@ -638,6 +657,10 @@ export function createAutomationService({
 	scheduleNext();
 
 	return {
+		getLoadError() {
+			return loadError;
+		},
+
 		list() {
 			return automations.map(snapshot);
 		},

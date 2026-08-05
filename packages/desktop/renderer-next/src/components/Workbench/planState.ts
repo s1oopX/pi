@@ -12,6 +12,14 @@ export interface TaskPlanState {
   steps: TaskPlanStep[];
 }
 
+export interface TaskGoalState {
+  objective: string;
+  status: "active" | "complete" | "blocked";
+  tokenBudget?: number;
+  tokensUsed?: number;
+  remainingTokens?: number;
+}
+
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
@@ -31,6 +39,23 @@ function parseTaskPlan(value: unknown): TaskPlanState | null {
   return { ...(explanation ? { explanation } : {}), steps };
 }
 
+function parseTaskGoal(value: unknown): TaskGoalState | null {
+  if (!isRecord(value) || typeof value.objective !== "string") return null;
+  if (value.status !== "active" && value.status !== "complete" && value.status !== "blocked") return null;
+  const objective = value.objective.trim();
+  if (!objective) return null;
+  for (const key of ["tokenBudget", "tokensUsed", "remainingTokens"] as const) {
+    if (value[key] !== undefined && typeof value[key] !== "number") return null;
+  }
+  return {
+    objective,
+    status: value.status,
+    ...(typeof value.tokenBudget === "number" ? { tokenBudget: value.tokenBudget } : {}),
+    ...(typeof value.tokensUsed === "number" ? { tokensUsed: value.tokensUsed } : {}),
+    ...(typeof value.remainingTokens === "number" ? { remainingTokens: value.remainingTokens } : {}),
+  };
+}
+
 export function findLatestTaskPlan(messages: readonly Message[]): TaskPlanState | null {
   for (let messageIndex = messages.length - 1; messageIndex >= 0; messageIndex--) {
     const message = messages[messageIndex];
@@ -41,6 +66,17 @@ export function findLatestTaskPlan(messages: readonly Message[]): TaskPlanState 
       const plan = parseTaskPlan(block.arguments);
       if (plan) return plan;
     }
+  }
+  return null;
+}
+
+export function findLatestTaskGoal(messages: readonly Message[]): TaskGoalState | null {
+  for (let messageIndex = messages.length - 1; messageIndex >= 0; messageIndex--) {
+    const message = messages[messageIndex];
+    if (message.role !== "toolResult" || message.isError) continue;
+    if (message.toolName !== "create_goal" && message.toolName !== "get_goal" && message.toolName !== "update_goal") continue;
+    const goal = parseTaskGoal(message.details);
+    if (goal) return goal;
   }
   return null;
 }

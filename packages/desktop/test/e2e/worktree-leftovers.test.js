@@ -51,6 +51,11 @@ test("worktree leftovers: a dirty worktree survives the stop and is deletable fr
 		await studio.stubFolderPicker(studio.workspaceDir);
 		await studio.page.locator(".parallel-tasks .workspace-navigation-add").click();
 		await studio.page
+			.locator(".parallel-task-row.active .parallel-task-branch")
+			.filter({ hasText: "task/workspace-1" })
+			.first()
+			.waitFor({ state: "attached", timeout: LAUNCH_TIMEOUT_MS });
+		await studio.page
 			.locator(".parallel-task-row.active .parallel-task-dot.ready")
 			.waitFor({ state: "visible", timeout: LAUNCH_TIMEOUT_MS });
 		await studio.waitForWorkspaceSettled();

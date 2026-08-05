@@ -1074,6 +1074,8 @@ export function Sidebar({ collapsed, onToggle, automationsOpen, onOpenAutomation
                   </button>
                 </div>
               )}
+              <ParallelTasks />
+
               <section className="ownership-section project-tree" aria-labelledby="project-tree-title">
                 <div className="ownership-section-header">
                   <span id="project-tree-title">{t("Projects", "项目")}</span>
@@ -1189,44 +1191,44 @@ export function Sidebar({ collapsed, onToggle, automationsOpen, onOpenAutomation
                 )}
               </section>
 
-              <ParallelTasks />
-
-              <section className="ownership-section task-tree" aria-labelledby="task-tree-title">
-                <div className="ownership-section-header">
-                  <span id="task-tree-title">{t("Tasks", "任务")}</span>
-                  <span className="agent-list-count">
-                    {taskSessions.length}
-                  </span>
-                  <button
-                    className="workspace-navigation-add"
-                    type="button"
-                    aria-label={t("New task", "新建任务")}
-                    title={isStreaming
-                      ? t("Finish or stop the current run before creating a new task", "请先完成或停止当前运行，再新建任务")
-                      : !backendStatus.ready
-                        ? t("The agent backend is not ready", "智能体后端尚未就绪")
-                        : t("New task", "新建任务")}
-                    disabled={!backendStatus.ready || switchingWorkspace || isStreaming || creatingThread}
-                    onClick={handleNewTask}
-                  >
-                    <Icon name="plus" size={18} strokeWidth={1.5} />
-                  </button>
-                </div>
-                <div className="task-tree-list" role="list">
-                  {taskSessions.map((candidate) => renderSessionRow(candidate, false))}
-                  {!sessionsError && !sessionsLoading && !sessionSearchPending && taskSessions.length === 0 && (
-                    <div className="agent-empty-state">
-                      {normalizedSessionQuery
-                        ? showArchived
-                          ? t("No archived tasks match “{query}”", "没有与“{query}”匹配的已归档任务", { query: sessionsQuery })
-                          : t("No tasks match “{query}”", "没有与“{query}”匹配的任务", { query: sessionsQuery })
-                        : showArchived
-                          ? t("No archived tasks", "没有已归档任务")
-                          : t("No tasks yet", "尚无任务")}
-                    </div>
-                  )}
-                </div>
-              </section>
+              {(taskSessions.length > 0 || normalizedSessionQuery || showArchived) && (
+                <section className="ownership-section task-tree" aria-labelledby="task-tree-title">
+                  <div className="ownership-section-header">
+                    <span id="task-tree-title">{t("Tasks", "任务")}</span>
+                    <span className="agent-list-count">
+                      {taskSessions.length}
+                    </span>
+                    <button
+                      className="workspace-navigation-add"
+                      type="button"
+                      aria-label={t("New task", "新建任务")}
+                      title={isStreaming
+                        ? t("Finish or stop the current run before creating a new task", "请先完成或停止当前运行，再新建任务")
+                        : !backendStatus.ready
+                          ? t("The agent backend is not ready", "智能体后端尚未就绪")
+                          : t("New task", "新建任务")}
+                      disabled={!backendStatus.ready || switchingWorkspace || isStreaming || creatingThread}
+                      onClick={handleNewTask}
+                    >
+                      <Icon name="plus" size={18} strokeWidth={1.5} />
+                    </button>
+                  </div>
+                  <div className="task-tree-list" role="list">
+                    {taskSessions.map((candidate) => renderSessionRow(candidate, false))}
+                    {!sessionsError && !sessionsLoading && !sessionSearchPending && taskSessions.length === 0 && (normalizedSessionQuery || showArchived) && (
+                      <div className="agent-empty-state">
+                        {normalizedSessionQuery
+                          ? showArchived
+                            ? t("No archived tasks match “{query}”", "没有与“{query}”匹配的已归档任务", { query: sessionsQuery })
+                            : t("No tasks match “{query}”", "没有与“{query}”匹配的任务", { query: sessionsQuery })
+                          : showArchived
+                            ? t("No archived tasks", "没有已归档任务")
+                            : t("No tasks yet", "尚无任务")}
+                      </div>
+                    )}
+                  </div>
+                </section>
+              )}
               {(sessionsLoading || sessionSearchPending) && sessions.length === 0 && (
                 <div className="agent-empty-state">
                   {sessionLoadingText}

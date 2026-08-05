@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import Markdown from "react-markdown";
 import { DiffView, type DiffLineSelection } from "../DiffView";
 import { useI18n } from "../../i18n";
@@ -69,6 +69,7 @@ export function GitPanel({ onClose }: GitPanelProps) {
   const [prBody, setPrBody] = useState("");
   const [prBase, setPrBase] = useState("");
   const [creatingPr, setCreatingPr] = useState(false);
+  const changesRequestId = useRef(0);
 
   const sync = summarizeGitSync(workspaceGitStatus);
   const isRemote = workspaceCwd.startsWith("ssh://");
@@ -81,16 +82,21 @@ export function GitPanel({ onClose }: GitPanelProps) {
     || Boolean(applyingHunk);
 
   async function loadChanges() {
+    const requestId = ++changesRequestId.current;
     setChangesLoading(true);
     try {
-      setChanges(await api.getGitChanges());
+      const nextChanges = await api.getGitChanges();
+      if (requestId !== changesRequestId.current) return;
+      setChanges(nextChanges);
+      clearExpandedReview();
     } catch (error) {
+      if (requestId !== changesRequestId.current) return;
       setChanges(null);
       showToast(t("Could not list changes: {message}", "无法获取变更列表：{message}", {
         message: ipcErrorReason(error),
       }), "error");
     } finally {
-      setChangesLoading(false);
+      if (requestId === changesRequestId.current) setChangesLoading(false);
     }
   }
 
@@ -121,6 +127,7 @@ export function GitPanel({ onClose }: GitPanelProps) {
       const result = await api.commitAllGitChanges(message);
       showToast(result.summary, "success");
       setCommitMessage("");
+      clearExpandedReview();
       refreshWorkspaceGitStatus();
       await loadChanges();
     } catch (error) {
@@ -160,6 +167,7 @@ export function GitPanel({ onClose }: GitPanelProps) {
       await api.switchGitBranch(name);
       showToast(t("Switched to {branch}", "已切换到 {branch}", { branch: name }), "success");
       setBranchesOpen(false);
+      clearExpandedReview();
       refreshWorkspaceGitStatus();
       await Promise.all([loadChanges(), loadBranches()]);
     } catch (error) {
@@ -184,6 +192,7 @@ export function GitPanel({ onClose }: GitPanelProps) {
       showToast(t("Created and switched to {branch}", "已新建并切换到 {branch}", { branch: name }), "success");
       setNewBranchName("");
       setBranchesOpen(false);
+      clearExpandedReview();
       refreshWorkspaceGitStatus();
       await Promise.all([loadChanges(), loadBranches()]);
     } catch (error) {
@@ -306,14 +315,11 @@ export function GitPanel({ onClose }: GitPanelProps) {
   }
 
   async function toggleFileDiff(path: string) {
-    setArmedRestore(null);
-    setArmedHunkDiscard(null);
-    clearLineComment();
     if (expandedFile === path) {
-      setExpandedFile(null);
-      setExpandedDiff(null);
+      clearExpandedReview();
       return;
     }
+    clearExpandedReview();
     setExpandedFile(path);
     setExpandedDiff(null);
     try {
@@ -358,6 +364,7 @@ export function GitPanel({ onClose }: GitPanelProps) {
         setExpandedFile(null);
         setExpandedDiff(null);
       } else {
+        setExpandedFile(path);
         setExpandedDiff(nextDiff);
       }
     } catch (error) {
@@ -385,6 +392,14 @@ export function GitPanel({ onClose }: GitPanelProps) {
   function clearLineComment() {
     setLineCommentTarget(null);
     setLineComment("");
+  }
+
+  function clearExpandedReview() {
+    setExpandedFile(null);
+    setExpandedDiff(null);
+    setArmedRestore(null);
+    setArmedHunkDiscard(null);
+    clearLineComment();
   }
 
   function handleAskLineComment() {
@@ -451,10 +466,7 @@ export function GitPanel({ onClose }: GitPanelProps) {
           : t("Restored {path}", "已还原 {path}", { path }),
         "success",
       );
-      setExpandedFile(null);
-      setExpandedDiff(null);
-      setArmedHunkDiscard(null);
-      clearLineComment();
+      clearExpandedReview();
       refreshWorkspaceGitStatus();
       await loadChanges();
     } catch (error) {

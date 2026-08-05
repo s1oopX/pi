@@ -32,6 +32,7 @@ export function Settings() {
   const [searchQuery, setSearchQuery] = useState("");
   const [customProvidersDirty, setCustomProvidersDirty] = useState(false);
   const panelRef = useRef<HTMLDivElement>(null);
+  const requestCloseSettingsRef = useRef<() => void>(() => {});
   const navigationItems = useMemo(() => getSettingsNavigation(resolvedLanguage), [resolvedLanguage]);
   const filteredNavigationItems = useMemo(
     () => filterSettingsNavigation(navigationItems, searchQuery, resolvedLanguage),
@@ -53,6 +54,7 @@ export function Settings() {
     setCustomProvidersDirty(false);
     closeSettings();
   }
+  requestCloseSettingsRef.current = requestCloseSettings;
 
   function requestOpenSettings(route: typeof settingsRoute): void {
     if (!route) return;
@@ -73,9 +75,12 @@ export function Settings() {
 
   useEffect(() => {
     const previouslyFocused = document.activeElement instanceof HTMLElement ? document.activeElement : null;
-    const appShell = document.querySelector<HTMLElement>(".app-shell");
-    const appShellWasInert = appShell?.hasAttribute("inert") ?? false;
-    appShell?.setAttribute("inert", "");
+    const inertTargets = [
+      document.querySelector<HTMLElement>(".window-chrome"),
+      document.querySelector<HTMLElement>(".app-shell"),
+    ].filter((element): element is HTMLElement => element !== null);
+    const priorInertState = inertTargets.map((element) => element.hasAttribute("inert"));
+    for (const element of inertTargets) element.setAttribute("inert", "");
 
     const focusFrame = requestAnimationFrame(() => {
       const panel = panelRef.current;
@@ -88,7 +93,7 @@ export function Settings() {
       if (event.key === "Escape") {
         if (event.defaultPrevented) return;
         event.preventDefault();
-        requestCloseSettings();
+        requestCloseSettingsRef.current();
         return;
       }
 
@@ -120,10 +125,12 @@ export function Settings() {
     return () => {
       cancelAnimationFrame(focusFrame);
       window.removeEventListener("keydown", handleKeyDown);
-      if (!appShellWasInert) appShell?.removeAttribute("inert");
+      inertTargets.forEach((element, index) => {
+        if (!priorInertState[index]) element.removeAttribute("inert");
+      });
       if (previouslyFocused?.isConnected) previouslyFocused.focus();
     };
-  }, [closeSettings, customProvidersDirty, settingsRoute, t]);
+  }, []);
 
   if (!settingsRoute) return null;
 

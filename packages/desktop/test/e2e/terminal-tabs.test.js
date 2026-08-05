@@ -34,6 +34,13 @@ test("workbench terminals run concurrently and stop by tab", async (t) => {
 			undefined,
 			{ timeout: LAUNCH_TIMEOUT_MS },
 		);
+		await studio.page.locator(".top-bar-workbench-toggle").click();
+		await studio.page.locator(".workbench-panel").waitFor({ state: "hidden" });
+		await studio.page.locator(".top-bar-workbench-toggle").click();
+		await studio.page.locator('[data-workbench-view="terminal"]').click();
+		assert.equal(await tabs.count(), 2);
+		assert.equal(await studio.page.locator(".workbench-terminal-running").count(), 2);
+		await activeOutput.getByText("tab-two-start", { exact: true }).waitFor({ timeout: LAUNCH_TIMEOUT_MS });
 
 		await studio.page.locator(".workbench-terminal-session:not([hidden]) .workbench-primary.secondary").click();
 		await studio.page.waitForFunction(

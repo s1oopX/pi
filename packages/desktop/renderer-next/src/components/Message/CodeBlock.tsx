@@ -29,6 +29,7 @@ export function CodeBlock({ code, language }: CodeBlockProps) {
   const [copied, setCopied] = useState(false);
   const [applying, setApplying] = useState(false);
   const containerRef = useRef<HTMLDivElement>(null);
+  const copyResetTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
   const streaming = useContext(CodeStreamingContext);
   const filePath = inferFilePath(language, code);
   const lineCount = countLines(code);
@@ -54,9 +55,12 @@ export function CodeBlock({ code, language }: CodeBlockProps) {
     ipcApi.writeClipboardText(code).catch(() => {
       navigator.clipboard?.writeText(code);
     });
+    clearTimeout(copyResetTimer.current);
     setCopied(true);
-    setTimeout(() => setCopied(false), 2000);
+    copyResetTimer.current = setTimeout(() => setCopied(false), 2000);
   }
+
+  useEffect(() => () => clearTimeout(copyResetTimer.current), []);
 
   async function handleApply() {
     if (!filePath || applying) return;

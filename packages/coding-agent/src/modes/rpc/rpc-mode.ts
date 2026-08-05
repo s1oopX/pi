@@ -1039,7 +1039,12 @@ export async function runRpcMode(runtimeHost: AgentSessionRuntime): Promise<neve
 								queueMicrotask(releasePromptPreflight);
 								if (didSucceed) {
 									preflightSucceeded = true;
-									output(success(id, "prompt"));
+									output(
+										success(id, "prompt", {
+											sessionId: session.sessionId,
+											...(session.sessionFile ? { sessionFile: session.sessionFile } : {}),
+										}),
+									);
 								}
 							},
 						});
@@ -1071,11 +1076,16 @@ export async function runRpcMode(runtimeHost: AgentSessionRuntime): Promise<neve
 				return success(id, "follow_up");
 			}
 
+			case "dequeue": {
+				await promptPreflightTail;
+				return success(id, "dequeue", session.clearQueue());
+			}
+
 			case "abort": {
 				await promptPreflightTail;
-				session.clearQueue();
+				const queued = session.clearQueue();
 				await session.abort();
-				return success(id, "abort");
+				return success(id, "abort", queued);
 			}
 
 			case "new_session": {

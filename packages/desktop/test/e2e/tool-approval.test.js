@@ -33,6 +33,24 @@ test("permission gate: denying a tool call blocks it end to end", async (t) => {
 		await approval.waitFor({ state: "visible", timeout: LAUNCH_TIMEOUT_MS });
 		const detail = await approval.textContent();
 		assert.ok(detail?.includes(COMMAND), `approval dialog should show the command: ${JSON.stringify(detail)}`);
+		assert.equal(
+			await approval.locator(".dialog-btn-danger").evaluate((element) => element === document.activeElement),
+			true,
+			"a blocking approval should focus its safest action",
+		);
+
+		await studio.page.locator(".top-bar-workbench-toggle").click();
+		await studio.page.locator('[data-workbench-view="review"]').click();
+		const pendingRequest = studio.page.locator(".workbench-review-approval");
+		await pendingRequest.waitFor({ state: "visible", timeout: LAUNCH_TIMEOUT_MS });
+		assert.match(await pendingRequest.textContent(), /1/u);
+		await pendingRequest.locator("button").click();
+		await studio.page.locator(".workbench-panel").waitFor({ state: "hidden", timeout: LAUNCH_TIMEOUT_MS });
+		assert.equal(
+			await studio.page.evaluate(() => document.activeElement?.closest(".inline-approval") !== null),
+			true,
+			"opening a pending request should focus its existing inline approval",
+		);
 
 		await studio.page.locator(".inline-approval .dialog-btn-danger").click();
 

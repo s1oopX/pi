@@ -40,6 +40,10 @@ test("atomically saves and reloads a valid workspace", (t) => {
 	assert.equal(loadStoredWorkspace(statePath), nextWorkspace);
 	assert.deepEqual(readdirSync(join(root, "user-data")), ["workspace-state.json"]);
 	assert.deepEqual(JSON.parse(readFileSync(statePath, "utf8")), { version: 1, cwd: nextWorkspace });
+
+	const remoteWorkspace = "ssh://remote-one/~/code/pi";
+	saveStoredWorkspace(statePath, remoteWorkspace);
+	assert.equal(loadStoredWorkspace(statePath), remoteWorkspace);
 });
 
 test("ignores corrupt, oversized, and stale workspace state", (t) => {
@@ -55,4 +59,11 @@ test("ignores corrupt, oversized, and stale workspace state", (t) => {
 
 	writeFileSync(statePath, JSON.stringify({ version: 1, cwd: join(root, "missing") }));
 	assert.equal(loadStoredWorkspace(statePath), undefined);
+
+	writeFileSync(statePath, JSON.stringify({ version: 1, cwd: "ssh://remote-one/work?invalid=1" }));
+	assert.equal(loadStoredWorkspace(statePath), undefined);
+	assert.throws(
+		() => saveStoredWorkspace(statePath, "ssh://remote-one/work?invalid=1"),
+		/Workspace not found/,
+	);
 });

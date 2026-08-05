@@ -31,8 +31,9 @@ function createFixture({ maxTasks } = {}) {
 	primary.ready = true;
 	const registry = createTaskRegistry({
 		primary,
-		createHandle: (id, cwd) => {
+		createHandle: (id, cwd, sessionFile) => {
 			const handle = fakeHandle(id, cwd);
+			handle.resumeSessionFile = sessionFile;
 			created.push(handle);
 			return handle;
 		},
@@ -54,6 +55,32 @@ test("creates tasks up to the cap with stable unique ids and starts each handle 
 	assert.equal(created.length, 3);
 	assert.deepEqual(created.map((handle) => handle.started), [1, 1, 1]);
 	assert.deepEqual(created.map((handle) => handle.getCwd()), [poolCwd("a"), poolCwd("b"), poolCwd("c")]);
+});
+
+test("restores stable task ids and passes the saved session to the backend", () => {
+	const { registry, created } = createFixture({ maxTasks: 1 });
+	const restored = registry.restore({
+		taskId: "task_7",
+		cwd: poolCwd("restored"),
+		branch: "task/restored",
+		sessionFile: "C:\\sessions\\restored.jsonl",
+		unread: 2,
+		completed: true,
+	});
+	assert.equal(restored.taskId, "task_7");
+	assert.equal(restored.unread, 2);
+	assert.equal(restored.completed, true);
+	assert.equal(created[0].resumeSessionFile, "C:\\sessions\\restored.jsonl");
+	assert.equal(created[0].started, 1);
+	registry.setMaxTasks(2);
+	assert.equal(registry.create(poolCwd("next")).taskId, "task_8");
+});
+
+test("does not reuse ids reserved by unavailable saved tasks", () => {
+	const { registry } = createFixture();
+	registry.reserveTaskId("task_7");
+	assert.equal(registry.create(poolCwd("next")).taskId, "task_8");
+	assert.throws(() => registry.reserveTaskId("task_0"), /invalid/iu);
 });
 
 test("refuses creation at the cap and lists the running tasks in the error", () => {
@@ -130,9 +157,31 @@ test("list returns live snapshots with the primary first", () => {
 	primary.starting = false;
 	const listed = registry.list();
 	assert.deepEqual(listed, [
-		{ taskId: "main", cwd: primaryCwd, isPrimary: true, ready: true, starting: false },
-		{ taskId: "task_1", cwd: poolCwd("a"), isPrimary: false, ready: true, starting: false },
+		{ taskId: "main", cwd: primaryCwd, isPrimary: true, ready: true, starting: false, streaming: false, unread: 0, completed: false },
+		{ taskId: "task_1", cwd: poolCwd("a"), isPrimary: false, ready: true, starting: false, streaming: false, unread: 0, completed: false },
 	]);
+});
+
+test("tracks background activity and clears attention when the task opens", () => {
+	const { registry } = createFixture();
+	registry.create(poolCwd("a"));
+	assert.equal(registry.recordEvent("task_1", { type: "agent_start" }, "main"), true);
+	assert.equal(registry.recordEvent("task_1", { type: "message_end" }, "main"), true);
+	assert.equal(registry.recordEvent("task_1", { type: "agent_end" }, "main"), true);
+	assert.deepEqual(registry.list().find(({ taskId }) => taskId === "task_1"), {
+		taskId: "task_1",
+		cwd: poolCwd("a"),
+		isPrimary: false,
+		ready: false,
+		starting: true,
+		streaming: false,
+		unread: 1,
+		completed: true,
+	});
+	assert.equal(registry.activate("task_1"), true);
+	assert.equal(registry.activate("task_1"), false);
+	assert.equal(registry.list().find(({ taskId }) => taskId === "task_1").unread, 0);
+	assert.equal(registry.list().find(({ taskId }) => taskId === "task_1").completed, false);
 });
 
 test("passes worktree metadata through to snapshots and list entries", () => {

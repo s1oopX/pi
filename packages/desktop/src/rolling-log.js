@@ -7,7 +7,9 @@
  */
 
 import { appendFileSync, mkdirSync, renameSync, rmSync, statSync } from "node:fs";
+import { homedir } from "node:os";
 import { join } from "node:path";
+import { sanitizeDiagnostics } from "./diagnostics.js";
 
 const DEFAULT_MAX_BYTES = 5 * 1024 * 1024;
 const DEFAULT_MAX_FILES = 5;
@@ -19,6 +21,7 @@ const MAX_ENTRY_BYTES = 16 * 1024;
  *   baseName?: string,
  *   maxBytes?: number,
  *   maxFiles?: number,
+ *   homePath?: string,
  *   nowImpl?: () => number,
  *   appendFileSyncImpl?: (path: string, text: string) => void,
  *   statSyncImpl?: (path: string) => { size: number },
@@ -32,6 +35,7 @@ export function createRollingLog({
 	baseName = "pi-studio",
 	maxBytes = DEFAULT_MAX_BYTES,
 	maxFiles = DEFAULT_MAX_FILES,
+	homePath = homedir(),
 	nowImpl = Date.now,
 	appendFileSyncImpl = appendFileSync,
 	statSyncImpl = statSync,
@@ -92,7 +96,7 @@ export function createRollingLog({
 		append(level, source, message) {
 			try {
 				ensureReady();
-				const flattened = String(message ?? "")
+				const flattened = String(sanitizeDiagnostics(String(message ?? ""), homePath))
 					.replace(/\r?\n/gu, "\\n")
 					.slice(0, MAX_ENTRY_BYTES);
 				const line = `${new Date(nowImpl()).toISOString()} [${level}] ${source} ${flattened}\n`;
@@ -107,4 +111,25 @@ export function createRollingLog({
 			}
 		},
 	};
+}
+
+/**
+ * @param {import("electron").WebContents} webContents
+ * @param {() => ReturnType<typeof createRollingLog>} getLog
+ */
+export function registerRendererLogEvents(webContents, getLog) {
+	webContents.on("console-message", (details) => {
+		if (details.level !== "error") return;
+		getLog().append("error", "renderer", `${details.message} (${details.sourceId}:${details.lineNumber})`);
+	});
+	webContents.on("render-process-gone", (_event, details) => {
+		getLog().append(
+			"error",
+			"renderer",
+			`render-process-gone: reason=${details?.reason ?? "unknown"} exitCode=${details?.exitCode ?? "?"}`,
+		);
+	});
+	webContents.on("unresponsive", () => {
+		getLog().append("error", "renderer", "renderer became unresponsive");
+	});
 }

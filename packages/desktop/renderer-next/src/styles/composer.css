@@ -7,6 +7,94 @@
   background: var(--main-bg);
 }
 
+.composer-task-progress {
+  position: relative;
+  width: min(100%, calc(var(--thread-width) + 22px));
+  min-height: 38px;
+  margin: 0 auto 6px;
+  display: grid;
+  grid-template-columns: 8px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 9px;
+  padding: 6px 10px;
+  overflow: hidden;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: color-mix(in srgb, var(--main-bg) 82%, var(--surface));
+}
+
+.composer-task-progress-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--muted);
+}
+
+.composer-task-progress.running .composer-task-progress-dot {
+  background: var(--accent);
+  animation: composer-task-pulse 1.2s ease-in-out infinite;
+}
+
+.composer-task-progress.blocked .composer-task-progress-dot {
+  background: var(--warning);
+}
+
+.composer-task-progress-copy {
+  min-width: 0;
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+}
+
+.composer-task-progress-copy strong,
+.composer-task-progress-copy span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.composer-task-progress-copy strong {
+  color: var(--text-soft);
+  font-size: var(--font-size-compact);
+  font-weight: 600;
+}
+
+.composer-task-progress-copy span,
+.composer-task-progress-count {
+  color: var(--muted);
+  font-size: var(--font-size-meta);
+  line-height: var(--line-height-meta);
+}
+
+.composer-task-progress-count {
+  font-variant-numeric: tabular-nums;
+}
+
+.composer-task-progress-bar {
+  position: absolute;
+  right: 0;
+  bottom: 0;
+  left: 0;
+  width: 100%;
+  height: 2px;
+  appearance: none;
+  border: 0;
+  background: transparent;
+}
+
+.composer-task-progress-bar::-webkit-progress-bar {
+  background: transparent;
+}
+
+.composer-task-progress-bar::-webkit-progress-value {
+  background: var(--accent);
+}
+
+@keyframes composer-task-pulse {
+  50% { opacity: 0.35; }
+}
+
 .composer-approval-stack {
   width: min(100%, calc(var(--thread-width) + 22px));
   margin: 0 auto 8px;
@@ -60,10 +148,6 @@
   pointer-events: none;
 }
 
-.composer-drop-overlay.unsupported {
-  border-color: var(--danger);
-}
-
 .composer-drop-title {
   font-size: calc(13px * var(--font-scale));
   font-weight: 650;
@@ -108,6 +192,36 @@
   display: block;
   border-radius: calc(var(--radius) - 1px);
   object-fit: cover;
+}
+
+.composer-attachment.file {
+  width: min(168px, calc(100cqw - 36px));
+  height: 40px;
+  flex-basis: 168px;
+}
+
+.composer-attachment-file {
+  width: 100%;
+  height: 100%;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  padding: 0 10px;
+  color: var(--text-soft);
+}
+
+.composer-attachment-file svg {
+  flex-shrink: 0;
+}
+
+.composer-attachment-file span {
+  min-width: 0;
+  overflow: hidden;
+  font-size: calc(12px * var(--font-scale));
+  font-weight: 550;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .composer-attachment-remove {
@@ -518,7 +632,12 @@
     color var(--transition-fast);
 }
 
-.composer-abort-btn:hover {
+.composer-abort-btn:disabled {
+  opacity: 0.55;
+  cursor: wait;
+}
+
+.composer-abort-btn:not(:disabled):hover {
   border-color: var(--border-strong);
   background: var(--surface-hover);
   color: var(--text);
@@ -1033,7 +1152,48 @@
   }
 }
 
+@media (max-width: 480px) and (max-height: 320px) {
+  .composer-wrap {
+    padding-block: 4px;
+  }
+
+  .composer {
+    padding: 4px;
+  }
+
+  .composer-input {
+    min-height: 36px;
+    max-height: 64px;
+    padding-block: 5px;
+  }
+
+  .composer-footer {
+    min-height: 28px;
+    flex-wrap: nowrap;
+    align-items: center;
+    gap: 4px;
+  }
+
+  .composer-toolbar,
+  .composer-footer-end {
+    flex: 0 1 auto;
+    flex-wrap: nowrap;
+  }
+
+  .composer-footer-end {
+    flex: 1;
+  }
+
+  .composer-actions {
+    flex-wrap: nowrap;
+  }
+}
+
 @media (prefers-reduced-motion: reduce) {
+  .composer-task-progress.running .composer-task-progress-dot {
+    animation: none;
+  }
+
   .composer,
   .composer-send-btn,
   .composer-abort-btn,

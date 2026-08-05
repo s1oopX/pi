@@ -41,10 +41,11 @@ import {
 import { applySource, MIRROR_MANAGERS, MIRROR_PRESETS, readStatus } from "./mirror-sources.js";
 import { describeRevealTarget, resolveWorkspacePath } from "./path-reveal.js";
 import { createProject } from "./project-templates.js";
-import { createRollingLog } from "./rolling-log.js";
+import { createRollingLog, registerRendererLogEvents } from "./rolling-log.js";
 import { prepareSessionImport, resolveKnownSessionFile } from "./session-files.js";
 import { materializeSshArtifact, readSshArtifactPreview } from "./ssh-artifact.js";
 import { createTaskRegistry } from "./task-registry.js";
+import { loadTaskState, saveTaskState } from "./task-state.js";
 import {
 	createSshCliSpec,
 	createSshLaunchSpec,
@@ -82,6 +83,7 @@ const WINDOW_STATE_FILE = "window-state.json";
 const WORKSPACE_STATE_FILE = "workspace-state.json";
 const TASK_WORKSPACE_DIRECTORY = "tasks";
 const TASK_SETTINGS_FILE = "task-settings.json";
+const TASK_STATE_FILE = "tasks.json";
 const AUTOMATIONS_FILE = "automations.json";
 const SSH_CONNECTIONS_FILE = "ssh-connections.json";
 const REMOTE_ARTIFACT_CACHE_DIRECTORY = "remote-artifacts";
@@ -97,6 +99,14 @@ let windowCreationPromise;
 let backendCwd = process.env.PI_DESKTOP_CWD || process.cwd();
 let isQuitting = false;
 let workspaceStateInitialized = false;
+let taskStateInitialized = false;
+let taskStateRestoring = false;
+/** @type {Error | undefined} */
+let taskStateLoadError;
+/** @type {Array<{ taskId: string, cwd: string, branch?: string, sourceRepo?: string, worktreePath?: string, sessionFile?: string, unread?: number, completed?: boolean }>} */
+let unrestoredTasks = [];
+/** @type {Map<string, string>} */
+const taskRestoreErrors = new Map();
 /** @type {Buffer | undefined} */
 let remoteBackendSource;
 /** @type {ReturnType<typeof createAutomationService> | undefined} */
@@ -119,12 +129,12 @@ const primaryBackend = new BackendHandle({
 	getLaunchSpec: getPrimaryLaunchSpec,
 	sendToRenderer,
 	onSessionChanged: syncBackendCwd,
-	notify: maybeNotify,
+	notify: (payload) => handleTaskBackendEvent("main", payload),
 	isQuitting: () => isQuitting,
 });
 const taskRegistry = createTaskRegistry({
 	primary: primaryBackend,
-	createHandle: (id, cwd) =>
+	createHandle: (id, cwd, sessionFile) =>
 		new BackendHandle({
 			id,
 			getCwd: () => cwd,
@@ -133,7 +143,9 @@ const taskRegistry = createTaskRegistry({
 			sendToRenderer,
 			// No onSessionChanged: a pool task's session must never rewrite the
 			// primary workspace or its persisted state.
-			notify: (payload) => maybeNotify(payload, id),
+			notify: (payload) => handleTaskBackendEvent(id, payload),
+			resumeSessionFile: sessionFile,
+			onSessionFileChanged: persistTaskStateBestEffort,
 			isQuitting: () => isQuitting,
 		}),
 });
@@ -150,6 +162,10 @@ function getTaskWorkspacePath() {
 	const taskWorkspacePath = join(app.getPath("userData"), TASK_WORKSPACE_DIRECTORY);
 	mkdirSync(taskWorkspacePath, { recursive: true });
 	return taskWorkspacePath;
+}
+
+function getTaskStatePath() {
+	return join(app.getPath("userData"), TASK_STATE_FILE);
 }
 
 function getAutomationsPath() {
@@ -589,9 +605,9 @@ async function fetchProviderModels({ baseUrl, apiKey, api }) {
 // completions are the renderer's job (toast); pool tasks name themselves.
 /**
  * @param {{ type?: string, willRetry?: boolean } | undefined} payload
- * @param {string} [taskLabel]
+ * @param {string} taskId
  */
-function maybeNotify(payload, taskLabel) {
+function maybeNotify(payload, taskId) {
 	if (payload?.type !== "agent_end" || payload.willRetry) {
 		return;
 	}
@@ -604,17 +620,28 @@ function maybeNotify(payload, taskLabel) {
 	try {
 		const notification = new Notification({
 			title: PRODUCT_NAME,
-			body: taskLabel ? `Task ${taskLabel} finished responding.` : "The agent finished responding.",
+			body: taskId === "main" ? "The agent finished responding." : `Task ${taskId} finished responding.`,
 			icon: getWindowIconPath(),
 			silent: false,
 		});
 		notification.on("click", () => {
-			focusMainWindow();
+			void ensureWindow().then(() => {
+				focusMainWindow();
+				sendToRenderer("task:focus", { taskId, view: "review" });
+			}).catch(() => {});
 		});
 		notification.show();
 	} catch {
 		// Notifications are best-effort; ignore platform failures.
 	}
+}
+
+/** @param {string} taskId @param {{ type?: string, willRetry?: boolean }} payload */
+function handleTaskBackendEvent(taskId, payload) {
+	if (taskRegistry.recordEvent(taskId, payload, rendererActiveTaskId ?? "main")) {
+		persistTaskStateBestEffort();
+	}
+	maybeNotify(payload, taskId);
 }
 
 /**
@@ -1278,7 +1305,10 @@ async function createWindow() {
 		primaryBackend.start();
 	});
 	window.on("close", () => saveWindowState(window));
+	/** @type {NodeJS.Timeout | undefined} */
+	let rendererRecoveryTimer;
 	window.on("closed", () => {
+		clearTimeout(rendererRecoveryTimer);
 		if (mainWindow === window) mainWindow = undefined;
 	});
 	window.webContents.setWindowOpenHandler(({ url }) => {
@@ -1294,6 +1324,24 @@ async function createWindow() {
 			sendToRenderer("backend:log", { level: "error", message: error.message });
 		});
 	});
+	registerRendererLogEvents(window.webContents, getFileLog);
+	let rendererRecoveryPending = false;
+	window.webContents.on("render-process-gone", (_event, details) => {
+		if (isQuitting || window.isDestroyed() || details?.reason === "clean-exit") return;
+		if (rendererRecoveryPending) {
+			getFileLog().append("error", "renderer", "automatic recovery suppressed after a repeated crash");
+			return;
+		}
+		rendererRecoveryPending = true;
+		rendererRecoveryTimer = setTimeout(() => {
+			rendererRecoveryPending = false;
+		}, 30_000);
+		rendererRecoveryTimer.unref?.();
+		getFileLog().append("warn", "renderer", `reloading after unexpected exit (${details?.reason ?? "unknown"})`);
+		setTimeout(() => {
+			if (!isQuitting && !window.isDestroyed()) window.webContents.reload();
+		}, 100);
+	});
 	window.webContents.session.setPermissionRequestHandler((_webContents, _permission, callback) => callback(false));
 	if (process.env.PI_DEV === "1") {
 		await window.loadURL("http://localhost:5173");
@@ -1306,6 +1354,7 @@ async function createWindow() {
 function ensureWindow() {
 	initializeBackendCwd();
 	initializeTaskSettings();
+	initializeTaskState();
 	getAutomationService();
 	if (mainWindow && !mainWindow.isDestroyed()) return Promise.resolve(mainWindow);
 	if (windowCreationPromise) return windowCreationPromise;
@@ -1490,6 +1539,145 @@ let taskSettingsInitialized = false;
 /** @type {string | undefined} */
 let rendererActiveTaskId;
 
+function assertTaskStateWritable() {
+	if (taskStateLoadError) {
+		throw new Error(`${taskStateLoadError.message}. The original task state file was not changed.`);
+	}
+}
+
+function storedRunningTasks() {
+	return taskRegistry.list()
+		.filter((snapshot) => !snapshot.isPrimary)
+		.map((snapshot) => {
+			const entry = taskRegistry.get(snapshot.taskId);
+			return {
+				taskId: entry.taskId,
+				cwd: entry.cwd(),
+				...(entry.meta?.branch ? { branch: entry.meta.branch } : {}),
+				...(entry.meta?.sourceRepo ? { sourceRepo: entry.meta.sourceRepo } : {}),
+				...(entry.meta?.worktreePath ? { worktreePath: entry.meta.worktreePath } : {}),
+				...(entry.handle.resumeSessionFile ? { sessionFile: entry.handle.resumeSessionFile } : {}),
+				...(entry.unread > 0 ? { unread: entry.unread } : {}),
+				...(entry.completed ? { completed: true } : {}),
+			};
+		});
+}
+
+function persistTaskState() {
+	if (!taskStateInitialized || taskStateRestoring) return;
+	assertTaskStateWritable();
+	saveTaskState(getTaskStatePath(), [...unrestoredTasks, ...storedRunningTasks()]);
+}
+
+function persistTaskStateBestEffort() {
+	try {
+		persistTaskState();
+	} catch (error) {
+		getFileLog().append("error", "tasks", `Could not save task state: ${error instanceof Error ? error.message : String(error)}`);
+	}
+}
+
+/** @param {{ taskId: string, cwd: string, branch?: string, sourceRepo?: string, worktreePath?: string, sessionFile?: string, unread?: number, completed?: boolean }} stored */
+function restoreStoredTask(stored) {
+	const remote = resolveSshCwd(stored.cwd);
+	if (!remote && (!existsSync(stored.cwd) || !statSync(stored.cwd).isDirectory())) {
+		throw new Error(`Workspace not found: ${stored.cwd}`);
+	}
+	return taskRegistry.restore(stored);
+}
+
+/** @param {{ taskId: string }} stored @param {unknown} error */
+function recordTaskRestoreError(stored, error) {
+	const reason = error instanceof Error ? error.message : String(error);
+	taskRestoreErrors.set(stored.taskId, reason);
+	getFileLog().append("warn", "tasks", `Could not restore ${stored.taskId}: ${reason}`);
+	return reason;
+}
+
+function unavailableTaskSnapshots() {
+	return unrestoredTasks.map((stored) => ({
+		taskId: stored.taskId,
+		cwd: stored.cwd,
+		error: taskRestoreErrors.get(stored.taskId) ?? "The saved task could not be restored",
+	}));
+}
+
+function initializeTaskState() {
+	if (taskStateInitialized) return;
+	taskStateInitialized = true;
+	const loaded = loadTaskState(getTaskStatePath());
+	if (loaded.error) {
+		taskStateLoadError = loaded.error;
+		getFileLog().append("error", "tasks", `${loaded.error.message}. The original task state file was not changed.`);
+		return;
+	}
+	taskStateRestoring = true;
+	try {
+		for (const stored of loaded.tasks) taskRegistry.reserveTaskId(stored.taskId);
+		for (const stored of loaded.tasks) {
+			try {
+				restoreStoredTask(stored);
+			} catch (error) {
+				unrestoredTasks.push(stored);
+				recordTaskRestoreError(stored, error);
+			}
+		}
+	} finally {
+		taskStateRestoring = false;
+	}
+}
+
+/** @param {string} taskId */
+function retryStoredTask(taskId) {
+	assertTaskStateWritable();
+	const index = unrestoredTasks.findIndex((stored) => stored.taskId === taskId);
+	if (index < 0) throw new Error(`Saved task not found: ${taskId}`);
+	const stored = unrestoredTasks[index];
+	let restored;
+	try {
+		restored = restoreStoredTask(stored);
+	} catch (error) {
+		recordTaskRestoreError(stored, error);
+		throw error;
+	}
+	unrestoredTasks.splice(index, 1);
+	taskRestoreErrors.delete(taskId);
+	try {
+		persistTaskState();
+		return restored;
+	} catch (error) {
+		taskRegistry.stop(taskId);
+		unrestoredTasks.splice(index, 0, stored);
+		recordTaskRestoreError(stored, error);
+		throw error;
+	}
+}
+
+/** @param {string} taskId */
+function forgetStoredTask(taskId) {
+	assertTaskStateWritable();
+	const index = unrestoredTasks.findIndex((stored) => stored.taskId === taskId);
+	if (index < 0) throw new Error(`Saved task not found: ${taskId}`);
+	const remaining = unrestoredTasks.filter((stored) => stored.taskId !== taskId);
+	saveTaskState(getTaskStatePath(), [...remaining, ...storedRunningTasks()]);
+	unrestoredTasks = remaining;
+	taskRestoreErrors.delete(taskId);
+	return { forgotten: true, taskId };
+}
+
+/** @param {string} cwd @param {{ branch?: string, sourceRepo?: string, worktreePath?: string }} [meta] */
+function createAndPersistTask(cwd, meta) {
+	assertTaskStateWritable();
+	const created = taskRegistry.create(cwd, meta);
+	try {
+		persistTaskState();
+		return created;
+	} catch (error) {
+		taskRegistry.stop(created.taskId);
+		throw error;
+	}
+}
+
 function getTaskSettingsPath() {
 	return join(app.getPath("userData"), TASK_SETTINGS_FILE);
 }
@@ -1536,6 +1724,11 @@ async function stopTaskAndCleanup(taskId) {
 	const entry = taskRegistry.get(taskId);
 	if (automationBusyHandles.has(entry.handle)) throw new Error("Wait for the automation to finish before stopping this task");
 	const child = entry.handle.child;
+	assertTaskStateWritable();
+	saveTaskState(getTaskStatePath(), [
+		...unrestoredTasks,
+		...storedRunningTasks().filter((stored) => stored.taskId !== entry.taskId),
+	]);
 	const result = taskRegistry.stop(entry.taskId);
 	if (entry.meta?.worktreePath && entry.meta?.sourceRepo) {
 		// Give the backend a moment to release its cwd, then remove through Git —
@@ -1608,12 +1801,12 @@ ipcMain.handle("task:create", async (_event, cwd) => {
 	const nextCwd = String(cwd ?? "");
 	const remote = resolveSshCwd(nextCwd);
 	if (remote) {
-		if (!taskRegistry.isClaimed(nextCwd)) return taskRegistry.create(nextCwd);
+		if (!taskRegistry.isClaimed(nextCwd)) return createAndPersistTask(nextCwd);
 		taskRegistry.assertCapacity();
 		const worktree = await createRemoteTaskWorktree(remote);
 		const worktreeCwd = createSshWorkspaceUri(remote.connection.id, worktree.worktreePath);
 		try {
-			return taskRegistry.create(worktreeCwd, {
+			return createAndPersistTask(worktreeCwd, {
 				branch: worktree.branch,
 				sourceRepo: nextCwd,
 				worktreePath: worktreeCwd,
@@ -1630,7 +1823,7 @@ ipcMain.handle("task:create", async (_event, cwd) => {
 		throw new Error(`Workspace not found: ${nextCwd}`);
 	}
 	if (!taskRegistry.isClaimed(nextCwd)) {
-		return taskRegistry.create(nextCwd);
+		return createAndPersistTask(nextCwd);
 	}
 	// Same-repo parallelism: a claimed git folder gets its own worktree on a
 	// fresh task branch; non-git folders keep the refusal.
@@ -1641,16 +1834,35 @@ ipcMain.handle("task:create", async (_event, cwd) => {
 		);
 	}
 	const worktree = await createTaskWorktree(nextCwd, getWorktreesRoot());
-	return taskRegistry.create(worktree.worktreePath, {
-		branch: worktree.branch,
-		sourceRepo: nextCwd,
-		worktreePath: worktree.worktreePath,
-	});
+	try {
+		return createAndPersistTask(worktree.worktreePath, {
+			branch: worktree.branch,
+			sourceRepo: nextCwd,
+			worktreePath: worktree.worktreePath,
+		});
+	} catch (error) {
+		const cleanup = await removeRegisteredTaskWorktree(nextCwd, worktree.worktreePath);
+		if (!cleanup.removed) {
+			getFileLog().append("warn", "tasks", `Could not clean up rejected local worktree: ${cleanup.reason}`);
+		}
+		throw error;
+	}
 });
 
-ipcMain.handle("task:list", async () => ({ tasks: taskRegistry.list(), maxTasks: taskRegistry.getMaxTasks() }));
+ipcMain.handle("task:list", async () => {
+	assertTaskStateWritable();
+	return {
+		tasks: taskRegistry.list(),
+		maxTasks: taskRegistry.getMaxTasks(),
+		unavailableTasks: unavailableTaskSnapshots(),
+	};
+});
 
 ipcMain.handle("task:stop", async (_event, taskId) => stopTaskAndCleanup(String(taskId ?? "")));
+
+ipcMain.handle("task:retry", async (_event, taskId) => retryStoredTask(String(taskId ?? "")));
+
+ipcMain.handle("task:forget", async (_event, taskId) => forgetStoredTask(String(taskId ?? "")));
 
 ipcMain.handle("task:get-settings", async () => ({ ...taskSettings, maxTasks: taskRegistry.getMaxTasks() }));
 
@@ -1667,7 +1879,12 @@ ipcMain.handle("task:configure", async (_event, settings) => {
 	return { ...taskSettings, maxTasks: taskRegistry.getMaxTasks() };
 });
 
-ipcMain.handle("automation:list", async () => ({ automations: getAutomationService().list() }));
+ipcMain.handle("automation:list", async () => {
+	const service = getAutomationService();
+	const loadError = service.getLoadError();
+	if (loadError) throw new Error(`${loadError.message}. The original file was not changed.`);
+	return { automations: service.list() };
+});
 
 ipcMain.handle("automation:create", async (_event, input, taskId) => createAutomation(input, taskId));
 
@@ -1765,15 +1982,17 @@ ipcMain.handle("worktrees:delete", async (_event, targetPath) => {
 });
 
 ipcMain.on("task:activate", (_event, taskId) => {
-	rendererActiveTaskId = typeof taskId === "string" && taskId && taskId !== "main" ? taskId : undefined;
+	const activeTaskId = typeof taskId === "string" && taskId ? taskId : "main";
+	rendererActiveTaskId = activeTaskId !== "main" ? activeTaskId : undefined;
 	// Switching to a task counts as touching it, so a just-opened quiet task
 	// is not reaped out from under the user on the next sweep.
-	if (rendererActiveTaskId) {
-		try {
+	try {
+		if (taskRegistry.activate(activeTaskId)) persistTaskStateBestEffort();
+		if (rendererActiveTaskId) {
 			taskRegistry.get(rendererActiveTaskId).handle.lastActivityAt = Date.now();
-		} catch {
-			rendererActiveTaskId = undefined;
 		}
+	} catch {
+		rendererActiveTaskId = undefined;
 	}
 });
 
